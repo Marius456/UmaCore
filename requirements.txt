@@ -19,5 +19,8 @@ kaleido>=0.2.1
 python-dotenv>=1.0.0
 pytz>=2023.3
 
+# Table Formatting
+tabulate>=0.10.0
+
 # Logging (built-in, but specifying for clarity)
 # logging - standard library

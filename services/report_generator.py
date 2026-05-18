@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from typing import Dict, List, Optional
 import discord
 import logging
+from tabulate import tabulate
 
 from config.settings import COLOR_ON_TRACK, COLOR_BEHIND, COLOR_BOMB, COLOR_INFO
 
@@ -28,120 +29,67 @@ class ReportGenerator:
             return f"{num / 1_000:.1f}K"
         return str(num)
 
-    @staticmethod
-    def _format_table_row(rank: int, name: str, daily: str, carry: str, avg: str, total: str) -> str:
-        """Format a single row for the member table"""
-        # Column widths: rank(3), name(15), daily(9), carry(9), avg(8), total(8)
-        return f"{rank:2d}  {name:<15}  {daily:>8}  {carry:>8}  {avg:>7}  {total:>8}"
-
-    @staticmethod
-    def _format_table_header() -> str:
-        """Format the table header"""
-        return " #  Name            Daily     Carry     Avg     Total"
-
-    def _build_members_table(self, members_list: List[Dict], is_behind: bool = False) -> str:
-        """
-        Build a formatted table of members with daily, carry, avg, and total stats.
-        
-        Args:
-            members_list: List of member status dicts
-            is_behind: Whether this is for behind-quota members (affects formatting)
-        
-        Returns:
-            Formatted table string
-        """
-        if not members_list:
-            return "*No members*"
-        
-        lines = [self._format_table_header()]
-        
+    def _prepare_table_data(self, members_list: List[Dict]) -> List[List]:
+        """Converts the member dicts into a list of lists for tabulate"""
+        table_rows = []
         for idx, item in enumerate(members_list, 1):
             member = item['member']
             history = item['history']
-            
-            # Calculate daily progress (today's change)
+
+            # Daily calculation
             yesterday_fans = item.get('yesterday_cumulative_fans', 0)
             daily_progress = history.cumulative_fans - yesterday_fans
-            daily_str = self.format_fans_short(daily_progress) if daily_progress >= 0 else f"-{self.format_fans_short(abs(daily_progress))}"
-            if daily_progress >= 0:
-                daily_str = "+" + daily_str
-            
-            # Calculate carry (fans from before this month)
+            daily_str = f"+{self.format_fans_short(daily_progress)}" if daily_progress >= 0 else f"-{self.format_fans_short(abs(daily_progress))}"
+
+            # Carry calculation
             month_start_fans = item.get('month_start_fans', 0)
             carry_fans = history.cumulative_fans - month_start_fans
-            carry_str = self.format_fans_short(carry_fans) if carry_fans >= 0 else f"-{self.format_fans_short(abs(carry_fans))}"
-            if carry_fans >= 0:
-                carry_str = "+" + carry_str
-            
-            # Calculate average per day
+            carry_str = f"+{self.format_fans_short(carry_fans)}" if carry_fans >= 0 else f"-{self.format_fans_short(abs(carry_fans))}"
+
+            # Avg Calculation
             month_start = date(history.date.year, history.date.month, 1)
             days_active = (history.date - month_start).days + 1
             avg_per_day = history.cumulative_fans // days_active if days_active > 0 else 0
-            avg_str = self.format_fans_short(avg_per_day)
-            
-            # Total
-            total_str = self.format_fans_short(history.cumulative_fans)
-            
-            # Format the row
-            row = self._format_table_row(idx, member.trainer_name, daily_str, carry_str, avg_str, total_str)
-            lines.append(row)
-        
-        return "\n".join(lines)
 
-    def _split_table_into_sections(self, members_list: List[Dict], max_length: int = 1000) -> List[str]:
-        """
-        Split a members list into table sections that fit within Discord character limits.
-        Each section includes the header row.
-        """
+            # We truncate the name to 12 chars to prevent table blowout on mobile
+            name = (member.trainer_name[:12] + '..') if len(member.trainer_name) > 13 else member.trainer_name
+
+            table_rows.append([
+                idx,
+                name,
+                daily_str,
+                carry_str,
+                self.format_fans_short(avg_per_day),
+                self.format_fans_short(history.cumulative_fans)
+            ])
+        return table_rows
+
+    def _split_table_into_sections(self, members_list: List[Dict], max_length: int = 900) -> List[str]:
+        """Splits data into chunks while maintaining table formatting"""
         if not members_list:
             return ["*No members*"]
-        
+
+        all_data = self._prepare_table_data(members_list)
+        headers = ["#", "Name", "Daily", "Carry", "Avg", "Total"]
+
         sections = []
-        current_rows = []
-        current_length = len(self._format_table_header()) + 1  # +1 for newline
-        
-        for idx, item in enumerate(members_list, 1):
-            member = item['member']
-            history = item['history']
-            
-            # Calculate values
-            yesterday_fans = item.get('yesterday_cumulative_fans', 0)
-            daily_progress = history.cumulative_fans - yesterday_fans
-            daily_str = self.format_fans_short(daily_progress) if daily_progress >= 0 else f"-{self.format_fans_short(abs(daily_progress))}"
-            if daily_progress >= 0:
-                daily_str = "+" + daily_str
-            
-            month_start_fans = item.get('month_start_fans', 0)
-            carry_fans = history.cumulative_fans - month_start_fans
-            carry_str = self.format_fans_short(carry_fans) if carry_fans >= 0 else f"-{self.format_fans_short(abs(carry_fans))}"
-            if carry_fans >= 0:
-                carry_str = "+" + carry_str
-            
-            month_start = date(history.date.year, history.date.month, 1)
-            days_active = (history.date - month_start).days + 1
-            avg_per_day = history.cumulative_fans // days_active if days_active > 0 else 0
-            avg_str = self.format_fans_short(avg_per_day)
-            
-            total_str = self.format_fans_short(history.cumulative_fans)
-            
-            row = self._format_table_row(len(current_rows) + 1, member.trainer_name, daily_str, carry_str, avg_str, total_str)
-            row_length = len(row) + 1  # +1 for newline
-            
-            if current_length + row_length > max_length and current_rows:
-                # Build section with header and rows
-                section_lines = [self._format_table_header()] + current_rows
-                sections.append("\n".join(section_lines))
-                current_rows = [row]
-                current_length = len(self._format_table_header()) + 1 + row_length
+        current_chunk = []
+
+        for row in all_data:
+            # Check if adding this row exceeds the limit
+            temp_chunk = current_chunk + [row]
+            temp_table = tabulate(temp_chunk, headers=headers, tablefmt="simple", stralign="right")
+
+            if len(temp_table) > max_length and current_chunk:
+                sections.append(tabulate(current_chunk, headers=headers, tablefmt="simple", stralign="right"))
+                current_chunk = [row]
             else:
-                current_rows.append(row)
-                current_length += row_length
-        
-        if current_rows:
-            section_lines = [self._format_table_header()] + current_rows
-            sections.append("\n".join(section_lines))
-        
-        return sections if sections else ["*No members*"]
+                current_chunk.append(row)
+
+        if current_chunk:
+            sections.append(tabulate(current_chunk, headers=headers, tablefmt="simple", stralign="right"))
+
+        return sections
 
     def create_daily_report(self, club_name: str, daily_quota: int, status_summary: Dict,
                             bombs_data: List[Dict], report_date: date,
@@ -219,14 +167,14 @@ class ReportGenerator:
         if status_summary['on_track']:
             on_track_sections = self._split_table_into_sections(
                 status_summary['on_track'],
-                max_length=1000
+                max_length=900
             )
 
             for idx, section in enumerate(on_track_sections):
                 title = "✅ On Track" if idx == 0 else f"✅ On Track (continued {idx + 1})"
                 on_track_embed = discord.Embed(
                     title=title,
-                    description=f"```\n{section}\n```",
+                    description=f"```fix\n{section}\n```",
                     color=COLOR_ON_TRACK,
                     timestamp=discord.utils.utcnow()
                 )
@@ -236,14 +184,14 @@ class ReportGenerator:
         if status_summary['behind']:
             behind_sections = self._split_table_into_sections(
                 status_summary['behind'],
-                max_length=1000
+                max_length=900
             )
 
             for idx, section in enumerate(behind_sections):
                 title = "⚠️ Behind Quota" if idx == 0 else f"⚠️ Behind Quota (continued {idx + 1})"
                 behind_embed = discord.Embed(
                     title=title,
-                    description=f"```\n{section}\n```",
+                    description=f"```fix\n{section}\n```",
                     color=COLOR_BEHIND,
                     timestamp=discord.utils.utcnow()
                 )
