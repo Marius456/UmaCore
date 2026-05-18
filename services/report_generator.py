@@ -29,7 +29,7 @@ class ReportGenerator:
             return f"{num / 1_000:.1f}K"
         return str(num)
 
-    def _prepare_table_data(self, members_list: List[Dict], start_index: int = 1) -> List[List]:
+    def _prepare_table_data(self, members_list: List[Dict], start_index: int = 1, daily_quota: int = 0) -> List[List]:
         """Converts the member dicts into a list of lists for tabulate"""
         table_rows = []
         for idx, item in enumerate(members_list, start_index):
@@ -41,15 +41,17 @@ class ReportGenerator:
             daily_progress = history.cumulative_fans - yesterday_fans
             daily_str = f"+{self.format_fans_short(daily_progress)}" if daily_progress >= 0 else f"-{self.format_fans_short(abs(daily_progress))}"
 
-            # Carry calculation
-            month_start_fans = item.get('month_start_fans', 0)
-            carry_fans = history.cumulative_fans - month_start_fans
-            carry_str = f"+{self.format_fans_short(carry_fans)}" if carry_fans >= 0 else f"-{self.format_fans_short(abs(carry_fans))}"
-
             # Avg Calculation
             month_start = date(history.date.year, history.date.month, 1)
             days_active = (history.date - month_start).days + 1
             avg_per_day = history.cumulative_fans // days_active if days_active > 0 else 0
+
+            # Carry = net surplus/deficit compared to expected quota for this month
+            month_start_fans = item.get('month_start_fans', 0)
+            raw_carry = history.cumulative_fans - month_start_fans
+            expected_fans = daily_quota * days_active
+            carry_fans = raw_carry - expected_fans
+            carry_str = f"+{self.format_fans_short(carry_fans)}" if carry_fans >= 0 else f"-{self.format_fans_short(abs(carry_fans))}"
 
             # We truncate the name to 12 chars to prevent table blowout on mobile
             name = (member.trainer_name[:12] + '..') if len(member.trainer_name) > 13 else member.trainer_name
@@ -108,7 +110,7 @@ class ReportGenerator:
         # Remove the sort key before returning
         return [row[:6] for row in table_rows]
 
-    def _split_table_into_sections(self, members_list: List[Dict], max_length: int = 3500, start_index: int = 1, is_behind: bool = False) -> List[str]:
+    def _split_table_into_sections(self, members_list: List[Dict], max_length: int = 3500, start_index: int = 1, is_behind: bool = False, daily_quota: int = 0) -> List[str]:
         """Splits data into chunks while maintaining table formatting"""
         if not members_list:
             return ["*No members*"]
@@ -116,7 +118,7 @@ class ReportGenerator:
         if is_behind:
             all_data = self._prepare_behind_table_data(members_list, start_index)
         else:
-            all_data = self._prepare_table_data(members_list, start_index)
+            all_data = self._prepare_table_data(members_list, start_index, daily_quota)
         headers = ["#", "Name", "Daily", "Carry", "Avg", "Total"]
 
         sections = []
