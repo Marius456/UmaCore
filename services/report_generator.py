@@ -64,7 +64,7 @@ class ReportGenerator:
             ])
         return table_rows
 
-    def _split_table_into_sections(self, members_list: List[Dict], max_length: int = 900) -> List[str]:
+    def _split_table_into_sections(self, members_list: List[Dict], max_length: int = 3500) -> List[str]:
         """Splits data into chunks while maintaining table formatting"""
         if not members_list:
             return ["*No members*"]
@@ -167,7 +167,7 @@ class ReportGenerator:
         if status_summary['on_track']:
             on_track_sections = self._split_table_into_sections(
                 status_summary['on_track'],
-                max_length=900
+                max_length=3500
             )
 
             for idx, section in enumerate(on_track_sections):
@@ -184,7 +184,7 @@ class ReportGenerator:
         if status_summary['behind']:
             behind_sections = self._split_table_into_sections(
                 status_summary['behind'],
-                max_length=900
+                max_length=3500
             )
 
             for idx, section in enumerate(behind_sections):
