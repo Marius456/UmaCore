@@ -29,10 +29,10 @@ class ReportGenerator:
             return f"{num / 1_000:.1f}K"
         return str(num)
 
-    def _prepare_table_data(self, members_list: List[Dict]) -> List[List]:
+    def _prepare_table_data(self, members_list: List[Dict], start_index: int = 1) -> List[List]:
         """Converts the member dicts into a list of lists for tabulate"""
         table_rows = []
-        for idx, item in enumerate(members_list, 1):
+        for idx, item in enumerate(members_list, start_index):
             member = item['member']
             history = item['history']
 
@@ -64,12 +64,59 @@ class ReportGenerator:
             ])
         return table_rows
 
-    def _split_table_into_sections(self, members_list: List[Dict], max_length: int = 3500) -> List[str]:
+    def _prepare_behind_table_data(self, members_list: List[Dict], start_index: int = 1) -> List[List]:
+        """Converts behind-quota member dicts into sorted rows with deficit as Carry"""
+        table_rows = []
+        for item in members_list:
+            member = item['member']
+            history = item['history']
+
+            # Daily calculation
+            yesterday_fans = item.get('yesterday_cumulative_fans', 0)
+            daily_progress = history.cumulative_fans - yesterday_fans
+            daily_str = f"+{self.format_fans_short(daily_progress)}" if daily_progress >= 0 else f"-{self.format_fans_short(abs(daily_progress))}"
+
+            # Carry = deficit (negative, how far behind they are)
+            deficit = abs(history.deficit_surplus) if history.deficit_surplus < 0 else 0
+            carry_str = f"-{self.format_fans_short(deficit)}"
+
+            # Avg Calculation
+            month_start = date(history.date.year, history.date.month, 1)
+            days_active = (history.date - month_start).days + 1
+            avg_per_day = history.cumulative_fans // days_active if days_active > 0 else 0
+
+            # We truncate the name to 12 chars to prevent table blowout on mobile
+            name = (member.trainer_name[:12] + '..') if len(member.trainer_name) > 13 else member.trainer_name
+
+            table_rows.append([
+                0,  # placeholder, will be set after sorting
+                name,
+                daily_str,
+                carry_str,
+                self.format_fans_short(avg_per_day),
+                self.format_fans_short(history.cumulative_fans),
+                deficit  # hidden sort key
+            ])
+
+        # Sort by deficit ascending (smallest debt first)
+        table_rows.sort(key=lambda r: r[6])
+
+        # Assign continuous numbers after sorting
+        for i, row in enumerate(table_rows, start_index):
+            row[0] = i
+
+        # Remove the sort key before returning
+        return [row[:6] for row in table_rows]
+
+    def _split_table_into_sections(self, members_list: List[Dict], max_length: int = 3500, start_index: int = 1, is_behind: bool = False) -> List[str]:
         """Splits data into chunks while maintaining table formatting"""
         if not members_list:
             return ["*No members*"]
 
-        all_data = self._prepare_table_data(members_list)
+        if is_behind:
+            all_data = self._prepare_behind_table_data(members_list, start_index)
+        else:
+            all_data = self._prepare_table_data(members_list, start_index)
         headers = ["#", "Name", "Daily", "Carry", "Avg", "Total"]
 
         sections = []
@@ -184,7 +231,9 @@ class ReportGenerator:
         if status_summary['behind']:
             behind_sections = self._split_table_into_sections(
                 status_summary['behind'],
-                max_length=3500
+                max_length=3500,
+                start_index=on_track_count + 1,
+                is_behind=True
             )
 
             for idx, section in enumerate(behind_sections):
@@ -192,7 +241,7 @@ class ReportGenerator:
                 behind_embed = discord.Embed(
                     title=title,
                     description=f"```fix\n{section}\n```",
-                    color=COLOR_BEHIND,
+                    color=0xFF0000,
                     timestamp=discord.utils.utcnow()
                 )
                 embeds.append(behind_embed)
