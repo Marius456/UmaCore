@@ -216,7 +216,8 @@ class ReportGenerator:
         if status_summary['on_track']:
             on_track_sections = self._split_table_into_sections(
                 status_summary['on_track'],
-                max_length=3500
+                max_length=3500,
+                daily_quota=daily_quota
             )
 
             for idx, section in enumerate(on_track_sections):

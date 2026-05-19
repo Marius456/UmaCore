@@ -380,10 +380,11 @@ class QuotaCalculator:
                 'history': latest_history
             }
 
-            # Get yesterday's cumulative_fans for daily progress calculation
-            yesterday = current_date - timedelta(days=1)
-            yesterday_history = await QuotaHistory.get_for_member_date(member.member_id, yesterday)
-            member_status['yesterday_cumulative_fans'] = yesterday_history.cumulative_fans if yesterday_history else 0
+            # Get the most recent cumulative_fans before today for daily progress calculation
+            # Using the latest record strictly before current_date (not necessarily yesterday)
+            # to properly compute today's delta even if a day was skipped
+            previous_history = await QuotaHistory.get_latest_for_member_before_date(member.member_id, current_date)
+            member_status['yesterday_cumulative_fans'] = previous_history.cumulative_fans if previous_history else 0
 
             # Get month start fans for carry calculation
             month_start = date(current_date.year, current_date.month, 1)

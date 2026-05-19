@@ -86,6 +86,21 @@ class QuotaHistory:
         return None
 
     @classmethod
+    async def get_latest_for_member_before_date(cls, member_id: UUID, before_date: date) -> Optional['QuotaHistory']:
+        """Get the most recent quota history for a member strictly before a given date"""
+        query = """
+            SELECT id, member_id, club_id, date, cumulative_fans, expected_fans, deficit_surplus, days_behind
+            FROM quota_history
+            WHERE member_id = $1 AND date < $2
+            ORDER BY date DESC
+            LIMIT 1
+        """
+        row = await db.fetchrow(query, member_id, before_date)
+        if row:
+            return cls(**dict(row))
+        return None
+
+    @classmethod
     async def get_for_date(cls, club_id: UUID, date: date) -> List['QuotaHistory']:
         """Get all quota histories for a specific date in a club"""
         query = """
