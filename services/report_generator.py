@@ -47,10 +47,10 @@ class ReportGenerator:
             avg_per_day = history.cumulative_fans // days_active if days_active > 0 else 0
 
             # Carry = net surplus/deficit compared to expected quota for this month
-            month_start_fans = item.get('month_start_fans', 0)
-            raw_carry = history.cumulative_fans - month_start_fans
+            # Fans reset monthly in Umamusume, so cumulative_fans already equals this month's fans.
+            # No need to subtract month_start_fans (which would be last month's total).
             expected_fans = daily_quota * days_active
-            carry_fans = raw_carry - expected_fans
+            carry_fans = history.cumulative_fans - expected_fans
             carry_str = f"+{self.format_fans_short(carry_fans)}" if carry_fans >= 0 else f"-{self.format_fans_short(abs(carry_fans))}"
 
             # We truncate the name to 12 chars to prevent table blowout on mobile

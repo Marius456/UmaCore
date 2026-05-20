@@ -386,15 +386,6 @@ class QuotaCalculator:
             previous_history = await QuotaHistory.get_latest_for_member_before_date(member.member_id, current_date)
             member_status['yesterday_cumulative_fans'] = previous_history.cumulative_fans if previous_history else 0
 
-            # Get month start fans for carry calculation
-            month_start = date(current_date.year, current_date.month, 1)
-            if current_date != month_start:
-                day_before_month = month_start - timedelta(days=1)
-                month_start_history = await QuotaHistory.get_for_member_date(member.member_id, day_before_month)
-                member_status['month_start_fans'] = month_start_history.cumulative_fans if month_start_history else 0
-            else:
-                member_status['month_start_fans'] = 0
-
             if period_info:
                 # Fans earned before this period started
                 if period_info['period_start'].day == 1:
