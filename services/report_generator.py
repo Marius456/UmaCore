@@ -49,8 +49,7 @@ class ReportGenerator:
             # Carry = net surplus/deficit compared to expected quota for this month
             # Fans reset monthly in Umamusume, so cumulative_fans already equals this month's fans.
             # No need to subtract month_start_fans (which would be last month's total).
-            expected_fans = daily_quota * days_active
-            carry_fans = history.cumulative_fans - expected_fans
+            carry_fans = history.deficit_surplus
             carry_str = f"+{self.format_fans_short(carry_fans)}" if carry_fans >= 0 else f"-{self.format_fans_short(abs(carry_fans))}"
 
             # We truncate the name to 12 chars to prevent table blowout on mobile
@@ -110,7 +109,7 @@ class ReportGenerator:
         # Remove the sort key before returning
         return [row[:6] for row in table_rows]
 
-    def _split_table_into_sections(self, members_list: List[Dict], max_length: int = 3500, start_index: int = 1, is_behind: bool = False, daily_quota: int = 0) -> List[str]:
+    def _split_table_into_sections(self, members_list: List[Dict], max_length: int = 3500, start_index: int = 1, is_behind: bool = False, daily_quota: int = 0, carry_col_name: str = "Carry") -> List[str]:
         """Splits data into chunks while maintaining table formatting"""
         if not members_list:
             return ["*No members*"]
@@ -119,7 +118,7 @@ class ReportGenerator:
             all_data = self._prepare_behind_table_data(members_list, start_index)
         else:
             all_data = self._prepare_table_data(members_list, start_index, daily_quota)
-        headers = ["#", "Name", "Daily", "Carry", "Avg", "Total"]
+        headers = ["#", "Name", "Daily", carry_col_name, "Avg", "Total"]
 
         sections = []
         current_chunk = []
@@ -217,7 +216,8 @@ class ReportGenerator:
             on_track_sections = self._split_table_into_sections(
                 status_summary['on_track'],
                 max_length=3500,
-                daily_quota=daily_quota
+                daily_quota=daily_quota,
+                carry_col_name="Surplus"
             )
 
             for idx, section in enumerate(on_track_sections):
@@ -236,7 +236,8 @@ class ReportGenerator:
                 status_summary['behind'],
                 max_length=3500,
                 start_index=on_track_count + 1,
-                is_behind=True
+                is_behind=True,
+                carry_col_name="Deficit"
             )
 
             for idx, section in enumerate(behind_sections):
