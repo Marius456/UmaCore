@@ -74,7 +74,7 @@ class MemberCommands(commands.Cog):
             user_link = await UserLink.create(
                 discord_user_id=interaction.user.id,
                 member_id=member.member_id,
-                notify_on_bombs=True,
+                notify_on_bombs=False,
                 notify_on_deficit=False
             )
 
@@ -104,7 +104,7 @@ class MemberCommands(commands.Cog):
             
             embed.add_field(
                 name="🔔 Notifications Enabled",
-                value="• **Bomb Warnings:** ✅ Enabled\n"
+                value="• **Bomb Warnings:** ❌ Disabled\n"
                       "• **Deficit Alerts:** ❌ Disabled",
                 inline=False
             )
