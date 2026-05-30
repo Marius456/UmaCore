@@ -21,6 +21,9 @@ SCRAPE_RETRY_DELAY = 1  # seconds
 # Uma.moe API Configuration
 USE_UMAMOE_API = os.getenv("USE_UMAMOE_API", "true").lower() == "true"
 
+# ComfyUI Configuration
+COMFYUI_URL = os.getenv("COMFYUI_URL", "http://192.168.1.210:8000")
+
 # Timezone Configuration
 TIMEZONE = "Europe/Amsterdam"  # CEST
 DAILY_REPORT_TIME = "16:00"
