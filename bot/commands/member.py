@@ -8,6 +8,7 @@ from datetime import date as date_class
 import logging
 
 from models import Member, QuotaHistory, Bomb, UserLink, Club, QuotaRequirement
+from services.art_balance_service import set_balance
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,24 @@ class MemberCommands(commands.Cog):
                 notify_on_bombs=True,
                 notify_on_deficit=False
             )
-            
+
+            # Immediately populate art balance for the newly linked user
+            try:
+                latest_history = await QuotaHistory.get_latest_for_member(member.member_id)
+                if latest_history:
+                    set_balance(
+                        interaction.user.id,
+                        str(member.member_id),
+                        member.trainer_name,
+                        latest_history.cumulative_fans,
+                    )
+                    logger.info(
+                        f"Art balance set for {interaction.user.id} "
+                        f"({member.trainer_name}): {latest_history.cumulative_fans:,} fans"
+                    )
+            except Exception as e:
+                logger.error(f"Failed to set art balance after linking: {e}")
+
             embed = discord.Embed(
                 title="✅ Trainer Linked!",
                 description=f"Your Discord account is now linked to **{trainer_name}** in **{club}**",
