@@ -1,15 +1,20 @@
 """
 Discord report generation service
 """
+import io
 from datetime import date, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import discord
 import logging
+import plotly.graph_objects as go
 from tabulate import tabulate
 
 from config.settings import COLOR_ON_TRACK, COLOR_BEHIND, COLOR_BOMB, COLOR_INFO
 
 logger = logging.getLogger(__name__)
+
+# Each embed in the report can carry optional file attachments (for table images)
+ReportEmbed = Tuple[discord.Embed, List[discord.File]]
 
 
 class ReportGenerator:
@@ -28,6 +33,43 @@ class ReportGenerator:
         elif abs(num) >= 1_000:
             return f"{num / 1_000:.1f}K"
         return str(num)
+
+    def _generate_table_image(self, headers: List[str], rows: List[List], title_color: str, filename: str) -> discord.File:
+        """Generate a styled table image using plotly and return it as a Discord file attachment."""
+        # Convert hex color like 0x00FF00 to "#00FF00" format
+        hex_str = f"#{title_color:06X}" if isinstance(title_color, int) else title_color
+
+        fig = go.Figure(data=[go.Table(
+            header=dict(
+                values=headers,
+                fill_color=hex_str,
+                font=dict(color='white', size=14, family='Arial'),
+                align='center',
+                height=32
+            ),
+            cells=dict(
+                values=[[str(row[i]) for row in rows] for i in range(len(headers))],
+                fill_color=['white', '#f8f9fa'],
+                font=dict(color='#2c3e50', size=13, family='Arial'),
+                align=['center', 'left', 'center', 'center', 'center', 'center'],
+                height=30,
+                line_color='#dcdcdc',
+                line_width=1
+            )
+        )])
+
+        fig.update_layout(
+            margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor='white',
+            width=750,
+            height=40 + (len(rows) * 33),
+            font=dict(family='Arial')
+        )
+
+        buf = io.BytesIO()
+        fig.write_image(buf, format='png', engine='kaleido')
+        buf.seek(0)
+        return discord.File(buf, filename=filename)
 
     def _prepare_table_data(self, members_list: List[Dict], start_index: int = 1, daily_quota: int = 0) -> List[List]:
         """Converts the member dicts into a list of lists for tabulate"""
@@ -109,8 +151,19 @@ class ReportGenerator:
         # Remove the sort key before returning
         return [row[:6] for row in table_rows]
 
+    def _split_data_into_chunks(self, data: List[List], max_rows_per_chunk: int = 20) -> List[List[List]]:
+        """Split table data into chunks that each fit within a single image."""
+        if not data:
+            return []
+
+        chunks = []
+        for i in range(0, len(data), max_rows_per_chunk):
+            chunks.append(data[i:i + max_rows_per_chunk])
+        return chunks
+
     def _split_table_into_sections(self, members_list: List[Dict], max_length: int = 3500, start_index: int = 1, is_behind: bool = False, daily_quota: int = 0, carry_col_name: str = "Carry") -> List[str]:
-        """Splits data into chunks while maintaining table formatting"""
+        """Splits data into chunks while maintaining table formatting
+        (kept for backward compatibility with any remaining text-table usage)"""
         if not members_list:
             return ["*No members*"]
 
@@ -139,16 +192,44 @@ class ReportGenerator:
 
         return sections
 
+    def _generate_table_embeds(self, title: str, color: int, headers: List[str],
+                                data_rows: List[List], image_prefix: str) -> List[ReportEmbed]:
+        """Generate one or more embeds with table images from prepared data rows."""
+        if not data_rows:
+            return []
+
+        chunks = self._split_data_into_chunks(data_rows, max_rows_per_chunk=20)
+        embeds_with_files = []
+
+        for idx, chunk in enumerate(chunks):
+            embed_title = title if idx == 0 else f"{title} (continued {idx + 1})"
+            image_filename = f"{image_prefix}_{idx}.png"
+
+            # Generate the image
+            file = self._generate_table_image(headers, chunk, color, image_filename)
+
+            embed = discord.Embed(
+                title=embed_title,
+                color=color,
+                timestamp=discord.utils.utcnow()
+            )
+            # Attach image to embed using attachment:// URL
+            embed.set_image(url=f"attachment://{image_filename}")
+
+            embeds_with_files.append((embed, [file]))
+
+        return embeds_with_files
+
     def create_daily_report(self, club_name: str, daily_quota: int, status_summary: Dict,
                             bombs_data: List[Dict], report_date: date,
                             rank_data: Optional[Dict] = None,
-                            quota_period: str = 'daily') -> List[discord.Embed]:
+                            quota_period: str = 'daily') -> List[ReportEmbed]:
         """
         Create the main daily report embeds.
 
-        Returns a list of embeds (multiple if content is too long).
+        Returns a list of (embed, [files]) tuples.
         """
-        embeds = []
+        report_items = []
 
         period_info = status_summary.get('period_info')
 
@@ -190,7 +271,6 @@ class ReportGenerator:
         )
 
         # Only show bomb count if there are active bombs
-        # When bombs are disabled, bombs_data will be empty and this won't show
         if bombs_count > 0:
             summary_text += f"\n💣 Bombs Active: {bombs_count}"
 
@@ -209,46 +289,38 @@ class ReportGenerator:
             )
 
         summary_embed.set_footer(text=f"Umamusume Quota Tracker - {club_name}")
-        embeds.append(summary_embed)
+        report_items.append((summary_embed, []))
 
-        # On Track embed (split if needed)
+        # On Track images
         if status_summary['on_track']:
-            on_track_sections = self._split_table_into_sections(
+            on_track_data = self._prepare_table_data(
                 status_summary['on_track'],
-                max_length=3500,
-                daily_quota=daily_quota,
-                carry_col_name="Surplus"
+                start_index=1,
+                daily_quota=daily_quota
             )
+            table_embeds = self._generate_table_embeds(
+                title="✅ On Track",
+                color=COLOR_ON_TRACK,
+                headers=["#", "Name", "Daily", "Surplus", "Avg", "Total"],
+                data_rows=on_track_data,
+                image_prefix="on_track"
+            )
+            report_items.extend(table_embeds)
 
-            for idx, section in enumerate(on_track_sections):
-                title = "✅ On Track" if idx == 0 else f"✅ On Track (continued {idx + 1})"
-                on_track_embed = discord.Embed(
-                    title=title,
-                    description=f"```fix\n{section}\n```",
-                    color=COLOR_ON_TRACK,
-                    timestamp=discord.utils.utcnow()
-                )
-                embeds.append(on_track_embed)
-
-        # Behind embed (split if needed)
+        # Behind images
         if status_summary['behind']:
-            behind_sections = self._split_table_into_sections(
+            behind_data = self._prepare_behind_table_data(
                 status_summary['behind'],
-                max_length=3500,
-                start_index=on_track_count + 1,
-                is_behind=True,
-                carry_col_name="Deficit"
+                start_index=on_track_count + 1
             )
-
-            for idx, section in enumerate(behind_sections):
-                title = "⚠️ Behind Quota" if idx == 0 else f"⚠️ Behind Quota (continued {idx + 1})"
-                behind_embed = discord.Embed(
-                    title=title,
-                    description=f"```fix\n{section}\n```",
-                    color=0xFF0000,
-                    timestamp=discord.utils.utcnow()
-                )
-                embeds.append(behind_embed)
+            table_embeds = self._generate_table_embeds(
+                title="⚠️ Behind Quota",
+                color=COLOR_BEHIND,
+                headers=["#", "Name", "Daily", "Deficit", "Avg", "Total"],
+                data_rows=behind_data,
+                image_prefix="behind"
+            )
+            report_items.extend(table_embeds)
 
         # Bombs embed (if any)
         if bombs_data:
@@ -259,9 +331,9 @@ class ReportGenerator:
                 color=COLOR_BOMB,
                 timestamp=discord.utils.utcnow()
             )
-            embeds.append(bombs_embed)
+            report_items.append((bombs_embed, []))
 
-        return embeds
+        return report_items
 
     def _format_member_line(self, item: Dict, is_behind: bool, quota_period: str = 'daily') -> str:
         """Format a single member line for on-track or behind sections"""

@@ -492,8 +492,8 @@ class AdminCommands(commands.Cog):
                 rank_data=rank_data, quota_period=club_obj.quota_period
             )
 
-            for embed in daily_reports:
-                await report_channel.send(embed=embed)
+            for embed, files in daily_reports:
+                await report_channel.send(embed=embed, files=files if files else None)
 
             if deactivated:
                 deactivation_embeds = self.report_generator.create_bomb_deactivation_report(

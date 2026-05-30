@@ -323,8 +323,8 @@ class BotTasks:
                         rank_data=rank_data, quota_period=club.quota_period
                     )
 
-                    for embed in daily_reports:
-                        await report_channel.send(embed=embed)
+                    for embed, files in daily_reports:
+                        await report_channel.send(embed=embed, files=files if files else None)
 
                     logger.info(f"✅ Daily report sent for {club.club_name} ({len(daily_reports)} embed(s))")
 

@@ -360,13 +360,14 @@ class QuotaCommands(commands.Cog):
             status_summary = await self.quota_calculator.get_member_status_summary(current_date)
             bombs_data = await self.bomb_manager.get_active_bombs_with_members()
             
+            from config.settings import DAILY_QUOTA
             daily_reports = self.report_generator.create_daily_report(
-                status_summary, bombs_data, current_date
+                "Club", DAILY_QUOTA, status_summary, bombs_data, current_date
             )
             
             # Send all report embeds
-            for embed in daily_reports:
-                await report_channel.send(embed=embed)
+            for embed, files in daily_reports:
+                await report_channel.send(embed=embed, files=files if files else None)
             
             # Alerts
             if newly_activated:
