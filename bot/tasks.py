@@ -11,6 +11,8 @@ import asyncio
 from models import Club, Member, ClubRankHistory, QuotaRequirement
 from scrapers import ChronoGenesisScraper, UmaMoeAPIScraper
 from services import QuotaCalculator, BombManager, ReportGenerator, NotificationService, ScrapeLockManager, ScrapeContext
+from services.art_balance_service import reset_if_new_month, set_balance
+from services.art_balance_service import get_balance as get_art_balance
 from config.settings import USE_UMAMOE_API
 
 logger = logging.getLogger(__name__)
@@ -95,6 +97,9 @@ class BotTasks:
         logger.info("=" * 80)
 
         try:
+            # Check for monthly art balance reset (once per cycle is enough)
+            reset_if_new_month()
+
             async with ScrapeContext(club.club_id, f"tasks_{club.club_name}"):
                 report_channel = self.bot.get_channel(club.report_channel_id)
                 alert_channel = self.bot.get_channel(club.alert_channel_id or club.report_channel_id)
@@ -247,6 +252,12 @@ class BotTasks:
                     await report_channel.send(embed=error_embed)
                     return
 
+                # STEP 4b: Update art balances for linked users in this club
+                try:
+                    await self._update_art_balances(club.club_id, current_date)
+                except Exception as e:
+                    logger.error(f"❌ Error updating art balances for {club.club_name}: {e}", exc_info=True)
+
                 # STEP 5: Bomb management
                 newly_activated_bombs = []
                 deactivated_bombs = []
@@ -387,6 +398,46 @@ class BotTasks:
                     await report_channel.send(embed=error_embed)
             except Exception:
                 pass
+
+    async def _update_art_balances(self, club_id, current_date):
+        """
+        Update art balances for all linked users in a club.
+        Looks up each linked user's latest cumulative fans and sets it as their balance.
+        """
+        from models import UserLink
+        from models import QuotaHistory
+
+        # Get all user links
+        query = """
+            SELECT ul.discord_user_id, ul.member_id, m.trainer_name
+            FROM user_links ul
+            JOIN members m ON m.member_id = ul.member_id
+            WHERE m.club_id = $1 AND m.is_active = TRUE
+        """
+        from config.database import db
+        rows = await db.fetch(query, club_id)
+
+        if not rows:
+            logger.debug(f"No linked users found for club {club_id}")
+            return
+
+        updated = 0
+        for row in rows:
+            discord_user_id = row["discord_user_id"]
+            member_id = row["member_id"]
+            trainer_name = row["trainer_name"]
+
+            # Get the latest quota history for this member
+            latest = await QuotaHistory.get_latest_for_member(member_id)
+            if not latest:
+                logger.debug(f"No quota history for {trainer_name}, skipping art balance")
+                continue
+
+            fans = latest.cumulative_fans
+            set_balance(discord_user_id, str(member_id), trainer_name, fans)
+            updated += 1
+
+        logger.info(f"Art balances updated for {updated}/{len(rows)} linked users in club {club_id}")
 
     @hourly_check.before_loop
     async def before_hourly_check(self):

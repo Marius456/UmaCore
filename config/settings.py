@@ -24,6 +24,10 @@ USE_UMAMOE_API = os.getenv("USE_UMAMOE_API", "true").lower() == "true"
 # ComfyUI Configuration
 COMFYUI_URL = os.getenv("COMFYUI_URL", "http://192.168.1.210:8000")
 
+# Art Command Configuration
+ART_COMMAND_COST = 250_000  # Fan cost per /art usage
+ART_BALANCES_PATH = "data/art_balances.json"
+
 # Timezone Configuration
 TIMEZONE = "Europe/Amsterdam"  # CEST
 DAILY_REPORT_TIME = "16:00"
