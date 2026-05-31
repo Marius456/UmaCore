@@ -85,15 +85,50 @@ class ArtCommands(commands.Cog):
             image_bytes = await generate_image(prompt)
         except ComfyUIError as e:
             logger.error(f"ComfyUI generation failed: {e}")
-            await interaction.followup.send(
-                f"❌ Image generation failed: {e}",
+            error_msg = str(e).lower()
+            is_connection_error = any(
+                kw in error_msg
+                for kw in ("failed to connect", "cannot connect", "semaphore", "timed out")
             )
+
+            if is_connection_error:
+                embed = discord.Embed(
+                    title="🖥️ ComfyUI Server Unreachable",
+                    description=(
+                        "The image generation server appears to be **offline or unresponsive**.\n\n"
+                        "This can happen if the server went to sleep or lost network connection.\n"
+                        "Please try again in a few minutes."
+                    ),
+                    color=0xE74C3C,
+                    timestamp=discord.utils.utcnow(),
+                )
+                embed.set_footer(text="💡 Tip: Make sure the ComfyUI server is powered on and connected to the network.")
+            else:
+                embed = discord.Embed(
+                    title="⚠️ Image Generation Failed",
+                    description=(
+                        "Something went wrong while generating your image.\n"
+                        "Please try again or use a different prompt."
+                    ),
+                    color=0xF39C12,
+                    timestamp=discord.utils.utcnow(),
+                )
+                embed.set_footer(text=f"Error details have been logged.")
+
+            await interaction.followup.send(embed=embed)
             return
         except Exception as e:
             logger.error(f"Unexpected error in /art command: {e}", exc_info=True)
-            await interaction.followup.send(
-                "❌ An unexpected error occurred during image generation.",
+            embed = discord.Embed(
+                title="❌ Unexpected Error",
+                description=(
+                    "An unexpected error occurred during image generation.\n"
+                    "Please try again later."
+                ),
+                color=0xE74C3C,
+                timestamp=discord.utils.utcnow(),
             )
+            await interaction.followup.send(embed=embed)
             return
 
         # Deduct balance after successful generation

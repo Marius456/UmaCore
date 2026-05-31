@@ -51,7 +51,7 @@
   },
   "7": {
     "inputs": {
-      "text": "lazyneg, lazyhand, extra fingers, bad quality, worst quality, worst detail, censor, jar, missing toes, low quality, grainy, noisy, distorted, jagged edges, artifacts, overdetailed, uneven lines, rough, extra toes, missing finger, watermark, jpeg artifacts, blurry, lowres, wrong toes, wrong feet, bad anatomy, old, early, bad proportions, bad hands, bad perspective,  extra arms, extra hand, dull, poorly drawn hands, poorly drawn face, deformed, ugly, skinny, boring, flat",
+      "text": "worst quality,bad quality,bad hands,very displeasing,extra digit,fewer digits,jpeg artifacts,signature,username,reference,mutated,lineup,manga,comic,disembodied,futanari,yaoi,dickgirl,turnaround,2koma,4koma,monster,cropped,amputee,text,bad foreshortening,what,guro,logo,bad anatomy,bad perspective,bad proportions,artistic error,anatomical nonsense,amateur, nsfw",
       "clip": [
         "13",
         1
