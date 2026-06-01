@@ -87,13 +87,9 @@ def reset_if_new_month() -> bool:
 def get_balance(discord_user_id: int) -> int:
     """
     Get a user's current spendable fan balance.
-    Returns 0 if the user is not found or the month is stale.
+    Returns 0 if the user is not found.
     """
     data = _load()
-    current_month = datetime.now().strftime("%Y-%m")
-
-    if data["month"] != current_month:
-        return 0
 
     entry = data["balances"].get(str(discord_user_id))
     if not entry:
@@ -108,10 +104,6 @@ def get_balance_info(discord_user_id: int) -> Optional[dict]:
     Returns dict with balance, trainer_name, last_updated or None if not found.
     """
     data = _load()
-    current_month = datetime.now().strftime("%Y-%m")
-
-    if data["month"] != current_month:
-        return None
 
     return data["balances"].get(str(discord_user_id))
 
@@ -123,13 +115,6 @@ def deduct_balance(discord_user_id: int, amount: int) -> int:
     Raises InsufficientBalanceError if balance < amount.
     """
     data = _load()
-    current_month = datetime.now().strftime("%Y-%m")
-
-    if data["month"] != current_month:
-        raise InsufficientBalanceError(
-            f"Your fan balance has been reset for the new month ({current_month}). "
-            f"You have 0 fans."
-        )
 
     entry = data["balances"].get(str(discord_user_id))
     if not entry:

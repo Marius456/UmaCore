@@ -15,6 +15,7 @@ from services.art_balance_service import (
     deduct_balance,
     InsufficientBalanceError,
 )
+from models.user_link import UserLink
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +57,12 @@ class ArtCommands(commands.Cog):
             )
             return
 
-        # Check if user is linked (has a balance entry)
-        balance_info = get_balance_info(interaction.user.id)
-        if not balance_info:
+        # Check if user is linked (has a user_link in the database)
+        user_link = await UserLink.get_by_discord_id(interaction.user.id)
+        if not user_link:
             await interaction.response.send_message(
                 "❌ You need to link your account first to use `/art`.\n"
-                "Use `/link` to connect your Discord account to your club member profile.",
+                "Use `/link_trainer` to connect your Discord account to your club member profile.",
                 ephemeral=True,
             )
             return
