@@ -13,10 +13,10 @@ from config.settings import COMFYUI_URL
 logger = logging.getLogger(__name__)
 
 # Path to the workflow JSON relative to the project root
-WORKFLOW_PATH = "workflows/art.json"
+WORKFLOW_PATH = "workflows/uma.json"
 
 # Workflow node ID containing the positive prompt text
-PROMPT_NODE_ID = "15"
+PROMPT_NODE_ID = "3"
 
 
 class ComfyUIError(Exception):
