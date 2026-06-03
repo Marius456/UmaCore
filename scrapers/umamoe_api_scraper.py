@@ -12,7 +12,7 @@ import json
 import asyncio
 from datetime import datetime, date, timezone, timedelta
 
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, Error as PlaywrightError
 
 from scrapers.base_scraper import BaseScraper
 
@@ -33,7 +33,16 @@ async def _get_browser():
     if _browser is None or not _browser.is_connected():
         if _playwright is None:
             _playwright = await async_playwright().start()
-        _browser = await _playwright.chromium.launch(headless=True)
+        try:
+            _browser = await _playwright.chromium.launch(headless=True)
+        except PlaywrightError as e:
+            message = str(e)
+            if "Executable doesn't exist" in message or "playwright install" in message.lower():
+                raise RuntimeError(
+                    "Playwright Chromium is not installed. Run 'python -m playwright install chromium' "
+                    "or 'playwright install chromium' after installing dependencies."
+                ) from e
+            raise
         logger.info("Started shared Playwright browser instance for Uma.moe API")
     return _browser
 
