@@ -258,3 +258,6 @@ local_settings.py
 # Local dev/admin scripts
 preview_chart.py
 VPS_SETUP.md
+
+# Playwright cookie storage (Cloudflare clearance cookies)
+.umamoe_cookies/

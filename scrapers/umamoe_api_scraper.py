@@ -1,74 +1,294 @@
 """
 Uma.moe API scraper for club data fetching
 
-Uses Playwright to bypass Cloudflare's browser_proof_required challenge
-by first visiting the main uma.moe page (which sets Cloudflare cookies),
-then fetching the API endpoint.
+Uses Playwright with system Chrome in non-headless mode to bypass
+Cloudflare's browser_proof_required challenge, with stealth patches
+and persistent cookie storage for robust scraping.
 """
 from typing import Dict, Optional, List
 import logging
 import calendar
 import json
 import asyncio
+import os
+import subprocess
 from datetime import datetime, date, timezone, timedelta
 
 from playwright.async_api import async_playwright, Error as PlaywrightError
+from playwright.async_api import BrowserContext, Page
 
 from scrapers.base_scraper import BaseScraper
+from config.settings import PLAYWRIGHT_HEADLESS, PLAYWRIGHT_COOKIE_DIR
 
 logger = logging.getLogger(__name__)
 
 # Shared browser instance across scrape calls (lazy-initialised, reused for performance)
 _browser = None
+_browser_context = None
 _playwright = None
+_orphan_pids = []
+
+
+def _get_chrome_path() -> Optional[str]:
+    """
+    Detect the system Chrome executable path on Windows.
+    Returns None if not found, in which case Playwright's bundled Chromium is used.
+    """
+    candidates = [
+        os.path.join(os.environ.get("PROGRAMFILES", "C:\\Program Files"),
+                     "Google\\Chrome\\Application\\chrome.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)"),
+                     "Google\\Chrome\\Application\\chrome.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""),
+                     "Google\\Chrome\\Application\\chrome.exe"),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            logger.info(f"Found system Chrome at: {path}")
+            return path
+    logger.warning("System Chrome not found in common locations; will fall back to Playwright bundled Chromium")
+    return None
+
+
+def _get_cookie_dir() -> str:
+    """Return the persistent cookie storage directory, creating it if needed."""
+    cookie_dir = PLAYWRIGHT_COOKIE_DIR
+    os.makedirs(cookie_dir, exist_ok=True)
+    logger.debug(f"Cookie directory: {os.path.abspath(cookie_dir)}")
+    return cookie_dir
+
+
+async def _setup_stealth_patches(page: Page) -> None:
+    """
+    Apply JavaScript-based stealth patches to evade Cloudflare headless detection.
+    These patches run before any page script executes.
+    """
+    await page.add_init_script("""
+        // Override navigator.webdriver
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined
+        });
+
+        // Override navigator.plugins to return a non-empty array
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => [1, 2, 3, 4, 5]
+        });
+
+        // Override navigator.languages
+        Object.defineProperty(navigator, 'languages', {
+            get: () => ['en-US', 'en']
+        });
+
+        // Override navigator.hardwareConcurrency
+        Object.defineProperty(navigator, 'hardwareConcurrency', {
+            get: () => 8
+        });
+
+        // Override permissions query to avoid detection
+        if (navigator.permissions) {
+            const originalQuery = navigator.permissions.query;
+            navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ||
+                parameters.name === 'geolocation' ||
+                parameters.name === 'camera' ||
+                parameters.name === 'microphone'
+            ) ? Promise.resolve({ state: 'denied' }) : originalQuery(parameters);
+        }
+
+        // Override chrome.runtime if it exists (real Chrome has it)
+        if (window.chrome && window.chrome.runtime) {
+            Object.defineProperty(window.chrome.runtime, 'id', {
+                get: () => 'abcdefghijklmnop'
+            });
+        }
+
+        // Add missing chrome properties that real Chrome has
+        if (window.chrome) {
+            if (!window.chrome.app) window.chrome.app = {};
+            if (!window.chrome.csi) window.chrome.csi = () => {};
+            if (!window.chrome.loadTimes) window.chrome.loadTimes = () => {};
+        }
+    """)
+
+
+async def _get_browser_context() -> BrowserContext:
+    """
+    Get or create a shared persistent Playwright browser context.
+    The context stores Cloudflare clearance cookies so they survive restarts.
+    """
+    global _browser_context, _browser
+    if _browser_context is None or not _browser_context.browser or not _browser_context.browser.is_connected():
+        browser = await _get_browser()
+        cookie_dir = _get_cookie_dir()
+        _browser_context = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+            timezone_id="America/New_York",
+            storage_state=os.path.join(cookie_dir, "storage_state.json") if os.path.exists(
+                os.path.join(cookie_dir, "storage_state.json")) else None,
+        )
+        logger.info("Created persistent Playwright browser context (non-headless)")
+    return _browser_context
 
 
 async def _get_browser():
     """
-    Get or create a shared Playwright browser instance.
-    The browser is kept alive across calls to avoid the overhead of launching
-    a new browser for every scrape. It is closed when the bot shuts down.
+    Get or create a shared Playwright browser instance using system Chrome.
+    Uses non-headless mode to bypass Cloudflare's headless detection.
+    Falls back to Playwright's bundled Chromium if system Chrome is not found.
     """
     global _browser, _playwright
-    if _browser is None or not _browser.is_connected():
-        if _playwright is None:
-            _playwright = await async_playwright().start()
-        try:
-            _browser = await _playwright.chromium.launch(headless=True)
-        except PlaywrightError as e:
-            message = str(e)
-            if "Executable doesn't exist" in message or "playwright install" in message.lower():
-                raise RuntimeError(
-                    "Playwright Chromium is not installed. Run 'python -m playwright install chromium' "
-                    "or 'playwright install chromium' after installing dependencies."
-                ) from e
-            raise
-        logger.info("Started shared Playwright browser instance for Uma.moe API")
+    if _browser is not None and _browser.is_connected():
+        return _browser
+
+    if _playwright is None:
+        _playwright = await async_playwright().start()
+
+    chrome_path = _get_chrome_path()
+    launch_args = [
+        "--no-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-web-security",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--window-size=1920,1080",
+        "--window-position=-32000,-32000",  # Off-screen positioning to avoid visible window popup
+    ]
+    try:
+        if chrome_path and os.name == 'nt':
+            # Use system Chrome with channel detection
+            _browser = await _playwright.chromium.launch(
+                headless=False,
+                executable_path=chrome_path,
+                args=launch_args,
+                timeout=30000,
+            )
+            logger.info("Started system Chrome (non-headless) via Playwright")
+        elif PLAYWRIGHT_HEADLESS:
+            _browser = await _playwright.chromium.launch(
+                headless=True,
+                args=launch_args,
+                timeout=30000,
+            )
+            logger.info("Started Playwright bundled Chromium (headless, forcing headless mode via config)")
+        else:
+            # Try channel='chrome' which uses system Chrome by channel detection
+            try:
+                _browser = await _playwright.chromium.launch(
+                    headless=False,
+                    channel='chrome',
+                    args=launch_args,
+                    timeout=30000,
+                )
+                logger.info("Started system Chrome (non-headless, channel=chrome)")
+            except Exception as channel_err:
+                logger.warning(f"Could not launch system Chrome via channel='chrome': {channel_err}")
+                # Fallback: try with bundled Chromium in headless mode (last resort)
+                _browser = await _playwright.chromium.launch(
+                    headless=True,
+                    args=launch_args,
+                    timeout=30000,
+                )
+                logger.warning("Falling back to Playwright bundled Chromium (headless mode)")
+
+    except PlaywrightError as e:
+        message = str(e)
+        if "Executable doesn't exist" in message or "playwright install" in message.lower():
+            raise RuntimeError(
+                "Playwright Chromium is not installed. Run 'python -m playwright install chromium' "
+                "or 'playwright install chromium' after installing dependencies."
+            ) from e
+        raise
+    except Exception as e:
+        logger.error(f"Failed to launch browser: {e}")
+        # Last-resort fallback to headless bundled Chromium
+        _browser = await _playwright.chromium.launch(
+            headless=True,
+            args=["--no-sandbox"],
+            timeout=30000,
+        )
+        logger.warning("Fallback: launched Playwright bundled Chromium in headless mode after error")
+
+    # Track Chrome process PID for cleanup
+    try:
+        if hasattr(_browser, 'process') and _browser.process:
+            pid = _browser.process.pid
+            if pid:
+                _orphan_pids.append(pid)
+                logger.debug(f"Tracking browser process PID: {pid}")
+    except Exception:
+        pass
+
     return _browser
 
 
 async def _close_browser():
     """Close the shared browser instance (call on bot shutdown)."""
-    global _browser, _playwright
-    try:
-        if _browser:
+    global _browser, _browser_context, _playwright, _orphan_pids
+
+    # Save storage state (cookies + localStorage) before closing
+    if _browser_context:
+        try:
+            cookie_dir = _get_cookie_dir()
+            storage_path = os.path.join(cookie_dir, "storage_state.json")
+            await _browser_context.storage_state(path=storage_path)
+            logger.info(f"Saved browser storage state to {storage_path}")
+        except Exception as e:
+            logger.warning(f"Failed to save storage state: {e}")
+
+    # Close browser context
+    if _browser_context:
+        try:
+            await _browser_context.close()
+        except Exception:
+            pass
+        _browser_context = None
+
+    # Close browser
+    if _browser:
+        try:
             await _browser.close()
-    except Exception:
-        pass
-    try:
-        if _playwright:
+        except Exception:
+            pass
+        _browser = None
+
+    # Stop Playwright
+    if _playwright:
+        try:
             await _playwright.stop()
-    except Exception:
-        pass
-    _browser = None
-    _playwright = None
+        except Exception:
+            pass
+        _playwright = None
+
+    # Force-kill any orphaned Chrome processes (Windows)
+    if _orphan_pids and os.name == 'nt':
+        for pid in set(_orphan_pids):
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", str(pid)],
+                    capture_output=True,
+                    timeout=5,
+                )
+                logger.debug(f"Killed orphaned Chrome process PID: {pid}")
+            except Exception:
+                pass
+    _orphan_pids.clear()
+
     logger.info("Closed shared Playwright browser instance")
 
 
 class UmaMoeAPIScraper(BaseScraper):
     """Scraper using Uma.moe API for fast data retrieval"""
 
-    CLOUDFLARE_TIMEOUT = 45  # seconds to wait for Cloudflare challenge to resolve
+    CLOUDFLARE_TIMEOUT = 60  # seconds to wait for Cloudflare challenge to resolve
 
     def __init__(self, circle_id: str):
         self.circle_id = circle_id
@@ -86,32 +306,48 @@ class UmaMoeAPIScraper(BaseScraper):
         self._yesterday_rank: Optional[int] = None
         super().__init__(self.base_url)
 
-    async def _fetch_json_via_page(self, page, url: str) -> Optional[dict]:
+    async def _fetch_json_via_fetch(self, page, url: str) -> Optional[dict]:
         """
-        Navigate to the given URL and extract the JSON response body from <pre>.
+        Fetch JSON from the given URL using JavaScript fetch() within the page context.
+        This preserves Cloudflare Turnstile proof (page.goto() would lose it).
         Returns parsed dict or None on failure.
         """
         try:
-            response = await page.goto(url, wait_until="domcontentloaded", timeout=self.CLOUDFLARE_TIMEOUT * 1000)
-            if response is None:
-                logger.error("No response received for %s", url)
+            result = await page.evaluate("""
+                async (url) => {
+                    try {
+                        const resp = await fetch(url);
+                        const body = await resp.text();
+                        let parsed = null;
+                        try { parsed = JSON.parse(body); } catch(e) {}
+                        return {
+                            status: resp.status,
+                            body: body,
+                            ok: resp.ok,
+                            error: null
+                        };
+                    } catch (e) {
+                        return { status: 0, body: '', ok: false, error: e.message };
+                    }
+                }
+            """, url)
+
+            if result.get("error"):
+                logger.error(f"Fetch failed for {url}: {result['error']}")
                 return None
 
-            status = response.status
+            status = result.get("status")
             if status != 200:
-                body_text = await page.locator("pre").text_content() or ""
-                logger.error(f"Uma.moe API returned status {status} for {url}: {body_text[:200]}")
+                body_preview = (result.get("body") or "")[:200]
+                logger.error(f"Uma.moe API returned status {status} for {url}: {body_preview}")
                 return None
 
-            # Give any remaining dynamic content a moment to settle
-            await asyncio.sleep(1)
-
-            body_text = await page.locator("pre").text_content()
-            if not body_text:
+            body = result.get("body")
+            if not body:
                 logger.error("Empty response body for %s", url)
                 return None
 
-            return json.loads(body_text)
+            return json.loads(body)
 
         except Exception as e:
             logger.error(f"Request failed for {url}: {e}")
@@ -119,33 +355,64 @@ class UmaMoeAPIScraper(BaseScraper):
 
     async def _fetch_api_data(self, year: int, month: int) -> dict:
         """
-        Fetch API data by opening a Playwright page, visiting uma.moe first
-        (to satisfy Cloudflare's browser_proof_required challenge), then
-        navigating to the API endpoint.
+        Fetch API data using a persistent non-headless browser context.
+
+        Shows a brief Chrome window (positioned off-screen) to satisfy
+        Cloudflare's browser_proof_required challenge. After initial
+        resolution, cookies are persisted and reused for subsequent calls.
 
         Returns the full API response dict. Raises on failure.
         """
-        browser = await _get_browser()
-        context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            )
-        )
+        context = await _get_browser_context()
         page = await context.new_page()
 
         try:
+            # Apply stealth patches before any navigation
+            await _setup_stealth_patches(page)
+
             # Step 1: Visit the main uma.moe page to solve the Cloudflare challenge.
             # This sets the necessary cookies/tokens for subsequent API calls.
             logger.info("Visiting uma.moe main page to satisfy Cloudflare challenge...")
             await page.goto("https://uma.moe/", wait_until="domcontentloaded", timeout=self.CLOUDFLARE_TIMEOUT * 1000)
 
             # Wait for the page to fully settle after challenge resolution
-            await page.wait_for_load_state("networkidle", timeout=self.CLOUDFLARE_TIMEOUT * 1000)
-            logger.info("Cloudflare challenge resolved successfully")
+            try:
+                await page.wait_for_load_state("networkidle", timeout=self.CLOUDFLARE_TIMEOUT * 1000)
+            except Exception as e:
+                logger.warning(f"Network idle wait timed out for main page (may be okay): {e}")
 
-            # Step 2: Build the API URL and fetch data
+            # Verify we got past Cloudflare by checking page content
+            page_title = await page.title()
+            page_text = await page.locator("body").text_content() or ""
+            logger.info(f"Main page loaded: title='{page_title[:80]}', content length={len(page_text)}")
+
+            # Check if we're still stuck on a Cloudflare challenge page
+            if "Just a moment" in page_text[:500] or "checking your browser" in page_text[:500].lower():
+                logger.warning("Cloudflare challenge may still be in progress or blocking access")
+                # Give it a bit more time
+                await asyncio.sleep(10)
+                page_text = await page.locator("body").text_content() or ""
+                if "Just a moment" in page_text[:500]:
+                    logger.error("Cloudflare challenge still present after extended wait — page may be blocked")
+                else:
+                    logger.info("Cloudflare challenge resolved after extended wait")
+            else:
+                logger.info("Cloudflare challenge appears resolved (main page loaded successfully)")
+
+            # Step 2: Dismiss cookie consent popup (Angular overlay on uma.moe)
+            # The API endpoint won't return data while this overlay is present.
+            try:
+                reject_btn = page.locator("button.consent-btn.reject")
+                if await reject_btn.is_visible(timeout=5000):
+                    await reject_btn.click()
+                    logger.info("Dismissed cookie consent popup (Reject All)")
+                    await asyncio.sleep(1)  # Give overlay animation time to disappear
+                else:
+                    logger.debug("Cookie consent popup not found — may already be dismissed")
+            except Exception as e:
+                logger.debug(f"Cookie consent popup handling (non-critical): {e}")
+
+            # Step 3: Build the API URL and fetch data
             api_url = (
                 f"{self.base_url}"
                 f"?circle_id={self.circle_id}"
@@ -154,14 +421,23 @@ class UmaMoeAPIScraper(BaseScraper):
             )
             logger.info(f"Fetching API data from: {api_url}")
 
-            data = await self._fetch_json_via_page(page, api_url)
+            data = await self._fetch_json_via_fetch(page, api_url)
             if data is None:
                 raise ValueError(f"API request failed for {year}-{month:02d}")
+
+            # Save cookies/storage state for future reuse
+            try:
+                cookie_dir = _get_cookie_dir()
+                storage_path = os.path.join(cookie_dir, "storage_state.json")
+                await context.storage_state(path=storage_path)
+                logger.info(f"Saved storage state after successful fetch to {storage_path}")
+            except Exception as e:
+                logger.warning(f"Failed to save storage state after fetch: {e}")
 
             return data
 
         finally:
-            await context.close()
+            await page.close()
 
     async def scrape(self) -> Dict[str, Dict]:
         """
