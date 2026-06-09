@@ -74,13 +74,14 @@ class LeaderboardReportService:
             inline=False,
         )
 
-        # Section 2 — Leader Change
+        # Section 2 — Leader Change (only if something happened)
         leader_text = cls._format_leader_change(leader_change)
-        embed.add_field(
-            name="🏆 Leader Change",
-            value=leader_text,
-            inline=False,
-        )
+        if leader_text:
+            embed.add_field(
+                name="🏆 Leader Change",
+                value=leader_text,
+                inline=False,
+            )
 
         # Section 3 — Rivalries
         rivalries_text = cls._format_rivalries(rivalries)
@@ -355,6 +356,9 @@ class LeaderboardReportService:
             if best["date"] == latest_date:
                 # prev_best is the next best (index 1) if it exists
                 prev_best = deltas[1]["delta"] if len(deltas) > 1 else None
+                # Only include if they have a genuine previous best to beat
+                if prev_best is None or prev_best <= 0:
+                    continue
                 today_bests.append({
                     "name": name,
                     "delta": best["delta"],
@@ -437,18 +441,11 @@ class LeaderboardReportService:
         return "\n".join(parts)
 
     @classmethod
-    def _format_leader_change(cls, leader_change: Dict[str, Any]) -> str:
+    def _format_leader_change(cls, leader_change: Dict[str, Any]) -> Optional[str]:
+        """Return formatted text if leader changed, or None to skip the field."""
         if not leader_change["changed"]:
-            # Leader held position
-            top = leader_change.get("new_leader") or leader_change.get("old_leader")
-            if top:
-                return (
-                    f"**{top}** remains at **#1**. "
-                    f"_No change at the top today._"
-                )
-            return "_No leader data available._"
+            return None
 
-        # Leader changed!
         old = leader_change["old_leader"]
         new = leader_change["new_leader"]
         streak = leader_change["old_streak"]
