@@ -92,7 +92,7 @@ class LeaderboardReportService:
         )
 
         # Section 4 — Today's Records
-        records_text = cls._format_today_records(today_records, club_record)
+        records_text = cls._format_today_records(today_records, club_record, latest_date)
         embed.add_field(
             name="🔥 Today's Records",
             value=records_text,
@@ -306,11 +306,19 @@ class LeaderboardReportService:
         """
         Find pairs of members who swapped positions most frequently
         over the entire month.
-        Returns [{name_a, name_b, swap_count}, ...] sorted desc.
+        Returns [{name_a, name_b, swap_count, rank_range, who_leads, fan_gap}, ...]
+        sorted desc.
         """
         day_rankings: Dict[date, Dict[str, int]] = {
             d: {e["name"]: e["rank"] for e in entries}
             for d, entries in daily_rankings.items()
+        }
+
+        # Also track name->fans for latest day (to compute gap)
+        latest_date = max(daily_rankings.keys())
+        latest_fans: Dict[str, int] = {
+            e["name"]: e["fans"]
+            for e in daily_rankings.get(latest_date, [])
         }
 
         sorted_dates = sorted(day_rankings.keys())
@@ -327,10 +335,48 @@ class LeaderboardReportService:
                 if prev_order != curr_order:
                     swap_counter[(a, b)] += 1
 
-        rivalries = [
-            {"name_a": a, "name_b": b, "swap_count": count}
-            for (a, b), count in swap_counter.items()
-        ]
+        rivalries: List[Dict[str, Any]] = []
+        for (a, b), count in swap_counter.items():
+            # Current ranks on the latest day
+            rank_a = day_rankings.get(latest_date, {}).get(a)
+            rank_b = day_rankings.get(latest_date, {}).get(b)
+            # rank_range = the two positions they currently occupy (sorted)
+            if rank_a is not None and rank_b is not None:
+                min_rank = min(rank_a, rank_b)
+                max_rank = max(rank_a, rank_b)
+            else:
+                min_rank = 1
+                max_rank = 1
+            fans_a = latest_fans.get(a, 0)
+            fans_b = latest_fans.get(b, 0)
+
+            who_leads: Optional[str] = None
+            fan_gap: int = 0
+            if rank_a is not None and rank_b is not None:
+                if rank_a < rank_b:
+                    who_leads = a
+                    fan_gap = fans_a - fans_b
+                elif rank_b < rank_a:
+                    who_leads = b
+                    fan_gap = fans_b - fans_a
+                else:
+                    # Same rank — whoever has more fans leads
+                    if fans_a >= fans_b:
+                        who_leads = a
+                        fan_gap = fans_a - fans_b
+                    else:
+                        who_leads = b
+                        fan_gap = fans_b - fans_a
+
+            rivalries.append({
+                "name_a": a,
+                "name_b": b,
+                "swap_count": count,
+                "rank_range": (min_rank, max_rank),
+                "who_leads": who_leads,
+                "fan_gap": fan_gap,
+            })
+
         rivalries.sort(key=lambda r: r["swap_count"], reverse=True)
         return rivalries[:3]
 
@@ -471,9 +517,17 @@ class LeaderboardReportService:
             )
         lines = []
         for r in rivalries:
+            rank_min, rank_max = r["rank_range"]
+            rank_str = f"#{rank_min}" if rank_min == rank_max else f"#{rank_min}-#{rank_max}"
+
+            gap_str = ""
+            if r["who_leads"] and r["fan_gap"] >= 0:
+                gap_str = f" 🔺 {r['who_leads']} leads by {cls._fmt_fans(r['fan_gap'])}"
+
             lines.append(
                 f"⚔️ **{r['name_a']}** vs **{r['name_b']}** — "
-                f"**{r['swap_count']}** position swap{'s' if r['swap_count'] != 1 else ''}"
+                f"fighting for {rank_str} ({r['swap_count']} swap{'s' if r['swap_count'] != 1 else ''})"
+                f"{gap_str}"
             )
         return "\n".join(lines)
 
@@ -482,6 +536,7 @@ class LeaderboardReportService:
         cls,
         today_records: Dict[str, Any],
         club_record: Optional[Dict[str, Any]],
+        latest_date: date,
     ) -> str:
         parts: List[str] = []
 
@@ -504,7 +559,7 @@ class LeaderboardReportService:
                 f"on {cls._fmt_date(club_record['date'])}"
             )
             # If the club record was set today, highlight it
-            if today_records["members"] and club_record["date"] == today_records["members"][0].get("date"):
+            if club_record["date"] == latest_date:
                 record_info += " ⭐ _(set today!)_"
             parts.append(record_info)
 
