@@ -1,7 +1,7 @@
 """
 Leaderboard Report Service — generates a "news segment" embed analyzing
-daily leaderboard position changes, streaks, rivalries, and records
-from the existing QuotaHistory data for a given month.
+today's leaderboard position changes (with month-long context for
+rivalries and leader changes).
 """
 import logging
 import calendar
@@ -46,49 +46,43 @@ class LeaderboardReportService:
         month_label = date(year, month, 1).strftime("%B %Y")
 
         # ── Analysis segments ───────────────────────────────────────────
-        streak = cls._compute_first_place_streak(daily_rankings)
-        climbers = cls._compute_biggest_climbers(daily_rankings)
-        fallers = cls._compute_biggest_fallers(daily_rankings)
+        latest_date = max(daily_rankings.keys())
+        yesterday_date = cls._get_previous_day(daily_rankings, latest_date)
+
+        movers = cls._compute_today_movers(daily_rankings, latest_date)
+        leader_change = cls._compute_leader_change(daily_rankings, latest_date, yesterday_date)
         rivalries = cls._compute_rivalries(daily_rankings)
-        prs = cls._compute_personal_records(daily_deltas)
+        today_records = cls._compute_today_records(daily_deltas, latest_date)
         club_record = cls._compute_club_record(daily_deltas)
 
         # ── Build embed ─────────────────────────────────────────────────
         embed = discord.Embed(
-            title=f"📰 Leaderboard Report — {club_name}",
+            title=f"📰 Leaderboard News — {club_name}",
             description=(
                 f"**{month_label}** · {member_count} members\n"
-                f"_A look at the position battles and records from this month_"
+                f"_{cls._fmt_date(latest_date)} update_"
             ),
             color=COLOR_INFO,
             timestamp=discord.utils.utcnow(),
         )
 
-        # Section 1 — First Place Streak
-        streak_text = cls._format_streak(streak)
+        # Section 1 — Today's Movers
+        movers_text = cls._format_today_movers(movers)
         embed.add_field(
-            name="🏆 First Place Streak",
-            value=streak_text,
+            name="⬆️⬇️ Today's Movers",
+            value=movers_text,
             inline=False,
         )
 
-        # Section 2 — Biggest Risers
-        risers_text = cls._format_climbers(climbers)
+        # Section 2 — Leader Change
+        leader_text = cls._format_leader_change(leader_change)
         embed.add_field(
-            name="⬆️ Biggest Risers",
-            value=risers_text,
+            name="🏆 Leader Change",
+            value=leader_text,
             inline=False,
         )
 
-        # Section 3 — Biggest Fallers
-        fallers_text = cls._format_fallers(fallers)
-        embed.add_field(
-            name="⬇️ Biggest Fallers",
-            value=fallers_text,
-            inline=False,
-        )
-
-        # Section 4 — Rivalries
+        # Section 3 — Rivalries
         rivalries_text = cls._format_rivalries(rivalries)
         embed.add_field(
             name="⚔️ Rivalries",
@@ -96,10 +90,10 @@ class LeaderboardReportService:
             inline=False,
         )
 
-        # Section 5 — Records
-        records_text = cls._format_records(prs, club_record)
+        # Section 4 — Today's Records
+        records_text = cls._format_today_records(today_records, club_record)
         embed.add_field(
-            name="🔥 Records",
+            name="🔥 Today's Records",
             value=records_text,
             inline=False,
         )
@@ -120,19 +114,16 @@ class LeaderboardReportService:
 
         Returns {date: [{name, fans, rank, prev_rank}, ...]} sorted by date.
         """
-        # Group rows by date
         by_date: Dict[date, list] = defaultdict(list)
         for row in rows:
             by_date[row["date"]].append(row)
 
-        # Sort dates
         sorted_dates = sorted(by_date.keys())
         rankings: Dict[date, List[Dict]] = {}
-        previous_lookup: Dict[str, int] = {}  # name -> rank of previous day
+        previous_lookup: Dict[str, int] = {}
 
         for d in sorted_dates:
             day_rows = by_date[d]
-            # Sort descending by cumulative_fans
             day_rows.sort(key=lambda r: r["cumulative_fans"], reverse=True)
 
             entries: List[Dict] = []
@@ -143,7 +134,6 @@ class LeaderboardReportService:
                 name: str = row["trainer_name"]
                 fans: int = row["cumulative_fans"]
 
-                # Assign rank (tied fans get same rank)
                 if fans == prev_fans:
                     rank = prev_rank
                 else:
@@ -164,6 +154,17 @@ class LeaderboardReportService:
 
         return rankings
 
+    @classmethod
+    def _get_previous_day(
+        cls, daily_rankings: Dict[date, List[Dict]], current_date: date
+    ) -> Optional[date]:
+        """Get the previous available date in the rankings."""
+        sorted_dates = sorted(daily_rankings.keys())
+        idx = sorted_dates.index(current_date)
+        if idx > 0:
+            return sorted_dates[idx - 1]
+        return None
+
     # ── Daily delta computation ─────────────────────────────────────────
 
     @classmethod
@@ -174,10 +175,9 @@ class LeaderboardReportService:
         For each member, compute the single-day fan gain (delta) between
         consecutive dates.
 
-        Returns {member_name: [{date, delta}, ...]} with each member's
-        list sorted by delta descending.
+        Returns {member_name: [{date, delta, fans_total}, ...]} with each
+        member's list sorted by delta descending.
         """
-        # Group by member name, collect date -> cumulative_fans
         member_data: Dict[str, List[Tuple[date, int]]] = defaultdict(list)
         for row in rows:
             member_data[row["trainer_name"]].append(
@@ -186,10 +186,10 @@ class LeaderboardReportService:
 
         result: Dict[str, List[Dict]] = {}
         for name, entries in member_data.items():
-            entries.sort(key=lambda x: x[0])  # sort by date ascending
+            entries.sort(key=lambda x: x[0])
             deltas: List[Dict] = []
             for i in range(1, len(entries)):
-                prev_date, prev_fans = entries[i - 1]
+                _, prev_fans = entries[i - 1]
                 curr_date, curr_fans = entries[i]
                 delta = curr_fans - prev_fans
                 deltas.append({
@@ -197,7 +197,6 @@ class LeaderboardReportService:
                     "delta": delta,
                     "fans_total": curr_fans,
                 })
-            # Sort by delta descending
             deltas.sort(key=lambda d: d["delta"], reverse=True)
             if deltas:
                 result[name] = deltas
@@ -207,116 +206,107 @@ class LeaderboardReportService:
     # ── Analysis helpers ────────────────────────────────────────────────
 
     @classmethod
-    def _compute_first_place_streak(
-        cls, daily_rankings: Dict[date, List[Dict]]
-    ) -> Dict[str, Any]:
+    def _compute_today_movers(
+        cls,
+        daily_rankings: Dict[date, List[Dict]],
+        latest_date: date,
+    ) -> Dict[str, List[Dict]]:
         """
-        Find the longest consecutive run at rank 1 across all dates.
-        Returns {name, streak_length, start_date, end_date}.
-        If no streak found, streak_length is 0.
+        Top climbers and fallers for today only (comparing latest_date
+        to the day before).
+
+        Returns {climbers: [{name, old_rank, new_rank, delta}],
+                 fallers: [{name, old_rank, new_rank, delta}]}
         """
-        current_leader: Optional[str] = None
-        current_streak = 0
-        best: Dict[str, Any] = {
-            "name": None,
-            "streak_length": 0,
-            "start_date": None,
-            "end_date": None,
+        today_entries = daily_rankings.get(latest_date, [])
+        climbers: List[Dict] = []
+        fallers: List[Dict] = []
+
+        for entry in today_entries:
+            prev = entry.get("prev_rank")
+            if prev is None:
+                continue
+            delta = prev - entry["rank"]  # positive = climbed, negative = dropped
+            if delta > 0:
+                climbers.append({
+                    "name": entry["name"],
+                    "old_rank": prev,
+                    "new_rank": entry["rank"],
+                    "delta": delta,
+                })
+            elif delta < 0:
+                fallers.append({
+                    "name": entry["name"],
+                    "old_rank": prev,
+                    "new_rank": entry["rank"],
+                    "delta": abs(delta),
+                })
+
+        climbers.sort(key=lambda c: c["delta"], reverse=True)
+        fallers.sort(key=lambda f: f["delta"], reverse=True)
+
+        return {
+            "climbers": climbers[:3],
+            "fallers": fallers[:3],
         }
 
-        for d in sorted(daily_rankings.keys()):
-            day_entries = daily_rankings[d]
-            if not day_entries:
-                continue
-            top = day_entries[0]  # first entry = rank 1
-            if top["name"] == current_leader:
-                current_streak += 1
-            else:
-                # Check if previous streak was better
-                if current_streak > best["streak_length"] and current_leader is not None:
-                    best = {
-                        "name": current_leader,
-                        "streak_length": current_streak,
-                        "start_date": None,  # set below
-                        "end_date": None,
-                    }
-                current_leader = top["name"]
-                current_streak = 1
-
-        # Final check
-        if current_streak > best["streak_length"] and current_leader is not None:
-            best = {
-                "name": current_leader,
-                "streak_length": current_streak,
-                "start_date": None,
-                "end_date": None,
-            }
-
-        return best
-
     @classmethod
-    def _compute_biggest_climbers(
-        cls, daily_rankings: Dict[date, List[Dict]]
-    ) -> List[Dict[str, Any]]:
+    def _compute_leader_change(
+        cls,
+        daily_rankings: Dict[date, List[Dict]],
+        latest_date: date,
+        yesterday_date: Optional[date],
+    ) -> Dict[str, Any]:
         """
-        Top 3 biggest single-day rank improvements (positive delta).
-        Returns [{name, old_rank, new_rank, delta, date}, ...] sorted by delta desc.
-        """
-        jumps: List[Dict] = []
-        for d in sorted(daily_rankings.keys()):
-            entries = daily_rankings[d]
-            for entry in entries:
-                prev = entry.get("prev_rank")
-                if prev is not None:
-                    delta = prev - entry["rank"]  # positive = improvement
-                    if delta > 0:
-                        jumps.append({
-                            "name": entry["name"],
-                            "old_rank": prev,
-                            "new_rank": entry["rank"],
-                            "delta": delta,
-                            "date": d,
-                        })
+        Check if the #1 position changed today vs yesterday.
+        If so, provide context about the old leader's prior dominance.
 
-        jumps.sort(key=lambda j: j["delta"], reverse=True)
-        return jumps[:3]
-
-    @classmethod
-    def _compute_biggest_fallers(
-        cls, daily_rankings: Dict[date, List[Dict]]
-    ) -> List[Dict[str, Any]]:
+        Returns {changed: bool, old_leader, new_leader, old_streak}
+        where old_streak is how many consecutive days the old leader
+        held #1 before today.
         """
-        Top 3 biggest single-day rank drops (negative delta, absolute).
-        Returns [{name, old_rank, new_rank, delta, date}, ...] sorted by |delta| desc.
-        """
-        drops: List[Dict] = []
-        for d in sorted(daily_rankings.keys()):
-            entries = daily_rankings[d]
-            for entry in entries:
-                prev = entry.get("prev_rank")
-                if prev is not None:
-                    delta = prev - entry["rank"]  # negative = drop
-                    if delta < 0:
-                        drops.append({
-                            "name": entry["name"],
-                            "old_rank": prev,
-                            "new_rank": entry["rank"],
-                            "delta": abs(delta),
-                            "date": d,
-                        })
+        result: Dict[str, Any] = {
+            "changed": False,
+            "old_leader": None,
+            "new_leader": None,
+            "old_streak": 0,
+        }
 
-        drops.sort(key=lambda d: d["delta"], reverse=True)
-        return drops[:3]
+        if yesterday_date is None:
+            return result
+
+        today_top = daily_rankings[latest_date][0]["name"] if daily_rankings.get(latest_date) else None
+        yesterday_top = daily_rankings[yesterday_date][0]["name"] if daily_rankings.get(yesterday_date) else None
+
+        if today_top and yesterday_top and today_top != yesterday_top:
+            result["changed"] = True
+            result["new_leader"] = today_top
+            result["old_leader"] = yesterday_top
+
+            # Count how many consecutive days the old leader held #1
+            sorted_dates = sorted(daily_rankings.keys())
+            streak = 0
+            for d in reversed(sorted_dates):
+                if d == latest_date:
+                    continue  # skip today, we know they lost
+                top = daily_rankings[d][0]["name"] if daily_rankings.get(d) else None
+                if top == yesterday_top:
+                    streak += 1
+                else:
+                    break
+            result["old_streak"] = streak
+
+        return result
 
     @classmethod
     def _compute_rivalries(
         cls, daily_rankings: Dict[date, List[Dict]]
     ) -> List[Dict[str, Any]]:
         """
-        Find pairs of members who swapped positions most frequently.
-        Returns [{name_a, name_b, swap_count}, ...] sorted by swap_count desc.
+        Find pairs of members who swapped positions most frequently
+        over the entire month.
+        Returns [{name_a, name_b, swap_count}, ...] sorted desc.
         """
-        # For each day, get mapping name->rank
         day_rankings: Dict[date, Dict[str, int]] = {
             d: {e["name"]: e["rank"] for e in entries}
             for d, entries in daily_rankings.items()
@@ -329,7 +319,6 @@ class LeaderboardReportService:
             prev = day_rankings[sorted_dates[i - 1]]
             curr = day_rankings[sorted_dates[i]]
 
-            # Consider all member pairs present in both days
             common_names = set(prev.keys()) & set(curr.keys())
             for a, b in combinations(sorted(common_names), 2):
                 prev_order = prev[a] < prev[b]
@@ -345,34 +334,46 @@ class LeaderboardReportService:
         return rivalries[:3]
 
     @classmethod
-    def _compute_personal_records(
-        cls, daily_deltas: Dict[str, List[Dict]]
-    ) -> List[Dict[str, Any]]:
+    def _compute_today_records(
+        cls,
+        daily_deltas: Dict[str, List[Dict]],
+        latest_date: date,
+    ) -> Dict[str, Any]:
         """
-        Top 3 best single-day fan gains across all members.
-        Returns [{name, delta, date, fans_total}, ...] sorted by delta desc.
+        Members whose personal best single-day fan gain occurred TODAY.
+        Returns {members: [{name, delta, prev_best_delta}], count}
+        sorted by delta desc — all members are listed, no truncation.
+        prev_best_delta is the member's previous best (second in sorted list)
+        or None if this is their only recorded day.
         """
-        all_bests: List[Dict] = []
+        today_bests: List[Dict] = []
         for name, deltas in daily_deltas.items():
-            if deltas:
-                best = deltas[0]  # already sorted desc
-                all_bests.append({
+            if not deltas:
+                continue
+            # deltas are sorted desc, so index 0 is their best
+            best = deltas[0]
+            if best["date"] == latest_date:
+                # prev_best is the next best (index 1) if it exists
+                prev_best = deltas[1]["delta"] if len(deltas) > 1 else None
+                today_bests.append({
                     "name": name,
                     "delta": best["delta"],
-                    "date": best["date"],
-                    "fans_total": best["fans_total"],
+                    "prev_best_delta": prev_best,
                 })
 
-        all_bests.sort(key=lambda r: r["delta"], reverse=True)
-        return all_bests[:3]
+        today_bests.sort(key=lambda r: r["delta"], reverse=True)
+        return {
+            "members": today_bests,
+            "count": len(today_bests),
+        }
 
     @classmethod
     def _compute_club_record(
         cls, daily_deltas: Dict[str, List[Dict]]
     ) -> Optional[Dict[str, Any]]:
         """
-        The single highest single-day fan gain across ALL members.
-        Returns {name, delta, date} or None.
+        The single highest single-day fan gain across ALL members
+        this month. Returns {name, delta, date} or None.
         """
         best: Optional[Dict] = None
         for name, deltas in daily_deltas.items():
@@ -408,40 +409,60 @@ class LeaderboardReportService:
         return d.strftime("%b %d")
 
     @classmethod
-    def _format_streak(cls, streak: Dict) -> str:
-        if not streak["name"] or streak["streak_length"] < 2:
-            return "_No significant streak yet this month._"
+    def _format_today_movers(cls, movers: Dict[str, List[Dict]]) -> str:
+        parts: List[str] = []
 
-        # Count how many total days have data
-        length = streak["streak_length"]
-        return (
-            f"**{streak['name']}** has held **#1** for **{length} consecutive "
-            f"day{'s' if length != 1 else ''}** so far this month.\n"
-            f"_Dominating the leaderboard!_"
-        )
+        # Climbers
+        if movers["climbers"]:
+            parts.append("**⬆️ Risers**")
+            for c in movers["climbers"]:
+                parts.append(
+                    f"• **{c['name']}** — #{c['old_rank']} → #{c['new_rank']} "
+                    f"(+{c['delta']})"
+                )
+        else:
+            parts.append("_No one climbed today._")
+
+        # Fallers
+        if movers["fallers"]:
+            parts.append("\n**⬇️ Fallers**")
+            for f in movers["fallers"]:
+                parts.append(
+                    f"• **{f['name']}** — #{f['old_rank']} → #{f['new_rank']} "
+                    f"(-{f['delta']})"
+                )
+        else:
+            parts.append("\n_No one dropped today._")
+
+        return "\n".join(parts)
 
     @classmethod
-    def _format_climbers(cls, climbers: List[Dict]) -> str:
-        if not climbers:
-            return "_No significant rank jumps this month._"
-        lines = []
-        for i, c in enumerate(climbers, 1):
-            lines.append(
-                f"{i}. **{c['name']}** — #{c['old_rank']} → #{c['new_rank']} "
-                f"(+{c['delta']}) on {cls._fmt_date(c['date'])}"
-            )
-        return "\n".join(lines)
+    def _format_leader_change(cls, leader_change: Dict[str, Any]) -> str:
+        if not leader_change["changed"]:
+            # Leader held position
+            top = leader_change.get("new_leader") or leader_change.get("old_leader")
+            if top:
+                return (
+                    f"**{top}** remains at **#1**. "
+                    f"_No change at the top today._"
+                )
+            return "_No leader data available._"
 
-    @classmethod
-    def _format_fallers(cls, fallers: List[Dict]) -> str:
-        if not fallers:
-            return "_No significant rank drops this month._"
-        lines = []
-        for i, f in enumerate(fallers, 1):
+        # Leader changed!
+        old = leader_change["old_leader"]
+        new = leader_change["new_leader"]
+        streak = leader_change["old_streak"]
+
+        lines = [f"**{new}** has overtaken **{old}** for **#1!**"]
+
+        if streak >= 3:
             lines.append(
-                f"{i}. **{f['name']}** — #{f['old_rank']} → #{f['new_rank']} "
-                f"(-{f['delta']}) on {cls._fmt_date(f['date'])}"
+                f"_{old} had held the top spot for {streak} consecutive "
+                f"day{'s' if streak != 1 else ''} before being dethroned._"
             )
+        else:
+            lines.append("_The leaderboard sees a new champion today!_")
+
         return "\n".join(lines)
 
     @classmethod
@@ -460,31 +481,34 @@ class LeaderboardReportService:
         return "\n".join(lines)
 
     @classmethod
-    def _format_records(
+    def _format_today_records(
         cls,
-        prs: List[Dict[str, Any]],
+        today_records: Dict[str, Any],
         club_record: Optional[Dict[str, Any]],
     ) -> str:
         parts: List[str] = []
 
-        # Personal records (top 3)
-        if prs:
-            parts.append("**🏅 Personal Best Single-Day Gain**")
-            for i, pr in enumerate(prs, 1):
-                parts.append(
-                    f"{i}. **{pr['name']}** — **+{cls._fmt_fans(pr['delta'])}** "
-                    f"on {cls._fmt_date(pr['date'])} "
-                    f"(total: {cls._fmt_fans(pr['fans_total'])})"
-                )
+        # Today's personal bests — ALL of them, no truncation
+        if today_records["members"]:
+            parts.append("**🏅 Personal Bests Set Today**")
+            for pr in today_records["members"]:
+                line = f"• **{pr['name']}** — **+{cls._fmt_fans(pr['delta'])}**"
+                if pr["prev_best_delta"] is not None:
+                    line += f" breaking previous *{cls._fmt_fans(pr['prev_best_delta'])}*"
+                parts.append(line)
         else:
-            parts.append("_No personal records available yet._")
+            parts.append("_No personal bests set today._")
 
         # Club record
         if club_record:
-            parts.append(
-                f"\n**🌟 Club Record (Month)** — **{club_record['name']}** "
+            record_info = (
+                f"\n**🌟 Month's Best** — **{club_record['name']}** "
                 f"with **+{cls._fmt_fans(club_record['delta'])}** "
                 f"on {cls._fmt_date(club_record['date'])}"
             )
+            # If the club record was set today, highlight it
+            if today_records["members"] and club_record["date"] == today_records["members"][0].get("date"):
+                record_info += " ⭐ _(set today!)_"
+            parts.append(record_info)
 
         return "\n".join(parts)
