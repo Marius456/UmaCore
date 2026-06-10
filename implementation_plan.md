@@ -1,120 +1,100 @@
 # Implementation Plan
 
-[Overview]
-Modify UmaMoeAPIScraper to switch from headless Playwright Chromium to non-headless system Chrome to bypass Cloudflare's updated browser detection on uma.moe.
+Upgrade the Leaderboard Report generator in `services/leaderboard_report_service.py` to compute new narrative-driven analytics (Efficiency King, The Brick Wall, Projected Overtakes, Milestone Watch, Consistency Check) and restructure the Discord embed output into a "sports-broadcast" news format with sections for Headline News, Momentum Shift, Projected Battles, and Milestone Tracker, while condensing the existing Risers/Fallers section.
 
-The current Playwright implementation opens a headless Chromium browser instance, visits uma.moe to solve the Cloudflare challenge, then fetches the API endpoint. After uma.moe upgraded their Cloudflare protection, the headless browser is reliably detected and the challenge never resolves, causing a 45-second timeout and subsequent failure. The fix switches to real system Chrome (installed on the host) running in headed mode, combined with stealth anti-detection scripts and persistent cookie storage. This makes the browser indistinguishable from a normal user's Chrome session. The window is managed by creating it minimized/hidden and cleaning up afterward.
-
-Context: The bot runs on Windows 11 with Google Chrome installed. It does not use Docker. All scraping happens via the UmaMoeAPIScraper which currently uses Playwright's bundled Chromium in headless mode. The fix must be robust against future Cloudflare changes and maintain backward compatibility with the existing scraper interface (`scrape()`, `get_current_day()`, `get_data_date()`, etc.).
+The existing `LeaderboardReportService` class pulls QuotaHistory rows for a given club/month and builds daily rankings, daily deltas, movers, leader changes, rivalries, and records. The upgrade adds 5 new computation methods (efficiency king, surplus tank, projected overtakes, milestone watch, consistency check) and reformats the embed into 5 themed fields: Headline News, Momentum Shift, Projected Battles, Milestone Tracker, and a condensed Top Movers section. The underlying data model (`QuotaHistory` with `cumulative_fans`, `expected_fans`, `deficit_surplus`) remains unchanged; all new values (Daily, Avg) are derived from existing columns. The DB query `get_current_month_for_club` already returns `trainer_name`, `date`, `cumulative_fans` — no schema changes are needed. The effort is localized to a single file (`leaderboard_report_service.py`) plus optional test additions.
 
 [Types]
-No new types, interfaces, or data structures are required.
 
-The existing `UmaMoeAPIScraper` class and its method signatures remain unchanged. All modifications are internal to `_get_browser()`, `_get_browser_context()`, and `_fetch_api_data()`.
+No new DB models, enums, or data classes are being created. The existing `QuotaHistory` dataclass and row structure suffice. Internally, the service uses `Dict[str, Any]` (row dicts), `List[Dict]` (daily rankings), and `Dict[str, List[Dict]]` (daily deltas). The new computations return the following internal types:
+
+- **Efficiency King**: `Dict{name: str, daily_gain: int, avg_daily: float, pct_above_avg: float}`
+- **Brick Wall**: `Dict{name: str, surplus: int, gap_to_next: int, rank: int}`
+- **Projected Overtakes**: `List[Dict{challenger: str, target: str, gap_fans: int, daily_diff: int, eta_days: float, target_rank: int}]`
+- **Milestone Watch**: `List[Dict{name: str, total: int, milestone: int, amount_away: int, pct_to_milestone: float}]`
+- **Consistency Check**: `Dict{overperformers: List[Dict], underperformers: List[Dict]}` (each with `name`, `daily`, `avg`, `pct_diff`)
+- **Condensed Movers**: `List[Dict{name: str, old_rank: int, new_rank: int, abs_delta: int, direction: str}]` (top 3 by absolute delta)
 
 [Files]
-Three files will be modified. No new files will be created, and no files will be deleted.
 
-**Modified files:**
+Only one file is being modified, and no new files are being created.
 
-1. `scrapers/umamoe_api_scraper.py` — Core changes:
-   - `_get_browser()`: Launch real Chrome via `channel: 'chrome'` with `headless=False`, add stealth launch args
-   - `_get_browser_context()`: New helper that creates a persistent context with cookie storage
-   - `_fetch_api_data()`: Use the new context, add `add_init_script()` for JS-based stealth patches, improve logging
-   - Add browser launch timeout argument to handle slow Chrome startup
-   - Add Chrome executable path detection fallback (look in common Windows locations)
-   - Add `_setup_stealth_patches(page)` method: applies JS patches via `add_init_script()` to override `navigator.webdriver`, add `chrome.runtime`, spoof plugins, languages, and WebGL fingerprint
-   - Add persistent cookie jar (`cookie_dir` argument or env var) to save/load Cloudflare clearance cookies across bot restarts
-   - Handle Chrome process cleanup on shutdown
+**Modified file**: `services/leaderboard_report_service.py`
+- Add new computation helper methods (listed in Functions section below)
+- Refactor `generate_leaderboard_report` to restructure the embed fields into the new 5-section format
+- Replace `_format_today_movers` with a condensed format showing top 3 absolute movers
+- Keep `_format_leader_change`, `_format_rivalries` (condensed), and `_format_today_records` but integrate them into the new sections
+- Keep all existing public and private methods; only add new ones and modify format/embed logic
 
-2. `config/settings.py` — Add configuration:
-   - `PLAYWRIGHT_HEADLESS` setting (default `False` since we don't use headless anymore)
-   - `PLAYWRIGHT_COOKIE_DIR` setting for persistent cookie storage path
-   - Keep backward-compatible defaults
-
-3. `requirements.txt` — No changes needed (Playwright is already a dependency, no new packages required)
-
-4. `main.py` — Minor update in shutdown sequence to ensure Chrome processes are properly killed
+**Unchanged files**:
+- `models/quota_history.py` — no schema changes
+- `bot/commands/leaderboard.py` — no interface changes needed (it calls `generate_leaderboard_report` which returns a `discord.Embed`)
+- `config/settings.py` — no config changes needed
 
 [Functions]
-No functions are removed. Four functions are modified, and two new functions are added.
 
-**Modified functions:**
+**New functions** (all `@classmethod` on `LeaderboardReportService`):
 
-1. `_get_browser()` in `scrapers/umamoe_api_scraper.py`:
-   - Signature: unchanged `async def _get_browser() -> Browser`
-   - Change: switch from `headless=True` to `headless=False`, add `channel='chrome'`, add launch args for stealth
-   - Add timeout to browser launch
-   - Add Chrome path detection for Windows
-   - On failure, log the specific Chrome path that was tried
-   - Return the browser instance as before
+1. `_compute_efficiency_king(cls, daily_deltas: Dict[str, List[Dict]], latest_date: date) -> Optional[Dict]`
+   - For each member with data on the latest date, compute their `daily_gain` (delta on latest_date) and `avg_daily` (mean of all their deltas in the month). Find the member whose `daily_gain` is highest percentage above their `avg_daily`.
+   - Returns `None` if no member qualifies (e.g., only 1 day of data).
 
-2. `_fetch_api_data()` in `scrapers/umamoe_api_scraper.py`:
-   - Signature: unchanged `async def _fetch_api_data(year: int, month: int) -> dict`
-   - Change: use persistent context with cookie directory, apply stealth patches before navigation
-   - After successful challenge, save cookies to disk
-   - On subsequent calls, load cached cookies and skip main page visit if cookies are still valid
-   - Better logging of Cloudflare challenge status
+2. `_compute_brick_wall(cls, daily_rankings: Dict[date, List[Dict]], latest_date: date) -> Optional[Dict]`
+   - For each member in today's ranking, compute `surplus = cumulative_fans - expected_fans` (already in row data, but we need to re-fetch or compute from available data). Since `deficit_surplus` is in the original rows but not in the daily_rankings dict (which only stores `name`, `fans`, `rank`, `prev_rank`), we need to either: (a) pass the original rows through, or (b) add `surplus` to the daily_rankings entries. **Option (b)** — modify `_build_daily_rankings` to include the `deficit_surplus` field from the row (accessible as `row["deficit_surplus"]` in the original loop). Then in `_compute_brick_wall`, find the member with the highest `surplus` and compute `gap_to_next = surplus_of_member - surplus_of_member_ranked_below`.
+   - Returns `None` if fewer than 2 members.
 
-3. `_close_browser()` in `scrapers/umamoe_api_scraper.py`:
-   - Signature: unchanged `async def _close_browser()`
-   - Change: ensure Chrome processes are fully terminated (not just Playwright context closed)
-   - Add `subprocess` cleanup for orphaned Chrome instances
+3. `_compute_projected_overtakes(cls, daily_rankings: Dict[date, List[Dict]], daily_deltas: Dict[str, List[Dict]], latest_date: date) -> List[Dict]`
+   - Iterate through adjacent rank pairs (rank N vs rank N+1). If the lower-ranked player has a higher `daily` (delta on latest_date) than the higher-ranked player, compute:
+     - `gap_fans = fans_above - fans_below`
+     - `daily_diff = daily_below - daily_above`
+     - `eta_days = gap_fans / daily_diff`
+   - Include only if `eta_days > 0` and `eta_days <= 14`.
+   - Return sorted by `eta_days` ascending, limit to top 3.
 
-4. `async def daily_check_for_club()` in `bot/tasks.py` (implicitly):
-   - Signature: unchanged
-   - No direct changes needed — the scraper interface is unchanged
+4. `_compute_milestone_watch(cls, daily_rankings: Dict[date, List[Dict]], latest_date: date) -> List[Dict]`
+   - Check every member in latest_date's rankings. Define milestones = [1_000_000, 5_000_000, 10_000_000, 25_000_000, 50_000_000, 100_000_000].
+   - For each member, find the next milestone above their `cumulative_fans`. If `(fans / milestone) >= 0.95` (within 5%), add to watch list.
+   - Return sorted by `amount_away` ascending, limit to top 3.
 
-**New functions:**
+5. `_compute_consistency(cls, daily_deltas: Dict[str, List[Dict]], latest_date: date) -> Dict`
+   - For each member with data on the latest date, compare their `daily_gain` (delta on latest_date) to `avg_daily`. If `daily > avg`, mark as "overperforming". If `daily < avg`, mark as "cooling down".
+   - Return the most extreme overperformer and most extreme cooler by percentage difference.
 
-1. `_setup_stealth_patches(page)` in `scrapers/umamoe_api_scraper.py`:
-   - Signature: `async def _setup_stealth_patches(page: Page) -> None`
-   - Purpose: Apply JavaScript-based stealth patches to evade Cloudflare's headless detection
-   - Patches:
-     - `Object.defineProperty(navigator, 'webdriver', { get: () => false })`
-     - Override `navigator.plugins` to return a non-empty array
-     - Override `navigator.languages` to `['en-US', 'en']`
-     - Override `navigator.hardwareConcurrency` to `8` (common CPU count)
-     - Override `chrome.runtime` if available
-     - Override `navigator.permissions.query` for specific permission types
-   - Called via `page.add_init_script()` before any page navigation
+6. `_compute_condensed_movers(cls, movers: Dict[str, List[Dict]]) -> List[Dict]`
+   - Take `movers` dict (climbers + fallers), combine into one list, sort by absolute `delta` descending, return top 3. Add `direction` field ("up"/"down").
 
-2. `_get_cookie_dir()` in `scrapers/umamoe_api_scraper.py`:
-   - Signature: `def _get_cookie_dir() -> str`
-   - Purpose: Returns the path to the persistent cookie storage directory
-   - Creates the directory if it doesn't exist
-   - Reads from `settings.PLAYWRIGHT_COOKIE_DIR` or defaults to `./.umamoe_cookies`
+7. `calculate_eta(cls, player_above: Dict, player_below: Dict) -> Optional[float]`
+   - Static helper: `gap = player_above["fans"] - player_below["fans"]`, `daily_diff = player_below["daily"] - player_above["daily"]`. If `daily_diff <= 0`, return `None`. Else return `gap / daily_diff`.
+
+**Modified functions**:
+
+1. `_build_daily_rankings` — Add `"surplus"` key to each entry dict using `row["deficit_surplus"]` (available in the original `rows` but not propagated). Also compute `"daily"` delta for the latest date (difference from previous day's `cumulative_fans`). Add `"daily"` key: compute this by tracking previous day's fans per member.
+
+2. `generate_leaderboard_report` — Restructure the embed fields from 4 sections (Today's Movers, Leader Change, Rivalries, Today's Records) to 5 new sections with new ordering. Keep the same parameters and return type (`discord.Embed`). Add calls to the 6 new computation methods. Keep the leader change and rivalries sections as sub-components of the new layout.
+
+3. `_format_today_movers` — Replace with `_format_condensed_movers(cls, condensed: List[Dict]) -> str` — compact single-line format like `📈 PlayerA (+3) · 📉 PlayerB (-2) · 📈 PlayerC (+1)`.
+
+**Removed functions**:
+- None. All existing visualization/format functions are kept and may be reused or integrated into sub-sections.
+- `_format_today_records` — format logic will be repurposed into "Momentum Shift > Today's Records" sub-section.
 
 [Classes]
-No classes are modified, added, or removed.
 
-The `UmaMoeAPIScraper` class interface is unchanged. All changes are internal method modifications.
-
-[Dependencies]
-No new dependencies required.
-
-All needed functionality is already available via the existing `playwright` package (v1.60.0+). The `subprocess` and `os` modules are Python standard library.
+No new classes. The single existing class `LeaderboardReportService` in `services/leaderboard_report_service.py` is modified by adding 7 methods and modifying 3 existing methods. No inheritance changes.
 
 [Testing]
-Testing involves manual verification since this is a runtime Cloudflare integration test.
 
-**Validation steps:**
-1. Run the bot and trigger a `/force_check` command — verify the API data is fetched successfully
-2. Verify that the Chrome window opens briefly during the first scrape
-3. Verify that subsequent scrapes reuse cookies and don't re-open a visible window (or open it minimized)
-4. Verify the scraper recovers gracefully if Chrome is not installed
-5. Run the bot continuously and verify multiple hourly checks succeed without accumulating Chrome processes
-6. Verify bot shutdown properly terminates Chrome and leaves no orphan processes
+No existing test files exist for this service (tests/ directory is empty except `__init__.py`). Testing is considered out of scope for this plan, but the implementation should be manually testable by running the `leaderboard_report` command in Discord with a club that has QuotaHistory data for the current month.
+
+If tests are desired in the future, they should mock `QuotaHistory.get_current_month_for_club` and verify the resulting embed fields contain expected text patterns.
 
 [Implementation Order]
-The implementation follows a logical sequence where the foundational browser/context changes are made first, then stealth and cookie persistence are added.
 
-1. **Configure settings** — Add `PLAYWRIGHT_HEADLESS` and `PLAYWRIGHT_COOKIE_DIR` to `config/settings.py`
-2. **Core browser launch** — Modify `_get_browser()` in `umamoe_api_scraper.py` to use `channel='chrome'` with `headless=False`, add stealth launch args, add Chrome path detection for Windows, add launch timeout
-3. **Persistent context** — Add `_get_browser_context()` that creates a persistent Playwright context using the cookie directory; add `_get_cookie_dir()` helper
-4. **Stealth patches** — Add `_setup_stealth_patches(page)` function with all JS overrides; wire it into `_fetch_api_data()`
-5. **Cookie lifecycle** — Modify `_fetch_api_data()` to use persistent context, save cookies on success, reuse them on subsequent calls
-6. **Process cleanup** — Update `_close_browser()` to ensure Chrome processes are fully killed; update `main.py` shutdown sequence if needed
-7. **Logging improvements** — Add detailed logging of Chrome path detection, cookie status, challenge resolution
-8. **Graceful fallback** — Add fallback to bundled Chromium if system Chrome is not found (with warning log)
-9. **Full integration test** — Run `/force_check` and verify end-to-end success
+All changes are confined to a single file (`services/leaderboard_report_service.py`). The recommended implementation order is:
+
+1. **Modify `_build_daily_rankings`** to include `"surplus"` (from `deficit_surplus`) and `"daily"` (computed delta from previous day) in each entry dict. This is foundational because subsequent methods depend on these fields.
+2. **Create the 6 new computation methods** (Efficiency King, Brick Wall, Projected Overtakes, Milestone Watch, Consistency, Condensed Movers) — these depend on step 1 being complete.
+3. **Create helper formatters**: Modify `_format_today_movers` -> `_format_condensed_movers`, create `_format_efficiency_king`, `_format_brick_wall`, `_format_projected_overtakes`, `_format_milestone_watch`.
+4. **Refactor `generate_leaderboard_report`** to call all new methods and restructure the embed fields into the new 5-section layout.
+5. **Remove or condense** any unused formatter calls and ensure the embed fields are ordered correctly.
+6. **Final review** — verify the embed has exactly the right number of fields, no field exceeds Discord's 1024-character value limit, and all formatting is consistent.
