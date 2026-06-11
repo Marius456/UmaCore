@@ -209,8 +209,9 @@ Finds the pairs of members who swapped positions most frequently over the entire
 1. Build a `day_rankings` dict mapping each date to `{name: rank}`
 2. For each consecutive pair of dates, iterate all combinations of members present on both dates
 3. If `prev_order != curr_order` (they swapped positions), increment a swap counter for that pair
-4. For each rivalry, compute current ranks, fan gap, and who leads on the latest date
-5. Sort by swap count descending, return top 3
+4. **Current Proximity Gate:** Pairs whose current rank difference exceeds 3 ranks are excluded — they are no longer actively rivaling.
+5. For each rivalry, compute current ranks, fan gap, and who leads on the latest date
+6. Sort by swap count descending, return top 3
 
 #### D) Today's Personal Records
 **Method:** `_compute_today_records(daily_deltas, latest_date)`

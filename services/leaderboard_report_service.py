@@ -262,6 +262,12 @@ class LeaderboardReportService:
                 info_a = latest_info[a]
                 info_b = latest_info[b]
 
+                # Current Proximity Gate: They must still be close in rank today
+                # to be considered an active rivalry.
+                current_rank_diff = abs(info_a["rank"] - info_b["rank"])
+                if current_rank_diff > 3:
+                    continue
+
                 # Determine who is currently winning
                 if info_a["rank"] < info_b["rank"]:
                     who_leads, gap = a, info_a["fans"] - info_b["fans"]
