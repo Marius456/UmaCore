@@ -195,6 +195,16 @@ Finds the pairs of members who swapped positions most frequently over the entire
 }
 ```
 
+**Format in embed:**
+```
+⚔️ NameA vs NameB (X swaps) — WhoLeads leads by FanGap (#MinRank vs #MaxRank)
+```
+
+**Example:**
+```
+⚔️ Nishikyou vs WuBoy (3 swaps) — Nishikyou leads by 1.2M (#2 vs #3)
+```
+
 **Logic:**
 1. Build a `day_rankings` dict mapping each date to `{name: rank}`
 2. For each consecutive pair of dates, iterate all combinations of members present on both dates
@@ -410,15 +420,26 @@ Sub-sections (sorted by urgency):
 - **⏳ On the Horizon** — Overtakes with ETA >= 2 days
 - **⚔️ Monthly Rivalries** — Top 3 rivalry pairs by swap count
 
-Each overtake line format:
+**Urgent overtake line format:**
 ```
-• [Challenger] is projected to overtake [Target] for #[Rank] — [ETA] (closing [Gap] gap at +[Rate]/day)
+• [Challenger] is projected to overtake [Target] for #[Rank] — TODAY (closing [Gap] gap at +[Rate]/day)
+```
+
+**Horizon overtake line format:**
+```
+• [Challenger] is projected to overtake [Target] for #[Rank] ~[X] days (closing [Gap] gap at +[Rate]/day)
 ```
 
 ETA is natural language:
-- `< 1 day` → `"Expected TODAY"`
-- `1 <= eta < 2` → `"Expected TOMORROW"`
-- Otherwise → `"In [X] days"`
+- `< 1 day` → `"TODAY"`
+- `1 <= eta < 2` → `"TOMORROW"`
+- Otherwise → `"~[X] days"` in the horizon section
+
+**Example:**
+```
+🚨 Urgent Overtakes
+• Nishikyou is projected to overtake Pendta550 for #6 — TODAY (closing 120.0K gap at +25.0K/day)
+```
 
 ### Section 4: 🎯 MILESTONE TRACKER
 Each milestone line format:
