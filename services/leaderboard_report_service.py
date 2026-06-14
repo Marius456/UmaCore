@@ -103,6 +103,9 @@ class LeaderboardReportService:
         milestones = cls._compute_milestone_watch(daily_rankings, latest_date)
         consistency = cls._compute_consistency(daily_rankings, daily_deltas, latest_date)
 
+        # Sprinter = the member who gained the most fans today
+        daily_leader = max(daily_rankings.get(latest_date, []), key=lambda e: e["daily"], default=None)
+
         # 3. Assemble Embed
         embed = discord.Embed(
             title=f"📰 Leaderboard News — {club_name}",
@@ -119,7 +122,7 @@ class LeaderboardReportService:
         embed.add_field(name="🔥 HEADLINE NEWS", value=headline, inline=False)
 
         # --- Section 2: Momentum ---
-        momentum = cls._assemble_momentum(king, tank, consistency, today_records, club_record, latest_date)
+        momentum = cls._assemble_momentum(king, tank, consistency, today_records, club_record, latest_date, daily_leader)
         embed.add_field(name="📈 THE MOMENTUM SHIFT", value=momentum or "_Stable activity today._", inline=False)
 
         # --- Section 3: Battle Zone ---
@@ -455,13 +458,13 @@ class LeaderboardReportService:
         records: Dict[str, Any],
         club_rec: Optional[Dict[str, Any]],
         latest_date: date,
+        daily_leader: Optional[Dict[str, Any]] = None,
     ) -> str:
         parts = []
-        if king:
+        if daily_leader:
             parts.append(
-                f"**🏃 The Sprinter** — **{king.name}** "
-                f"(+{cls._fmt_fans(king.daily_gain)}) is "
-                f"**{king.pct_above_avg}%** above average."
+                f"**🏃 The Sprinter** — **{daily_leader['name']}** "
+                f"(+{cls._fmt_fans(daily_leader['daily'])}) gained the most fans today!"
             )
 
         if tank:
