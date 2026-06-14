@@ -365,7 +365,33 @@ Compares today's Daily to the monthly Avg for every member.
 2. Sort overperformers descending by pct_diff, coolers ascending (most negative first)
 3. Return the top of each category
 
-#### K) Condensed Movers
+#### K) Best Week (Rolling 7-Day Average)
+**Method:** `_compute_best_week(daily_deltas, latest_date)`
+
+The member with the highest average daily fan gain over the last 7 days of available data (ending on the latest date).
+
+**Output:** `BestWeek{name, avg_daily, days}` or `None`
+
+**Fields:**
+| Field | Type | Description |
+|---|---|---|
+| `name` | str | Member name |
+| `avg_daily` | float | Mean daily gain over the 7-day window |
+| `days` | int | Number of days with data in the window |
+
+**Logic:**
+1. Compute `window_start = latest_date - 6 days` to define a 7-day window (inclusive)
+2. For each member, filter their daily deltas to those within the window
+3. Skip if fewer than 2 data points (to avoid skewed averages)
+4. Compute `avg = sum(deltas) / len(deltas)`
+5. Return the member with the highest avg (or None if no eligible members)
+
+**Format in embed:**
+```
+🏅 Best Week — **MemberName** (avg +5.0M/day over the last 7 days)
+```
+
+#### L) Condensed Movers
 **Method:** `_compute_condensed_movers(movers)`
 
 Combines climbers and fallers from step A into a single top-3 list.

@@ -1,100 +1,128 @@
 # Implementation Plan
 
-Upgrade the Leaderboard Report generator in `services/leaderboard_report_service.py` to compute new narrative-driven analytics (Efficiency King, The Brick Wall, Projected Overtakes, Milestone Watch, Consistency Check) and restructure the Discord embed output into a "sports-broadcast" news format with sections for Headline News, Momentum Shift, Projected Battles, and Milestone Tracker, while condensing the existing Risers/Fallers section.
+## Overview
 
-The existing `LeaderboardReportService` class pulls QuotaHistory rows for a given club/month and builds daily rankings, daily deltas, movers, leader changes, rivalries, and records. The upgrade adds 5 new computation methods (efficiency king, surplus tank, projected overtakes, milestone watch, consistency check) and reformats the embed into 5 themed fields: Headline News, Momentum Shift, Projected Battles, Milestone Tracker, and a condensed Top Movers section. The underlying data model (`QuotaHistory` with `cumulative_fans`, `expected_fans`, `deficit_surplus`) remains unchanged; all new values (Daily, Avg) are derived from existing columns. The DB query `get_current_month_for_club` already returns `trainer_name`, `date`, `cumulative_fans` — no schema changes are needed. The effort is localized to a single file (`leaderboard_report_service.py`) plus optional test additions.
+Add a "Best Week" statistic to the Leaderboard News report that identifies which member has the highest average daily fan gain over the last 7 days of available data.
 
-[Types]
+## Scope and Context
 
-No new DB models, enums, or data classes are being created. The existing `QuotaHistory` dataclass and row structure suffice. Internally, the service uses `Dict[str, Any]` (row dicts), `List[Dict]` (daily rankings), and `Dict[str, List[Dict]]` (daily deltas). The new computations return the following internal types:
+The existing leaderboard report (`services/leaderboard_report_service.py`) already computes daily deltas per member via `_compute_daily_deltas()` and tracks the "Sprinter" (most daily gain today) and "Efficiency King" (highest % above personal average today). However, there is no rolling window aggregation. The "Best Week" stat fills this gap by looking at a sliding 7-day window ending on the latest available date, computing each member's average daily gain, and returning the top performer.
 
-- **Efficiency King**: `Dict{name: str, daily_gain: int, avg_daily: float, pct_above_avg: float}`
-- **Brick Wall**: `Dict{name: str, surplus: int, gap_to_next: int, rank: int}`
-- **Projected Overtakes**: `List[Dict{challenger: str, target: str, gap_fans: int, daily_diff: int, eta_days: float, target_rank: int}]`
-- **Milestone Watch**: `List[Dict{name: str, total: int, milestone: int, amount_away: int, pct_to_milestone: float}]`
-- **Consistency Check**: `Dict{overperformers: List[Dict], underperformers: List[Dict]}` (each with `name`, `daily`, `avg`, `pct_diff`)
-- **Condensed Movers**: `List[Dict{name: str, old_rank: int, new_rank: int, abs_delta: int, direction: str}]` (top 3 by absolute delta)
+The stat will appear in the **📈 THE MOMENTUM SHIFT** section as a new sub-section called `**🏅 Best Week**`.
 
-[Files]
+## Edge Cases Handled
 
-Only one file is being modified, and no new files are being created.
+- If the month has fewer than 7 days of data, the window shrinks to whatever is available (minimum 1 day required per member).
+- Members with only 1 day in the window are excluded to avoid skewed averages.
+- Members with zero or negative average daily gain are excluded (shouldn't happen with real data, but defensive).
+- If no eligible members exist (e.g., only 1 day of month data), the Best Week stat simply doesn't render.
 
-**Modified file**: `services/leaderboard_report_service.py`
-- Add new computation helper methods (listed in Functions section below)
-- Refactor `generate_leaderboard_report` to restructure the embed fields into the new 5-section format
-- Replace `_format_today_movers` with a condensed format showing top 3 absolute movers
-- Keep `_format_leader_change`, `_format_rivalries` (condensed), and `_format_today_records` but integrate them into the new sections
-- Keep all existing public and private methods; only add new ones and modify format/embed logic
+## Types
 
-**Unchanged files**:
-- `models/quota_history.py` — no schema changes
-- `bot/commands/leaderboard.py` — no interface changes needed (it calls `generate_leaderboard_report` which returns a `discord.Embed`)
-- `config/settings.py` — no config changes needed
+Add one new NamedTuple and update the Momentum section assembly.
 
-[Functions]
+### New NamedTuple
 
-**New functions** (all `@classmethod` on `LeaderboardReportService`):
+```python
+class BestWeek(NamedTuple):
+    name: str
+    avg_daily: float
+    days: int                # number of days in the 7-day window with data
+```
 
-1. `_compute_efficiency_king(cls, daily_deltas: Dict[str, List[Dict]], latest_date: date) -> Optional[Dict]`
-   - For each member with data on the latest date, compute their `daily_gain` (delta on latest_date) and `avg_daily` (mean of all their deltas in the month). Find the member whose `daily_gain` is highest percentage above their `avg_daily`.
-   - Returns `None` if no member qualifies (e.g., only 1 day of data).
+### Modified: Existing `ConsistencyResult` — unchanged.
 
-2. `_compute_brick_wall(cls, daily_rankings: Dict[date, List[Dict]], latest_date: date) -> Optional[Dict]`
-   - For each member in today's ranking, compute `surplus = cumulative_fans - expected_fans` (already in row data, but we need to re-fetch or compute from available data). Since `deficit_surplus` is in the original rows but not in the daily_rankings dict (which only stores `name`, `fans`, `rank`, `prev_rank`), we need to either: (a) pass the original rows through, or (b) add `surplus` to the daily_rankings entries. **Option (b)** — modify `_build_daily_rankings` to include the `deficit_surplus` field from the row (accessible as `row["deficit_surplus"]` in the original loop). Then in `_compute_brick_wall`, find the member with the highest `surplus` and compute `gap_to_next = surplus_of_member - surplus_of_member_ranked_below`.
-   - Returns `None` if fewer than 2 members.
+## Files
 
-3. `_compute_projected_overtakes(cls, daily_rankings: Dict[date, List[Dict]], daily_deltas: Dict[str, List[Dict]], latest_date: date) -> List[Dict]`
-   - Iterate through adjacent rank pairs (rank N vs rank N+1). If the lower-ranked player has a higher `daily` (delta on latest_date) than the higher-ranked player, compute:
-     - `gap_fans = fans_above - fans_below`
-     - `daily_diff = daily_below - daily_above`
-     - `eta_days = gap_fans / daily_diff`
-   - Include only if `eta_days > 0` and `eta_days <= 14`.
-   - Return sorted by `eta_days` ascending, limit to top 3.
+Modifications are contained entirely within `services/leaderboard_report_service.py`. No new files are created.
 
-4. `_compute_milestone_watch(cls, daily_rankings: Dict[date, List[Dict]], latest_date: date) -> List[Dict]`
-   - Check every member in latest_date's rankings. Define milestones = [1_000_000, 5_000_000, 10_000_000, 25_000_000, 50_000_000, 100_000_000].
-   - For each member, find the next milestone above their `cumulative_fans`. If `(fans / milestone) >= 0.95` (within 5%), add to watch list.
-   - Return sorted by `amount_away` ascending, limit to top 3.
+### Modified File: `services/leaderboard_report_service.py`
 
-5. `_compute_consistency(cls, daily_deltas: Dict[str, List[Dict]], latest_date: date) -> Dict`
-   - For each member with data on the latest date, compare their `daily_gain` (delta on latest_date) to `avg_daily`. If `daily > avg`, mark as "overperforming". If `daily < avg`, mark as "cooling down".
-   - Return the most extreme overperformer and most extreme cooler by percentage difference.
+| Change | Location | Description |
+|--------|----------|-------------|
+| 1. Add `BestWeek` NamedTuple | After `ConsistencyResult` (~line 65) | New type for the weekly stat |
+| 2. Add `_compute_best_week()` method | After `_compute_consistency` (~line 469) | New computation method |
+| 3. Call `_compute_best_week()` in `generate_leaderboard_report()` | Inside the analytics section (~line 108) | Compute alongside existing stats |
+| 4. Pass `best_week` to `_assemble_momentum()` | At the `_assemble_momentum` call site (~line 129) | Wire the data into assembly |
+| 5. Update `_assemble_momentum()` signature | Method definition (~line 509) | Accept new parameter |
+| 6. Add Best Week rendering inside `_assemble_momentum()` | Inside the method, after Sprinter block (~line 525) | Render the new stat |
 
-6. `_compute_condensed_movers(cls, movers: Dict[str, List[Dict]]) -> List[Dict]`
-   - Take `movers` dict (climbers + fallers), combine into one list, sort by absolute `delta` descending, return top 3. Add `direction` field ("up"/"down").
+### Unchanged Files
 
-7. `calculate_eta(cls, player_above: Dict, player_below: Dict) -> Optional[float]`
-   - Static helper: `gap = player_above["fans"] - player_below["fans"]`, `daily_diff = player_below["daily"] - player_above["daily"]`. If `daily_diff <= 0`, return `None`. Else return `gap / daily_diff`.
+- `tools/generate_test_report.py` — No changes needed; it calls through to the existing pipeline.
+- `docs/leaderboard-news-report.md` — Should be updated to document the new feature.
+- `docs/leaderboard-test-paragon.md` — Not code, but regenerating would reflect the change.
 
-**Modified functions**:
+## Functions
 
-1. `_build_daily_rankings` — Add `"surplus"` key to each entry dict using `row["deficit_surplus"]` (available in the original `rows` but not propagated). Also compute `"daily"` delta for the latest date (difference from previous day's `cumulative_fans`). Add `"daily"` key: compute this by tracking previous day's fans per member.
+### New Function
 
-2. `generate_leaderboard_report` — Restructure the embed fields from 4 sections (Today's Movers, Leader Change, Rivalries, Today's Records) to 5 new sections with new ordering. Keep the same parameters and return type (`discord.Embed`). Add calls to the 6 new computation methods. Keep the leader change and rivalries sections as sub-components of the new layout.
+| Name | Signature | File | Purpose |
+|------|-----------|------|---------|
+| `_compute_best_week` | `(cls, daily_deltas: Dict[str, List[Dict]], latest_date: date) -> Optional[BestWeek]` | `services/leaderboard_report_service.py` | Computes the member with the highest average daily gain over the 7 days preceding (and including) `latest_date`. |
 
-3. `_format_today_movers` — Replace with `_format_condensed_movers(cls, condensed: List[Dict]) -> str` — compact single-line format like `📈 PlayerA (+3) · 📉 PlayerB (-2) · 📈 PlayerC (+1)`.
+**Algorithm:**
 
-**Removed functions**:
-- None. All existing visualization/format functions are kept and may be reused or integrated into sub-sections.
-- `_format_today_records` — format logic will be repurposed into "Momentum Shift > Today's Records" sub-section.
+1. Determine the 7-day window: `start_date = latest_date - 6 days` to `latest_date` (inclusive).
+2. For each member in `daily_deltas`:
+   a. Filter their daily deltas to those whose `date` falls within the window.
+   b. If fewer than 2 data points in the window → skip.
+   c. Compute `avg = sum(deltas) / len(deltas)`.
+   d. If `avg <= 0` → skip.
+   e. Track candidate with highest avg.
+3. Return `BestWeek(name, round(avg, 1), len(filtered_deltas))`.
 
-[Classes]
+### Modified Function
 
-No new classes. The single existing class `LeaderboardReportService` in `services/leaderboard_report_service.py` is modified by adding 7 methods and modifying 3 existing methods. No inheritance changes.
+| Name | Signature Change | Location | Change |
+|------|-----------------|----------|--------|
+| `generate_leaderboard_report` | No signature change | ~line 75 | Add `best_week = cls._compute_best_week(daily_deltas, latest_date)` after the consistency computation; pass `best_week` to `_assemble_momentum()` |
+| `_assemble_momentum` | `(cls, king, tank, consistency, records, club_rec, latest_date, daily_leader, best_week=None)` | ~line 509 | Add `best_week: Optional[BestWeek] = None` parameter; render section |
+| `_assemble_momentum` body | No signature change needed | ~line 525 | After the Sprinter block (`if daily_leader:`), add: `if best_week: parts.append(f"**🏅 Best Week** — **{best_week.name}** (avg +{cls._fmt_fans(round(best_week.avg_daily))}/day over the last {best_week.days} days)")` |
 
-[Testing]
+### Removed Functions
 
-No existing test files exist for this service (tests/ directory is empty except `__init__.py`). Testing is considered out of scope for this plan, but the implementation should be manually testable by running the `leaderboard_report` command in Discord with a club that has QuotaHistory data for the current month.
+None.
 
-If tests are desired in the future, they should mock `QuotaHistory.get_current_month_for_club` and verify the resulting embed fields contain expected text patterns.
+## Classes
 
-[Implementation Order]
+### Modified Class: `LeaderboardReportService`
 
-All changes are confined to a single file (`services/leaderboard_report_service.py`). The recommended implementation order is:
+| Change | Details |
+|--------|---------|
+| Add `_compute_best_week` static/class method | New analytical method |
+| Update `_assemble_momentum` signature | Accept `best_week` parameter |
+| Update `generate_leaderboard_report` | Wire the computation into the pipeline |
 
-1. **Modify `_build_daily_rankings`** to include `"surplus"` (from `deficit_surplus`) and `"daily"` (computed delta from previous day) in each entry dict. This is foundational because subsequent methods depend on these fields.
-2. **Create the 6 new computation methods** (Efficiency King, Brick Wall, Projected Overtakes, Milestone Watch, Consistency, Condensed Movers) — these depend on step 1 being complete.
-3. **Create helper formatters**: Modify `_format_today_movers` -> `_format_condensed_movers`, create `_format_efficiency_king`, `_format_brick_wall`, `_format_projected_overtakes`, `_format_milestone_watch`.
-4. **Refactor `generate_leaderboard_report`** to call all new methods and restructure the embed fields into the new 5-section layout.
-5. **Remove or condense** any unused formatter calls and ensure the embed fields are ordered correctly.
-6. **Final review** — verify the embed has exactly the right number of fields, no field exceeds Discord's 1024-character value limit, and all formatting is consistent.
+No classes are removed or added.
+
+## Dependencies
+
+No new Python packages. Only uses standard library (`datetime` already imported).
+
+## Testing
+
+### Test the new method directly
+
+```python
+# In a test file or manually via generate_test_report:
+# 1. Verify _compute_best_week returns None when daily_deltas is empty
+# 2. Verify it correctly averages exactly 7 days of data
+# 3. Verify it correctly averages fewer than 7 days (e.g., early in month)
+# 4. Verify a member with 1 data point is excluded
+# 5. Verify the highest avg is selected
+```
+
+### Manual validation
+
+Run `python tools/generate_test_report.py --club_name "Paragon" --year 2026 --month 6 --verbose` and inspect the generated markdown for the new "Best Week" line in the Momentum section.
+
+## Implementation Order
+
+1. Add the `BestWeek` NamedTuple after `ConsistencyResult` (~line 65).
+2. Add the `_compute_best_week` method after `_compute_consistency` (~line 469).
+3. In `generate_leaderboard_report`, add the call to `_compute_best_week` and pass it to `_assemble_momentum`.
+4. Update `_assemble_momentum` signature to accept `best_week: Optional[BestWeek] = None`.
+5. Add the Best Week rendering block inside `_assemble_momentum` after The Sprinter block.
+6. Regenerate the test report for Paragon to verify the output looks correct.
+7. Update `docs/leaderboard-news-report.md` to document the new feature.

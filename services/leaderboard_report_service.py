@@ -63,6 +63,11 @@ class ConsistencyResult(NamedTuple):
     overperformer_count: int
     cooler_count: int
 
+class BestWeek(NamedTuple):
+    name: str
+    avg_daily: float
+    days: int
+
 
 class LeaderboardReportService:
     """Generates a rich 'sports broadcast' style news report for club activity."""
@@ -106,6 +111,7 @@ class LeaderboardReportService:
         overtakes = cls._compute_projected_overtakes(daily_rankings, latest_date)
         milestones = cls._compute_milestone_watch(daily_rankings, latest_date)
         consistency = cls._compute_consistency(daily_rankings, daily_deltas, latest_date)
+        best_week = cls._compute_best_week(daily_deltas, latest_date)
 
         # Sprinter = the member who gained the most fans today
         daily_leader = max(daily_rankings.get(latest_date, []), key=lambda e: e["daily"], default=None)
@@ -126,7 +132,7 @@ class LeaderboardReportService:
         embed.add_field(name="🔥 HEADLINE NEWS", value=headline, inline=False)
 
         # --- Section 2: Momentum ---
-        momentum = cls._assemble_momentum(king, tank, consistency, today_records, club_record, latest_date, daily_leader)
+        momentum = cls._assemble_momentum(king, tank, consistency, today_records, club_record, latest_date, daily_leader, best_week=best_week)
         embed.add_field(name="📈 THE MOMENTUM SHIFT", value=momentum or "_Stable activity today._", inline=False)
 
         # --- Section 3: Battle Zone ---
@@ -467,6 +473,40 @@ class LeaderboardReportService:
             cooler_count=len(coolers),
         )
 
+    @classmethod
+    def _compute_best_week(
+        cls,
+        daily_deltas: Dict[str, List[Dict]],
+        latest_date: date,
+    ) -> Optional[BestWeek]:
+        """
+        Find the member with the highest average daily fan gain over the
+        last 7 days (rolling window ending on latest_date).
+
+        Members with fewer than 2 data points in the window are excluded
+        to avoid skewed averages.
+        """
+        from datetime import timedelta
+        window_start = latest_date - timedelta(days=6)
+
+        best: Optional[BestWeek] = None
+
+        for name, deltas in daily_deltas.items():
+            # Filter deltas to the 7-day window
+            window_deltas = [d for d in deltas if window_start <= d["date"] <= latest_date]
+            if len(window_deltas) < 2:
+                continue
+
+            avg = sum(d["delta"] for d in window_deltas) / len(window_deltas)
+            if avg <= 0:
+                continue
+
+            avg_rounded = round(avg, 1)
+            if best is None or avg_rounded > best.avg_daily:
+                best = BestWeek(name=name, avg_daily=avg_rounded, days=len(window_deltas))
+
+        return best
+
     # --- Assembly Helpers (The 'Polishing' Layer) ---
 
     @classmethod
@@ -516,12 +556,20 @@ class LeaderboardReportService:
         club_rec: Optional[Dict[str, Any]],
         latest_date: date,
         daily_leader: Optional[Dict[str, Any]] = None,
+        best_week: Optional[BestWeek] = None,
     ) -> str:
         parts = []
         if daily_leader:
             parts.append(
                 f"**🏃 The Sprinter** — **{daily_leader['name']}** "
                 f"(+{cls._fmt_fans(daily_leader['daily'])}) gained the most fans today!"
+            )
+
+        if best_week:
+            parts.append(
+                f"**🏅 Best Week** — **{best_week.name}** "
+                f"(avg +{cls._fmt_fans(round(best_week.avg_daily))}/day "
+                f"over the last {best_week.days} days)"
             )
 
         if tank:

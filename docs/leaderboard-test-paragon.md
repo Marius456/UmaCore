@@ -14,6 +14,7 @@ _Jun 12 update_
 ## 📈 THE MOMENTUM SHIFT
 
 **🏃 The Sprinter** — **Mysty** (+5.0M) gained the most fans today!
+**🏅 Best Week** — **Mariartis** (avg +5.7M/day over the last 7 days)
 **⚖️ THE MOMENTUM**
 **Mariartis** is turning up the heat, out-gaining **Secretariat** for 3 days in a row — chipping away at the **6.3M** lead at **+382.7K/day** — **Secretariat** had a below-average day (+3.9M) — It's a slow burn — overtake projected **16+ days** out.
 
@@ -46,6 +47,6 @@ _Jun 12 update_
 
 ---
 
-*Generated at: 2026-06-14 11:16:51.906693+00:00*
+*Generated at: 2026-06-14 11:42:21.069150+00:00*
 
 *Footer: Paragon · Powering Through June*
