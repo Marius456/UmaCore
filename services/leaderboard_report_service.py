@@ -45,6 +45,10 @@ class TankAnalysis(NamedTuple):
     streak: int
     is_dynasty: bool
     rank: int
+    pressure_streak: int                   # days #2 has outgained #1 consecutively
+    gap_trend: str                         # "shrinking" | "holding" | "expanding"
+    eta_days: Optional[float]              # days until overtake, None if not closing
+    leader_above_avg: bool                 # is #1's daily gain above their monthly avg?
 
 class Milestone(NamedTuple):
     name: str
@@ -98,7 +102,7 @@ class LeaderboardReportService:
         club_record = cls._compute_club_record(daily_deltas)
 
         king = cls._compute_efficiency_king(daily_rankings, daily_deltas, latest_date)
-        tank = cls._compute_tank_analysis(daily_rankings, latest_date)
+        tank = cls._compute_tank_analysis(daily_rankings, latest_date, daily_deltas)
         overtakes = cls._compute_projected_overtakes(daily_rankings, latest_date)
         milestones = cls._compute_milestone_watch(daily_rankings, latest_date)
         consistency = cls._compute_consistency(daily_rankings, daily_deltas, latest_date)
@@ -173,6 +177,7 @@ class LeaderboardReportService:
         cls,
         daily_rankings: Dict[date, List[Dict]],
         latest_date: date,
+        daily_deltas: Dict[str, List[Dict]],
     ) -> Optional[TankAnalysis]:
         entries = daily_rankings.get(latest_date, [])
         if len(entries) < 2:
@@ -203,6 +208,54 @@ class LeaderboardReportService:
 
         is_dynasty = streak >= 5
 
+        # ── New analytics ────────────────────────────────────────────────
+
+        # pressure_streak: consecutive days (including today) where #2 outgained #1
+        pressure_streak = 0
+        for d in reversed(sorted_dates):
+            day_entries = daily_rankings.get(d, [])
+            if len(day_entries) >= 2:
+                top1 = day_entries[0]
+                # Find the current #2 challenger at whatever rank they were on this previous day
+                challenger = next((e for e in day_entries if e["name"] == name_2nd), None)
+                if top1["name"] == name and challenger is not None and challenger["daily"] > top1["daily"]:
+                    pressure_streak += 1
+                else:
+                    break
+            else:
+                break
+
+        # gap_trend: compare today's gap to yesterday's gap
+        yesterday_date = cls._get_previous_day(daily_rankings, latest_date)
+        gap_trend = "holding"
+        if yesterday_date is not None:
+            y_entries = daily_rankings.get(yesterday_date, [])
+            if len(y_entries) >= 2:
+                y_top1 = y_entries[0]
+                y_top2 = y_entries[1]
+                # Find today's #1 and #2 in yesterday's data
+                y_fans_1 = next((e["fans"] for e in y_entries if e["name"] == name), None)
+                y_fans_2 = next((e["fans"] for e in y_entries if e["name"] == name_2nd), None)
+                if y_fans_1 is not None and y_fans_2 is not None:
+                    y_gap = y_fans_1 - y_fans_2
+                    if gap_to_next < y_gap - 1000:  # buffer for rounding
+                        gap_trend = "shrinking"
+                    elif gap_to_next > y_gap + 1000:
+                        gap_trend = "expanding"
+
+        # eta_days: projected days until overtake at current net rate
+        net_chase_rate = daily_gain_2nd - daily_gain
+        eta_days: Optional[float] = None
+        if net_chase_rate > 0 and gap_to_next > 0:
+            eta_days = round(gap_to_next / net_chase_rate, 1)
+
+        # leader_above_avg: is #1's daily gain above their monthly average?
+        leader_above_avg = False
+        leader_deltas = daily_deltas.get(name)
+        if leader_deltas:
+            avg = sum(d["delta"] for d in leader_deltas) / len(leader_deltas)
+            leader_above_avg = daily_gain > avg
+
         return TankAnalysis(
             name=name,
             name_2nd=name_2nd,
@@ -213,6 +266,10 @@ class LeaderboardReportService:
             streak=streak,
             is_dynasty=is_dynasty,
             rank=1,
+            pressure_streak=pressure_streak,
+            gap_trend=gap_trend,
+            eta_days=eta_days,
+            leader_above_avg=leader_above_avg,
         )
 
     @classmethod
@@ -468,8 +525,9 @@ class LeaderboardReportService:
             )
 
         if tank:
-            # Buffer size: small if 2nd place could catch up in ~2 days
-            is_small_gap = tank.daily_gain_2nd > 0 and tank.gap_to_next <= tank.daily_gain_2nd * 2
+            # Buffer size: small if 2nd place could overtake in ~3 days at current net rate
+            net_chase_rate = tank.daily_gain_2nd - tank.daily_gain
+            is_small_gap = net_chase_rate > 0 and tank.gap_to_next <= net_chase_rate * 3
             gap_fmt = cls._fmt_fans(tank.gap_to_next)
 
             if tank.is_dynasty:
@@ -506,21 +564,84 @@ class LeaderboardReportService:
                             f"despite **{tank.name_2nd}** breathing down their neck."
                         )
                 else:
-                    if not is_small_gap:
-                        # Standard, losing lead, big buffer
-                        header = "**⚖️ THE MOMENTUM**"
-                        text = (
-                            f"**{tank.name}** is our leader, but **{tank.name_2nd}** is on "
-                            f"the journey to defeat them—gaining faster every day. "
-                            f"How long can they hold out?"
+                    # Standard, losing lead — use new analytics for rich text
+                    # Build narrative parts
+                    narrative_parts = []
+
+                    # Streak context
+                    if tank.pressure_streak >= 1:
+                        narrative_parts.append(
+                            f"**{tank.name_2nd}** is turning up the heat, "
+                            f"out-gaining **{tank.name}** for "
+                            f"{'the first day in a row' if tank.pressure_streak == 1 else f'{tank.pressure_streak} days in a row'}"
                         )
                     else:
-                        # Standard, losing lead, small buffer
-                        header = "**🚨 THE BRINK**"
-                        text = (
-                            f"**{tank.name}** is being heavily challenged! With a tiny "
-                            f"**{gap_fmt}** lead, will tomorrow we have a new **#1**?"
+                        narrative_parts.append(
+                            f"**{tank.name_2nd}** is gaining faster today"
                         )
+
+                    # Gap trajectory
+                    if tank.gap_trend == "shrinking" and tank.eta_days is not None:
+                        net_rate = tank.daily_gain_2nd - tank.daily_gain
+                        narrative_parts.append(
+                            f"chipping away at the **{gap_fmt}** lead at "
+                            f"**+{cls._fmt_fans(net_rate)}/day**"
+                        )
+                    elif tank.gap_trend == "shrinking":
+                        narrative_parts.append(
+                            f"the **{gap_fmt}** lead is shrinking"
+                        )
+                    elif tank.gap_trend == "expanding":
+                        narrative_parts.append(
+                            f"but **{tank.name}** is actually pulling away despite the pace"
+                        )
+                    else:
+                        narrative_parts.append(
+                            f"the **{gap_fmt}** gap is holding steady for now"
+                        )
+
+                    # Leader's response
+                    if tank.leader_above_avg:
+                        narrative_parts.append(
+                            f"**{tank.name}** fought back today "
+                            f"(+{cls._fmt_fans(tank.daily_gain)}, above their average)"
+                        )
+                    else:
+                        narrative_parts.append(
+                            f"**{tank.name}** had a below-average day "
+                            f"(+{cls._fmt_fans(tank.daily_gain)})"
+                        )
+
+                    # Projection
+                    if tank.eta_days is not None:
+                        if tank.eta_days <= 3:
+                            projection = (
+                                f"At this rate, the crown changes hands in "
+                                f"**under {int(tank.eta_days + 1)} days**!"
+                            )
+                        elif tank.eta_days <= 7:
+                            projection = (
+                                f"If this keeps up, we'll see a new **#1** "
+                                f"in about **{int(tank.eta_days)} days**."
+                            )
+                        elif tank.eta_days <= 14:
+                            projection = (
+                                f"At this pace, a new **#1** would emerge "
+                                f"in **~{int(tank.eta_days)} days**."
+                            )
+                        else:
+                            projection = (
+                                f"It's a slow burn — overtake projected "
+                                f"**{int(tank.eta_days)}+ days** out."
+                            )
+                        narrative_parts.append(projection)
+
+                    if not is_small_gap:
+                        header = "**⚖️ THE MOMENTUM**"
+                    else:
+                        header = "**🚨 THE BRINK**"
+
+                    text = " — ".join(narrative_parts)
 
             parts.append(f"{header}\n{text}")
 
