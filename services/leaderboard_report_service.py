@@ -35,10 +35,15 @@ class EfficiencyKing(NamedTuple):
     avg_daily: float
     pct_above_avg: float
 
-class BrickWall(NamedTuple):
+class TankAnalysis(NamedTuple):
     name: str
+    name_2nd: str
     surplus: int
     gap_to_next: int
+    daily_gain: int
+    daily_gain_2nd: int
+    streak: int
+    is_dynasty: bool
     rank: int
 
 class Milestone(NamedTuple):
@@ -93,7 +98,7 @@ class LeaderboardReportService:
         club_record = cls._compute_club_record(daily_deltas)
 
         king = cls._compute_efficiency_king(daily_rankings, daily_deltas, latest_date)
-        wall = cls._compute_brick_wall(daily_rankings, latest_date)
+        tank = cls._compute_tank_analysis(daily_rankings, latest_date)
         overtakes = cls._compute_projected_overtakes(daily_rankings, latest_date)
         milestones = cls._compute_milestone_watch(daily_rankings, latest_date)
         consistency = cls._compute_consistency(daily_rankings, daily_deltas, latest_date)
@@ -110,11 +115,11 @@ class LeaderboardReportService:
         )
 
         # --- Section 1: Headline ---
-        headline = cls._assemble_headline(leader_change, king, wall, daily_rankings.get(latest_date))
+        headline = cls._assemble_headline(leader_change, king, tank, daily_rankings.get(latest_date))
         embed.add_field(name="🔥 HEADLINE NEWS", value=headline, inline=False)
 
         # --- Section 2: Momentum ---
-        momentum = cls._assemble_momentum(king, wall, consistency, today_records, club_record, latest_date)
+        momentum = cls._assemble_momentum(king, tank, consistency, today_records, club_record, latest_date)
         embed.add_field(name="📈 THE MOMENTUM SHIFT", value=momentum or "_Stable activity today._", inline=False)
 
         # --- Section 3: Battle Zone ---
@@ -161,26 +166,51 @@ class LeaderboardReportService:
         return max(candidates, key=lambda x: x.pct_above_avg)
 
     @classmethod
-    def _compute_brick_wall(
+    def _compute_tank_analysis(
         cls,
         daily_rankings: Dict[date, List[Dict]],
         latest_date: date,
-    ) -> Optional[BrickWall]:
+    ) -> Optional[TankAnalysis]:
         entries = daily_rankings.get(latest_date, [])
         if len(entries) < 2:
             return None
 
-        # Sort by surplus (most 'ahead' of their own quota)
-        best = max(entries, key=lambda e: e["surplus"])
-        idx = entries.index(best)
+        # Get #1 and #2 by rank (entries are already sorted by fans descending)
+        rank_1 = entries[0]
+        rank_2 = entries[1]
 
-        # If they are last, compare to 0, otherwise compare to the person below them in rank
-        if idx + 1 < len(entries):
-            gap = best["surplus"] - entries[idx + 1]["surplus"]
-        else:
-            gap = best["surplus"]
+        name = rank_1["name"]
+        name_2nd = rank_2["name"]
+        surplus = rank_1["surplus"]
+        gap_to_next = rank_1["fans"] - rank_2["fans"]
+        daily_gain = rank_1["daily"]
+        daily_gain_2nd = rank_2["daily"]
 
-        return BrickWall(best["name"], best["surplus"], gap, best["rank"])
+        # Compute streak: consecutive days this member held #1
+        sorted_dates = sorted(daily_rankings.keys())
+        streak = 0
+        for d in reversed(sorted_dates):
+            if d == latest_date:
+                continue  # skip today, we're counting previous days
+            top = daily_rankings[d][0]["name"] if daily_rankings.get(d) else None
+            if top == name:
+                streak += 1
+            else:
+                break
+
+        is_dynasty = streak >= 5
+
+        return TankAnalysis(
+            name=name,
+            name_2nd=name_2nd,
+            surplus=surplus,
+            gap_to_next=gap_to_next,
+            daily_gain=daily_gain,
+            daily_gain_2nd=daily_gain_2nd,
+            streak=streak,
+            is_dynasty=is_dynasty,
+            rank=1,
+        )
 
     @classmethod
     def _compute_projected_overtakes(
@@ -384,7 +414,7 @@ class LeaderboardReportService:
         cls,
         leader_change: Dict[str, Any],
         king: Optional[EfficiencyKing],
-        wall: Optional[BrickWall],
+        tank: Optional[TankAnalysis],
         today_entries: Optional[List[Dict]],
     ) -> str:
         if leader_change["changed"]:
@@ -395,7 +425,7 @@ class LeaderboardReportService:
                 f"**{leader_change['old_leader']}** for #1!{ctx}"
             )
 
-        if king and wall and king.name == wall.name:
+        if king and tank and king.name == tank.name:
             return (
                 f"👑 **{king.name}** is dominating the field, "
                 f"leading in both momentum and defensive surplus!"
@@ -420,7 +450,7 @@ class LeaderboardReportService:
     def _assemble_momentum(
         cls,
         king: Optional[EfficiencyKing],
-        wall: Optional[BrickWall],
+        tank: Optional[TankAnalysis],
         consistency: ConsistencyResult,
         records: Dict[str, Any],
         club_rec: Optional[Dict[str, Any]],
@@ -434,12 +464,62 @@ class LeaderboardReportService:
                 f"**{king.pct_above_avg}%** above average."
             )
 
-        if wall:
-            parts.append(
-                f"**🛡️ The Tank** — **{wall.name}** is a brick wall "
-                f"at **#{wall.rank}**, holding a "
-                f"**{cls._fmt_fans(wall.gap_to_next)}** buffer."
-            )
+        if tank:
+            # Buffer size: small if 2nd place could catch up in ~2 days
+            is_small_gap = tank.daily_gain_2nd > 0 and tank.gap_to_next <= tank.daily_gain_2nd * 2
+            gap_fmt = cls._fmt_fans(tank.gap_to_next)
+
+            if tank.is_dynasty:
+                if tank.daily_gain > tank.daily_gain_2nd:
+                    # Dynasty, winning
+                    header = "**🏛️ THE DYNASTY**"
+                    text = (
+                        f"**{tank.name}**'s rule is absolute. After **{tank.streak} days**, "
+                        f"they remain unmovable and continue to pull away—"
+                        f"no one can challenge the throne."
+                    )
+                else:
+                    # Dynasty, losing lead
+                    header = "**🏰 THE SIEGE**"
+                    text = (
+                        f"The **{tank.streak}-day era** of **{tank.name}** is finally being "
+                        f"challenged. **{tank.name_2nd}** is on a journey to defeat "
+                        f"our long-standing leader—how long can they hold out?"
+                    )
+            else:
+                if tank.daily_gain > tank.daily_gain_2nd:
+                    if not is_small_gap:
+                        # Standard, winning, big buffer
+                        header = "**🛡️ THE TANK**"
+                        text = (
+                            f"**{tank.name}** is unmovable at **#1** with a "
+                            f"**{gap_fmt}** buffer. No one can challenge them today."
+                        )
+                    else:
+                        # Standard, winning, small buffer
+                        header = "**🏃 THE VANGUARD**"
+                        text = (
+                            f"**{tank.name}** is planting their feet. They remain unmovable "
+                            f"despite **{tank.name_2nd}** breathing down their neck."
+                        )
+                else:
+                    if not is_small_gap:
+                        # Standard, losing lead, big buffer
+                        header = "**⚖️ THE MOMENTUM**"
+                        text = (
+                            f"**{tank.name}** is our leader, but **{tank.name_2nd}** is on "
+                            f"the journey to defeat them—gaining faster every day. "
+                            f"How long can they hold out?"
+                        )
+                    else:
+                        # Standard, losing lead, small buffer
+                        header = "**🚨 THE BRINK**"
+                        text = (
+                            f"**{tank.name}** is being heavily challenged! With a tiny "
+                            f"**{gap_fmt}** lead, will tomorrow we have a new **#1**?"
+                        )
+
+            parts.append(f"{header}\n{text}")
 
         top_over = consistency.top_overperformer
         if top_over and (not king or top_over["name"] != king.name):
