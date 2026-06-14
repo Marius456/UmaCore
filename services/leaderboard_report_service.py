@@ -137,15 +137,18 @@ class LeaderboardReportService:
 
         # --- Section 3: Battle Zone ---
         battles = cls._assemble_battle_zone(overtakes, rivalries)
-        embed.add_field(name="⚔️ THE BATTLE ZONE", value=battles or "_Peaceful on the ranks today._", inline=False)
+        if battles:
+            embed.add_field(name="⚔️ THE BATTLE ZONE", value=battles, inline=False)
 
         # --- Section 4: Milestones ---
         milestone_text = cls._format_milestone_watch(milestones)
-        embed.add_field(name="🎯 MILESTONE TRACKER", value=milestone_text, inline=False)
+        if milestones:
+            embed.add_field(name="🎯 MILESTONE TRACKER", value=milestone_text, inline=False)
 
         # --- Section 5: Movers ---
         condensed = cls._compute_condensed_movers(movers)
-        embed.add_field(name="⬆️⬇️ TOP MOVERS", value=cls._format_condensed_movers(condensed), inline=False)
+        if condensed:
+            embed.add_field(name="⬆️⬇️ TOP MOVERS", value=cls._format_condensed_movers(condensed), inline=False)
 
         embed.set_footer(text=f"{club_name} · Powering Through {calendar.month_name[month]}")
         return embed

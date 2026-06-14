@@ -1,51 +1,45 @@
 # 📰 Leaderboard News — BonBon
 
 **June 2026** · 30 members
-_Jun 10 update_
+_Jun 11 update_
 
 ---
 
 ## 🔥 HEADLINE NEWS
 
-🔥 **LaqOfInterest** is today's breakout star, performing 87.5% above their usual pace!
+🔥 **Kanan** is today's breakout star, performing 54.1% above their usual pace!
 
 ---
 
 ## 📈 THE MOMENTUM SHIFT
 
-**🏃 The Sprinter** — **LaqOfInterest** (+626.8K) is **87.5%** above average.
-**🏰 THE SIEGE**
-The **7-day era** of **Mike** is finally being challenged. **DocShamrock** is on a journey to defeat our long-standing leader—how long can they hold out?
+**🏃 The Sprinter** — **Mike** (+2.6M) gained the most fans today!
+**🏅 Best Week** — **Mike** (avg +2.2M/day over the last 7 days)
+**🏛️ THE DYNASTY**
+**Mike**'s rule is absolute. After **8 days**, they remain unmovable and continue to pull away—no one can challenge the throne.
 
 ---
 
 ## ⚔️ THE BATTLE ZONE
 
 **🚨 Urgent Overtakes**
-• **LaqOfInterest** is projected to overtake **Kondor** for **#22** — TODAY (closing 173.5K gap at +406.3K/day)
-• **KiraKira** is projected to overtake **DocShamrock** for **#2** — TODAY (closing 553.1K gap at +912.0K/day)
-• **Enshayn** is projected to overtake **Richard** for **#6** — TODAY (closing 401.4K gap at +691.7K/day)
+• **Nishikyou** is projected to overtake **Enshayn** for **#7** — TODAY (closing 21.2K gap at +1.4M/day)
+• **Kanan** is projected to overtake **Jae** for **#17** — TODAY (closing 344.1K gap at +974.0K/day)
+• **LaqOfInterest** is projected to overtake **Kondor** for **#22** — TODAY (closing 50.0K gap at +123.5K/day)
 
 **⚔️ Monthly Rivalries**
-⚔️ **Nishikyou** vs **WuBoy** (4 swaps) — **Nishikyou** leads by 1.2M (#8 vs #10)
-⚔️ **DocShamrock** vs **KiraKira** (3 swaps) — **DocShamrock** leads by 553.1K (#2 vs #3)
-⚔️ **MarvelBlaze** vs **Enshayn** (3 swaps) — **Enshayn** leads by 2.0M (#7 vs #9)
-
----
-
-## 🎯 MILESTONE TRACKER
-
-🎯 **MarvelBlaze** — [▰▰▰▰▰▰▰▰▰▱] 98.6% to **10.0M**
-🎯 **Galeforce** — [▰▰▰▰▰▰▰▰▰▱] 95.7% to **5.0M**
+⚔️ **Nishikyou** vs **WuBoy** (4 swaps) — **Nishikyou** leads by 1.7M (#8 vs #9)
+⚔️ **Galeforce** vs **Juniper** (3 swaps) — **Juniper** leads by 74.2K (#19 vs #20)
+⚔️ **Beto** vs **Chelan** (3 swaps) — **Chelan** leads by 31.7K (#14 vs #15)
 
 ---
 
 ## ⬆️⬇️ TOP MOVERS
 
-📈 **Nishikyou** #11→#8 · 📈 **Beto** #17→#14 · 📉 **Jae** #14→#17
+📉 **MarvelBlaze** #9→#11 · 📈 **WuBoy** #10→#9 · 📈 **sesbianlex** #11→#10
 
 ---
 
-*Generated at: 2026-06-12 11:59:40.199467+00:00*
+*Generated at: 2026-06-14 11:58:34.683428+00:00*
 
 *Footer: BonBon · Powering Through June*
