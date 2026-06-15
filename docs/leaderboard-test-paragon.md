@@ -1,52 +1,46 @@
 # 📰 Leaderboard News — Paragon
 
 **June 2026** · 30 members
-_Jun 12 update_
+_Jun 13 update_
 
 ---
 
 ## 🔥 HEADLINE NEWS
 
-🔥 **Katrine O** is today's breakout star, performing 93.7% above their usual pace!
+🔥 **Willow** is today's breakout star, performing 178.3% above their usual pace!
 
 ---
 
 ## 📈 THE MOMENTUM SHIFT
 
-**🏃 The Sprinter** — **Mysty** (+5.0M) gained the most fans today!
+**🏃 The Sprinter** — **Secretariat** (+6.5M) gained the most fans today!
 **🏅 Best Week** — **Mariartis** (avg +5.7M/day over the last 7 days)
-**⚖️ THE MOMENTUM**
-**Mariartis** is turning up the heat, out-gaining **Secretariat** for 3 days in a row — chipping away at the **6.3M** lead at **+382.7K/day** — **Secretariat** had a below-average day (+3.9M) — It's a slow burn — overtake projected **16+ days** out.
+**🏛️ THE DYNASTY**
+**Secretariat**'s rule is absolute. After **5 days**, they remain unmovable and continue to pull away—no one can challenge the throne.
+**🏅 New PB** — **Lea** just set a new personal best: **+4.8M**!
 
 ---
 
 ## ⚔️ THE BATTLE ZONE
 
 **🚨 Urgent Overtakes**
-• **Tavi** is projected to overtake **Runic** for **#9** — TODAY (closing 218.0K gap at +2.2M/day)
-• **HellaZach** is projected to overtake **Syluar** for **#11** — TODAY (closing 141.5K gap at +1.7M/day)
-• **TunMan＾＾** is projected to overtake **Otter** for **#16** — TODAY (closing 276.0K gap at +776.2K/day)
+• **Yuki** is projected to overtake **Otter** for **#17** — TODAY (closing 29.4K gap at +3.2M/day)
+• **Azuvector** is projected to overtake **Syluar** for **#13** — TODAY (closing 420.4K gap at +2.6M/day)
+• **fatcat** is projected to overtake **Jun** for **#25** — TODAY (closing 211.4K gap at +1.1M/day)
 
 **⚔️ Monthly Rivalries**
-⚔️ **Perceval** vs **ZT** (5 swaps) — **ZT** leads by 404.3K (#25 vs #26)
-⚔️ **Arceny** vs **BigBoiManni** (4 swaps) — **Arceny** leads by 2.4M (#19 vs #21)
-⚔️ **Clark** vs **Willow** (3 swaps) — **Willow** leads by 815.6K (#29 vs #30)
-
----
-
-## 🎯 MILESTONE TRACKER
-
-🎯 **fatcat** — [▰▰▰▰▰▰▰▰▰▱] 98.5% to **10.0M**
-🎯 **PHBant** — [▰▰▰▰▰▰▰▰▰▱] 98.8% to **50.0M**
+⚔️ **Perceval** vs **ZT** (6 swaps) — **Perceval** leads by 593.2K (#24 vs #27)
+⚔️ **Willow** vs **Katrine O** (4 swaps) — **Willow** leads by 824.0K (#28 vs #29)
+⚔️ **blukip** vs **BigBoiManni** (4 swaps) — **blukip** leads by 397.5K (#21 vs #22)
 
 ---
 
 ## ⬆️⬇️ TOP MOVERS
 
-📈 **Tavi** #13→#10 · 📈 **ZT** #27→#25 · 📉 **Luprin** #11→#13
+📈 **Luprin** #13→#9 · 📈 **Yuki** #20→#18 · 📈 **Perceval** #26→#24
 
 ---
 
-*Generated at: 2026-06-14 11:42:21.069150+00:00*
+*Generated at: 2026-06-14 15:10:21.193022+00:00*
 
 *Footer: Paragon · Powering Through June*
