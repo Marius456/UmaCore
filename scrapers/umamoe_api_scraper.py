@@ -1,9 +1,8 @@
 """
 Uma.moe API scraper for club data fetching
 
-Uses Playwright with system Chrome in non-headless mode to bypass
-Cloudflare's browser_proof_required challenge, with stealth patches
-and persistent cookie storage for robust scraping.
+Uses Playwright with bundled Chromium in headless mode, with stealth patches
+and persistent cookie storage for robust Cloudflare-bypassed scraping.
 """
 from typing import Dict, Optional, List
 import logging
@@ -11,14 +10,13 @@ import calendar
 import json
 import asyncio
 import os
-import subprocess
 from datetime import datetime, date, timezone, timedelta
 
 from playwright.async_api import async_playwright, Error as PlaywrightError
 from playwright.async_api import BrowserContext, Page
 
 from scrapers.base_scraper import BaseScraper
-from config.settings import PLAYWRIGHT_HEADLESS, PLAYWRIGHT_COOKIE_DIR
+from config.settings import PLAYWRIGHT_COOKIE_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -26,28 +24,19 @@ logger = logging.getLogger(__name__)
 _browser = None
 _browser_context = None
 _playwright = None
-_orphan_pids = []
 
-
-def _get_chrome_path() -> Optional[str]:
-    """
-    Detect the system Chrome executable path on Windows.
-    Returns None if not found, in which case Playwright's bundled Chromium is used.
-    """
-    candidates = [
-        os.path.join(os.environ.get("PROGRAMFILES", "C:\\Program Files"),
-                     "Google\\Chrome\\Application\\chrome.exe"),
-        os.path.join(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)"),
-                     "Google\\Chrome\\Application\\chrome.exe"),
-        os.path.join(os.environ.get("LOCALAPPDATA", ""),
-                     "Google\\Chrome\\Application\\chrome.exe"),
-    ]
-    for path in candidates:
-        if os.path.isfile(path):
-            logger.info(f"Found system Chrome at: {path}")
-            return path
-    logger.warning("System Chrome not found in common locations; will fall back to Playwright bundled Chromium")
-    return None
+# Shared launch args for bundled Chromium
+LAUNCH_ARGS = [
+    "--no-sandbox",
+    "--disable-blink-features=AutomationControlled",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-web-security",
+    "--disable-features=IsolateOrigins,site-per-process",
+    "--window-size=1920,1080",
+]
 
 
 def _get_cookie_dir() -> str:
@@ -132,15 +121,13 @@ async def _get_browser_context() -> BrowserContext:
             storage_state=os.path.join(cookie_dir, "storage_state.json") if os.path.exists(
                 os.path.join(cookie_dir, "storage_state.json")) else None,
         )
-        logger.info("Created persistent Playwright browser context (non-headless)")
+        logger.info("Created persistent Playwright browser context (headless)")
     return _browser_context
 
 
 async def _get_browser():
     """
-    Get or create a shared Playwright browser instance using system Chrome.
-    Uses non-headless mode to bypass Cloudflare's headless detection.
-    Falls back to Playwright's bundled Chromium if system Chrome is not found.
+    Get or create a shared Playwright browser instance using bundled Chromium in headless mode.
     """
     global _browser, _playwright
     if _browser is not None and _browser.is_connected():
@@ -149,56 +136,13 @@ async def _get_browser():
     if _playwright is None:
         _playwright = await async_playwright().start()
 
-    chrome_path = _get_chrome_path()
-    launch_args = [
-        "--no-sandbox",
-        "--disable-blink-features=AutomationControlled",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--disable-web-security",
-        "--disable-features=IsolateOrigins,site-per-process",
-        "--window-size=1920,1080",
-        "--window-position=-32000,-32000",  # Off-screen positioning to avoid visible window popup
-    ]
     try:
-        if chrome_path and os.name == 'nt':
-            # Use system Chrome with channel detection
-            _browser = await _playwright.chromium.launch(
-                headless=False,
-                executable_path=chrome_path,
-                args=launch_args,
-                timeout=30000,
-            )
-            logger.info("Started system Chrome (non-headless) via Playwright")
-        elif PLAYWRIGHT_HEADLESS:
-            _browser = await _playwright.chromium.launch(
-                headless=True,
-                args=launch_args,
-                timeout=30000,
-            )
-            logger.info("Started Playwright bundled Chromium (headless, forcing headless mode via config)")
-        else:
-            # Try channel='chrome' which uses system Chrome by channel detection
-            try:
-                _browser = await _playwright.chromium.launch(
-                    headless=False,
-                    channel='chrome',
-                    args=launch_args,
-                    timeout=30000,
-                )
-                logger.info("Started system Chrome (non-headless, channel=chrome)")
-            except Exception as channel_err:
-                logger.warning(f"Could not launch system Chrome via channel='chrome': {channel_err}")
-                # Fallback: try with bundled Chromium in headless mode (last resort)
-                _browser = await _playwright.chromium.launch(
-                    headless=True,
-                    args=launch_args,
-                    timeout=30000,
-                )
-                logger.warning("Falling back to Playwright bundled Chromium (headless mode)")
-
+        _browser = await _playwright.chromium.launch(
+            headless=True,
+            args=LAUNCH_ARGS,
+            timeout=30000,
+        )
+        logger.info("Started Playwright bundled Chromium (headless)")
     except PlaywrightError as e:
         message = str(e)
         if "Executable doesn't exist" in message or "playwright install" in message.lower():
@@ -207,32 +151,13 @@ async def _get_browser():
                 "or 'playwright install chromium' after installing dependencies."
             ) from e
         raise
-    except Exception as e:
-        logger.error(f"Failed to launch browser: {e}")
-        # Last-resort fallback to headless bundled Chromium
-        _browser = await _playwright.chromium.launch(
-            headless=True,
-            args=["--no-sandbox"],
-            timeout=30000,
-        )
-        logger.warning("Fallback: launched Playwright bundled Chromium in headless mode after error")
-
-    # Track Chrome process PID for cleanup
-    try:
-        if hasattr(_browser, 'process') and _browser.process:
-            pid = _browser.process.pid
-            if pid:
-                _orphan_pids.append(pid)
-                logger.debug(f"Tracking browser process PID: {pid}")
-    except Exception:
-        pass
 
     return _browser
 
 
 async def _close_browser():
     """Close the shared browser instance (call on bot shutdown)."""
-    global _browser, _browser_context, _playwright, _orphan_pids
+    global _browser, _browser_context, _playwright
 
     # Save storage state (cookies + localStorage) before closing
     if _browser_context:
@@ -267,20 +192,6 @@ async def _close_browser():
         except Exception:
             pass
         _playwright = None
-
-    # Force-kill any orphaned Chrome processes (Windows)
-    if _orphan_pids and os.name == 'nt':
-        for pid in set(_orphan_pids):
-            try:
-                subprocess.run(
-                    ["taskkill", "/F", "/PID", str(pid)],
-                    capture_output=True,
-                    timeout=5,
-                )
-                logger.debug(f"Killed orphaned Chrome process PID: {pid}")
-            except Exception:
-                pass
-    _orphan_pids.clear()
 
     logger.info("Closed shared Playwright browser instance")
 
@@ -355,11 +266,10 @@ class UmaMoeAPIScraper(BaseScraper):
 
     async def _fetch_api_data(self, year: int, month: int) -> dict:
         """
-        Fetch API data using a persistent non-headless browser context.
+        Fetch API data using a persistent headless browser context.
 
-        Shows a brief Chrome window (positioned off-screen) to satisfy
-        Cloudflare's browser_proof_required challenge. After initial
-        resolution, cookies are persisted and reused for subsequent calls.
+        After initial Cloudflare challenge resolution, cookies are persisted
+        and reused for subsequent calls.
 
         Returns the full API response dict. Raises on failure.
         """
@@ -492,8 +402,6 @@ class UmaMoeAPIScraper(BaseScraper):
 
             # Extract club ranks from the "circle" sub-object.
             # On Day 1 prefer the current-month endpoint (more timely), fall back to primary.
-            # Note: the top-level "club_rank" field is a tier bracket (not a position rank);
-            # the actual position ranks live inside response["circle"].
             rank_source = (endpoint_data if (now.day == 1 and endpoint_data) else primary_data) or {}
             circle_data = rank_source.get("circle") or {}
             self._monthly_rank = circle_data.get("monthly_rank")

@@ -22,7 +22,6 @@ SCRAPE_RETRY_DELAY = 1  # seconds
 USE_UMAMOE_API = os.getenv("USE_UMAMOE_API", "true").lower() == "true"
 
 # Playwright Configuration (for Cloudflare-bypassed scraping)
-PLAYWRIGHT_HEADLESS = os.getenv("PLAYWRIGHT_HEADLESS", "false").lower() == "true"
 PLAYWRIGHT_COOKIE_DIR = os.getenv("PLAYWRIGHT_COOKIE_DIR", ".umamoe_cookies")
 
 # Timezone Configuration
