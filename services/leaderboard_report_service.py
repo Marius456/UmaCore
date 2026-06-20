@@ -129,21 +129,21 @@ class LeaderboardReportService:
 
         # --- Section 1: Headline ---
         headline = cls._assemble_headline(leader_change, king, tank, daily_rankings.get(latest_date))
-        embed.add_field(name="🔥 HEADLINE NEWS", value=headline, inline=False)
+        embed.add_field(name="🔥 HEADLINE NEWS", value=headline + "\n\n━━━━━━━━━━━━━━━━━━━━━", inline=False)
 
         # --- Section 2: Momentum ---
-        momentum = cls._assemble_momentum(king, tank, consistency, today_records, club_record, latest_date, daily_leader, best_week=best_week)
-        embed.add_field(name="📈 THE MOMENTUM SHIFT", value=momentum or "_Stable activity today._", inline=False)
+        momentum = cls._assemble_momentum(king, tank, consistency, today_records, club_record, latest_date, daily_leader, leader_change, best_week=best_week)
+        embed.add_field(name="📈 THE MOMENTUM SHIFT", value=(momentum or "_Stable activity today._") + "\n\n━━━━━━━━━━━━━━━━━━━━━", inline=False)
 
         # --- Section 3: Battle Zone ---
         battles = cls._assemble_battle_zone(overtakes, rivalries)
         if battles:
-            embed.add_field(name="⚔️ THE BATTLE ZONE", value=battles, inline=False)
+            embed.add_field(name="⚔️ THE BATTLE ZONE", value=battles + "\n\n━━━━━━━━━━━━━━━━━━━━━", inline=False)
 
         # --- Section 4: Milestones ---
         milestone_text = cls._format_milestone_watch(milestones)
         if milestones:
-            embed.add_field(name="🎯 MILESTONE TRACKER", value=milestone_text, inline=False)
+            embed.add_field(name="🎯 MILESTONE TRACKER", value=milestone_text + "\n\n━━━━━━━━━━━━━━━━━━━━━", inline=False)
 
         # --- Section 5: Movers ---
         condensed = cls._compute_condensed_movers(movers)
@@ -559,6 +559,7 @@ class LeaderboardReportService:
         club_rec: Optional[Dict[str, Any]],
         latest_date: date,
         daily_leader: Optional[Dict[str, Any]] = None,
+        leader_change: Optional[Dict[str, Any]] = None,
         best_week: Optional[BestWeek] = None,
     ) -> str:
         parts = []
@@ -581,7 +582,62 @@ class LeaderboardReportService:
             is_small_gap = net_chase_rate > 0 and tank.gap_to_next <= net_chase_rate * 3
             gap_fmt = cls._fmt_fans(tank.gap_to_next)
 
-            if tank.is_dynasty:
+            # --- Fragile lead detection ---
+            # Even if the leader is out-gaining #2, the gap may be tiny
+            # relative to the raw firepower both sides are putting up.
+            # A gap < ~1.5x the larger daily gain is dangerously thin.
+            max_daily_gain = max(tank.daily_gain, tank.daily_gain_2nd)
+            is_fragile_lead = (
+                max_daily_gain > 0
+                and tank.gap_to_next < max_daily_gain * 1.5
+            )
+
+            # --- Leader change: distinguish first-time conqueror from back-and-forth slugfest ---
+            if leader_change and leader_change["changed"] and tank.name == leader_change["new_leader"]:
+                old_leader = leader_change["old_leader"]
+                streak = leader_change["old_streak"]
+                swaps_7d = leader_change["swap_count_7d"]
+                streak_ctx = f" ({streak}-day reign ended!)" if streak >= 3 else ""
+
+                if swaps_7d >= 2:
+                    # Back-and-forth slugfest — these two won't stay down
+                    header = "**⚔️ THE SLUGFEST**"
+                    if is_fragile_lead:
+                        text = (
+                            f"**{tank.name}** retakes **#1** from **{old_leader}**"
+                            f"{streak_ctx} — but this war is far from over. "
+                            f"The crown has swapped hands **{swaps_7d} times** "
+                            f"in the last week alone. With a razor-thin **{gap_fmt}** "
+                            f"lead and both sides trading blows at millions per day, "
+                            f"expect another reversal soon."
+                        )
+                    else:
+                        text = (
+                            f"**{tank.name}** retakes **#1** from **{old_leader}**"
+                            f"{streak_ctx}. These two have swapped the crown "
+                            f"**{swaps_7d} times** in the last week — a true "
+                            f"war of attrition. Who will blink first?"
+                        )
+                else:
+                    # First overtake — triumphant conqueror
+                    header = "**👑 THE CONQUEROR**"
+                    if is_fragile_lead:
+                        text = (
+                            f"**{tank.name}** has done it. After a grueling battle, "
+                            f"they've dethroned **{old_leader}**{streak_ctx} and "
+                            f"claimed **#1**. But the war isn't over — the **{gap_fmt}** "
+                            f"lead is razor-thin when both sides are pulling "
+                            f"millions per day. One slip-up and the crown could "
+                            f"change hands again."
+                        )
+                    else:
+                        text = (
+                            f"**{tank.name}** has done it. After a grueling battle, "
+                            f"they've dethroned **{old_leader}**{streak_ctx} and "
+                            f"claimed **#1** with a **{gap_fmt}** buffer. "
+                            f"The reign of **{tank.name}** begins today."
+                        )
+            elif tank.is_dynasty:
                 if tank.daily_gain > tank.daily_gain_2nd:
                     # Dynasty, winning
                     header = "**🏛️ THE DYNASTY**"
@@ -600,7 +656,7 @@ class LeaderboardReportService:
                     )
             else:
                 if tank.daily_gain > tank.daily_gain_2nd:
-                    if not is_small_gap:
+                    if not is_small_gap and not is_fragile_lead:
                         # Standard, winning, big buffer
                         header = "**🛡️ THE TANK**"
                         text = (
@@ -608,12 +664,22 @@ class LeaderboardReportService:
                             f"**{gap_fmt}** buffer. No one can challenge them today."
                         )
                     else:
-                        # Standard, winning, small buffer
-                        header = "**🏃 THE VANGUARD**"
-                        text = (
-                            f"**{tank.name}** is planting their feet. They remain unmovable "
-                            f"despite **{tank.name_2nd}** breathing down their neck."
-                        )
+                        # Standard, winning, small or fragile buffer
+                        if is_fragile_lead:
+                            header = "**🏃 THE VANGUARD**"
+                            text = (
+                                f"**{tank.name}** holds a slim **{gap_fmt}** edge at **#1** "
+                                f"— vulnerable territory when both sides are pulling "
+                                f"**+{cls._fmt_fans(tank.daily_gain)}** and "
+                                f"**+{cls._fmt_fans(tank.daily_gain_2nd)}** per day. "
+                                f"**{tank.name_2nd}** is right on their heels."
+                            )
+                        else:
+                            header = "**🏃 THE VANGUARD**"
+                            text = (
+                                f"**{tank.name}** is planting their feet. They remain unmovable "
+                                f"despite **{tank.name_2nd}** breathing down their neck."
+                            )
                 else:
                     # Standard, losing lead — use new analytics for rich text
                     # Build narrative parts
@@ -694,7 +760,7 @@ class LeaderboardReportService:
 
                     text = " — ".join(narrative_parts)
 
-            parts.append(f"{header}\n{text}")
+            parts.append(f"{header}\n\n{text}")
 
         top_over = consistency.top_overperformer
         if top_over and (not king or top_over["name"] != king.name):
@@ -704,13 +770,16 @@ class LeaderboardReportService:
             )
 
         if records["members"]:
-            best = records["members"][0]
-            parts.append(
-                f"**🏅 New PB** — **{best['name']}** just set a new "
-                f"personal best: **+{cls._fmt_fans(best['delta'])}**!"
-            )
+            pb_lines = [f"**🏆 New PBs**"]
+            for m in records["members"]:
+                prev = cls._fmt_fans(m["prev_best_delta"]) if m["prev_best_delta"] is not None else "N/A"
+                pb_lines.append(
+                    f"**{m['name']}** — **+{cls._fmt_fans(m['delta'])}** "
+                    f"(prev best +{prev})"
+                )
+            parts.append("\n".join(pb_lines))
 
-        return "\n".join(parts)
+        return "\n\n".join(parts)
 
     @classmethod
     def _assemble_battle_zone(
@@ -731,7 +800,7 @@ class LeaderboardReportService:
                     f"at +{cls._fmt_fans(o.daily_diff)}/day)"
                     for o in urgent
                 ]
-                parts.append("**🚨 Urgent Overtakes**\n" + "\n".join(lines))
+                parts.append("**🚨 Urgent Overtakes**\n\n" + "\n".join(lines))
 
             horizon = [o for o in overtakes if o.eta_days >= 2]
             if horizon:
@@ -743,7 +812,7 @@ class LeaderboardReportService:
                     f"at +{cls._fmt_fans(o.daily_diff)}/day)"
                     for o in horizon
                 ]
-                parts.append("**⏳ On the Horizon**\n" + "\n".join(lines))
+                parts.append("**⏳ On the Horizon**\n\n" + "\n".join(lines))
 
         if rivalries:
             r_lines = []
@@ -755,7 +824,7 @@ class LeaderboardReportService:
                     f"{cls._fmt_fans(r['fan_gap'])} "
                     f"(#{min_rank} vs #{max_rank})"
                 )
-            parts.append("**⚔️ Monthly Rivalries**\n" + "\n".join(r_lines))
+            parts.append("**⚔️ Monthly Rivalries**\n\n" + "\n".join(r_lines))
 
         return "\n\n".join(parts)
 
@@ -786,7 +855,7 @@ class LeaderboardReportService:
                 f"🎯 **{w.name}** — [{bar}] {w.pct_to_milestone}% "
                 f"to **{cls._fmt_fans(w.milestone)}**"
             )
-        return "\n".join(lines)
+        return "\n\n".join(lines)
 
     @classmethod
     def _format_condensed_movers(cls, condensed: List[Dict]) -> str:
@@ -969,15 +1038,17 @@ class LeaderboardReportService:
         Check if the #1 position changed today vs yesterday.
         If so, provide context about the old leader's prior dominance.
 
-        Returns {changed: bool, old_leader, new_leader, old_streak}
+        Returns {changed: bool, old_leader, new_leader, old_streak, swap_count_7d}
         where old_streak is how many consecutive days the old leader
-        held #1 before today.
+        held #1 before today, and swap_count_7d is how many times #1
+        changed hands in the last 7 days (including this one).
         """
         result: Dict[str, Any] = {
             "changed": False,
             "old_leader": None,
             "new_leader": None,
             "old_streak": 0,
+            "swap_count_7d": 0,
         }
 
         if yesterday_date is None:
@@ -1003,6 +1074,20 @@ class LeaderboardReportService:
                 else:
                     break
             result["old_streak"] = streak
+
+            # Count #1 swaps in the last 7 days (including this one)
+            from datetime import timedelta
+            window_start = latest_date - timedelta(days=7)
+            swap_count = 0
+            prev_leader = None
+            for d in sorted_dates:
+                if d < window_start:
+                    continue
+                top = daily_rankings[d][0]["name"] if daily_rankings.get(d) else None
+                if prev_leader is not None and top is not None and top != prev_leader:
+                    swap_count += 1
+                prev_leader = top
+            result["swap_count_7d"] = swap_count
 
         return result
 
