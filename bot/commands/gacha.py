@@ -24,14 +24,13 @@ class GachaCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            await interaction.followup.send("🔄 Fetching current gacha banners from GameTora...")
-
             banners = await scrape_gacha_banners()
 
             if not banners:
                 await interaction.followup.send("❌ No gacha banners found or failed to fetch data.")
                 return
 
+            embeds = []
             for banner in banners:
                 embed = discord.Embed(
                     title=f"🎴 {banner.banner_type}",
@@ -63,7 +62,10 @@ class GachaCommands(commands.Cog):
                 )
 
                 embed.set_footer(text="Source: GameTora")
-                await interaction.followup.send(embed=embed)
+                embeds.append(embed)
+
+            # Single message with all banner embeds
+            await interaction.followup.send(embeds=embeds)
 
         except Exception as e:
             logger.error(f"Error in gacha command: {e}", exc_info=True)
