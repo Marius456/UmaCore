@@ -129,21 +129,21 @@ class LeaderboardReportService:
 
         # --- Section 1: Headline ---
         headline = cls._assemble_headline(leader_change, king, tank, daily_rankings.get(latest_date))
-        embed.add_field(name="🔥 HEADLINE NEWS", value=headline, inline=False)
+        embed.add_field(name="🔥 HEADLINE NEWS", value=headline + "\n\n━━━━━━━━━━━━━━━━━━━━━", inline=False)
 
         # --- Section 2: Momentum ---
         momentum = cls._assemble_momentum(king, tank, consistency, today_records, club_record, latest_date, daily_leader, leader_change, best_week=best_week)
-        embed.add_field(name="📈 THE MOMENTUM SHIFT", value=momentum or "_Stable activity today._", inline=False)
+        embed.add_field(name="📈 THE MOMENTUM SHIFT", value=(momentum or "_Stable activity today._") + "\n\n━━━━━━━━━━━━━━━━━━━━━", inline=False)
 
         # --- Section 3: Battle Zone ---
         battles = cls._assemble_battle_zone(overtakes, rivalries)
         if battles:
-            embed.add_field(name="⚔️ THE BATTLE ZONE", value=battles, inline=False)
+            embed.add_field(name="⚔️ THE BATTLE ZONE", value=battles + "\n\n━━━━━━━━━━━━━━━━━━━━━", inline=False)
 
         # --- Section 4: Milestones ---
         milestone_text = cls._format_milestone_watch(milestones)
         if milestones:
-            embed.add_field(name="🎯 MILESTONE TRACKER", value=milestone_text, inline=False)
+            embed.add_field(name="🎯 MILESTONE TRACKER", value=milestone_text + "\n\n━━━━━━━━━━━━━━━━━━━━━", inline=False)
 
         # --- Section 5: Movers ---
         condensed = cls._compute_condensed_movers(movers)
@@ -760,7 +760,7 @@ class LeaderboardReportService:
 
                     text = " — ".join(narrative_parts)
 
-            parts.append(f"{header}\n{text}")
+            parts.append(f"{header}\n\n{text}")
 
         top_over = consistency.top_overperformer
         if top_over and (not king or top_over["name"] != king.name):
@@ -770,7 +770,7 @@ class LeaderboardReportService:
             )
 
         if records["members"]:
-            pb_lines = [f"**New PBs**"]
+            pb_lines = [f"**🏆 New PBs**"]
             for m in records["members"]:
                 prev = cls._fmt_fans(m["prev_best_delta"]) if m["prev_best_delta"] is not None else "N/A"
                 pb_lines.append(
@@ -779,7 +779,7 @@ class LeaderboardReportService:
                 )
             parts.append("\n".join(pb_lines))
 
-        return "\n".join(parts)
+        return "\n\n".join(parts)
 
     @classmethod
     def _assemble_battle_zone(
@@ -800,7 +800,7 @@ class LeaderboardReportService:
                     f"at +{cls._fmt_fans(o.daily_diff)}/day)"
                     for o in urgent
                 ]
-                parts.append("**🚨 Urgent Overtakes**\n" + "\n".join(lines))
+                parts.append("**🚨 Urgent Overtakes**\n\n" + "\n".join(lines))
 
             horizon = [o for o in overtakes if o.eta_days >= 2]
             if horizon:
@@ -812,7 +812,7 @@ class LeaderboardReportService:
                     f"at +{cls._fmt_fans(o.daily_diff)}/day)"
                     for o in horizon
                 ]
-                parts.append("**⏳ On the Horizon**\n" + "\n".join(lines))
+                parts.append("**⏳ On the Horizon**\n\n" + "\n".join(lines))
 
         if rivalries:
             r_lines = []
@@ -824,7 +824,7 @@ class LeaderboardReportService:
                     f"{cls._fmt_fans(r['fan_gap'])} "
                     f"(#{min_rank} vs #{max_rank})"
                 )
-            parts.append("**⚔️ Monthly Rivalries**\n" + "\n".join(r_lines))
+            parts.append("**⚔️ Monthly Rivalries**\n\n" + "\n".join(r_lines))
 
         return "\n\n".join(parts)
 
@@ -855,7 +855,7 @@ class LeaderboardReportService:
                 f"🎯 **{w.name}** — [{bar}] {w.pct_to_milestone}% "
                 f"to **{cls._fmt_fans(w.milestone)}**"
             )
-        return "\n".join(lines)
+        return "\n\n".join(lines)
 
     @classmethod
     def _format_condensed_movers(cls, condensed: List[Dict]) -> str:
