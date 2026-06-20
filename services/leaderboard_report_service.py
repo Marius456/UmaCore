@@ -770,11 +770,14 @@ class LeaderboardReportService:
             )
 
         if records["members"]:
-            best = records["members"][0]
-            parts.append(
-                f"**🏅 New PB** — **{best['name']}** just set a new "
-                f"personal best: **+{cls._fmt_fans(best['delta'])}**!"
-            )
+            pb_lines = [f"**New PBs**"]
+            for m in records["members"]:
+                prev = cls._fmt_fans(m["prev_best_delta"]) if m["prev_best_delta"] is not None else "N/A"
+                pb_lines.append(
+                    f"**{m['name']}** — **+{cls._fmt_fans(m['delta'])}** "
+                    f"(prev best +{prev})"
+                )
+            parts.append("\n".join(pb_lines))
 
         return "\n".join(parts)
 
