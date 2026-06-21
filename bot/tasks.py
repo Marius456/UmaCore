@@ -3,14 +3,18 @@ Scheduled tasks for the Discord bot
 """
 import discord
 from discord.ext import tasks
-from datetime import datetime
+from datetime import datetime, date, timedelta
+from typing import Optional
 import logging
 import pytz
 import asyncio
+import calendar
+import re
 
-from models import Club, Member, ClubRankHistory, QuotaRequirement
-from scrapers import ChronoGenesisScraper, UmaMoeAPIScraper
+from models import Club, Member, ClubRankHistory, QuotaRequirement, BotSettings
+from scrapers import ChronoGenesisScraper, UmaMoeAPIScraper, scrape_gacha_banners
 from services import QuotaCalculator, BombManager, ReportGenerator, NotificationService, ScrapeLockManager, ScrapeContext
+from services.leaderboard_report_service import LeaderboardReportService
 from config.settings import USE_UMAMOE_API
 
 logger = logging.getLogger(__name__)
@@ -34,11 +38,15 @@ class BotTasks:
     def start_tasks(self):
         """Start all scheduled tasks"""
         self.hourly_check.start()
-        logger.info("Scheduled tasks started (checking all clubs hourly)")
+        self.daily_leaderboard_check.start()
+        self.daily_gacha_check.start()
+        logger.info("Scheduled tasks started (hourly check, daily leaderboard, daily gacha)")
 
     def stop_tasks(self):
         """Stop all scheduled tasks"""
         self.hourly_check.cancel()
+        self.daily_leaderboard_check.cancel()
+        self.daily_gacha_check.cancel()
         logger.info("Scheduled tasks stopped")
 
     @tasks.loop(hours=1)
@@ -393,3 +401,197 @@ class BotTasks:
         """Wait for bot to be ready before starting tasks"""
         await self.bot.wait_until_ready()
         logger.info("Bot ready, multi-club hourly check loop starting")
+
+    # ── Daily Leaderboard News Task ────────────────────────────────────
+
+    @tasks.loop(hours=24)
+    async def daily_leaderboard_check(self):
+        """Generate and post leaderboard news reports for all active clubs"""
+        logger.info("=" * 80)
+        logger.info("Daily leaderboard check - generating news reports...")
+        logger.info("=" * 80)
+
+        leaderboard_channel_id = await BotSettings.get_leaderboard_channel_id()
+        if not leaderboard_channel_id:
+            logger.info("Leaderboard channel not configured, skipping leaderboard report")
+            return
+
+        leaderboard_channel = self.bot.get_channel(leaderboard_channel_id)
+        if not leaderboard_channel:
+            logger.error(f"Leaderboard channel {leaderboard_channel_id} not found")
+            return
+
+        try:
+            clubs = await Club.get_all_active()
+            logger.info(f"Found {len(clubs)} active club(s) for leaderboard reports")
+
+            for club in clubs:
+                try:
+                    club_tz = pytz.timezone(club.timezone)
+                    now = datetime.now(club_tz)
+                    year, month = now.year, now.month
+
+                    embed = await LeaderboardReportService.generate_leaderboard_report(
+                        club.club_id, club.club_name, year, month
+                    )
+                    await leaderboard_channel.send(embed=embed)
+                    logger.info(f"Leaderboard report sent for {club.club_name}")
+
+                    # Small delay between clubs to avoid rate limits
+                    await asyncio.sleep(1)
+
+                except ValueError as e:
+                    logger.warning(f"Leaderboard report data error for {club.club_name}: {e}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Error generating leaderboard report for {club.club_name}: {e}", exc_info=True)
+                    continue
+
+            logger.info("Daily leaderboard check complete")
+
+        except Exception as e:
+            logger.error(f"Error in daily_leaderboard_check: {e}", exc_info=True)
+
+    @daily_leaderboard_check.before_loop
+    async def before_daily_leaderboard_check(self):
+        """Wait for bot to be ready before starting tasks"""
+        await self.bot.wait_until_ready()
+        logger.info("Bot ready, daily leaderboard check loop starting")
+
+    # ── Daily Gacha Ending-Soon Reminder Task ──────────────────────────
+
+    @tasks.loop(hours=24)
+    async def daily_gacha_check(self):
+        """Check for gacha banners ending within 1 day and send reminders"""
+        logger.info("=" * 80)
+        logger.info("Daily gacha check - checking for ending banners...")
+        logger.info("=" * 80)
+
+        gacha_channel_id = await BotSettings.get_gacha_channel_id()
+        if not gacha_channel_id:
+            logger.info("Gacha channel not configured, skipping gacha reminder")
+            return
+
+        gacha_channel = self.bot.get_channel(gacha_channel_id)
+        if not gacha_channel:
+            logger.error(f"Gacha channel {gacha_channel_id} not found")
+            return
+
+        try:
+            banners = await scrape_gacha_banners()
+            if not banners:
+                logger.info("No gacha banners found, skipping reminder")
+                return
+
+            now = datetime.now(pytz.UTC)
+            ending_soon = []
+
+            for banner in banners:
+                try:
+                    end_date = self._parse_gacha_date(banner.end_date)
+                    if end_date is None:
+                        continue
+
+                    days_remaining = (end_date - now).days
+                    # Also check if it ends within the next 24 hours (days=0)
+                    hours_remaining = (end_date - now).total_seconds() / 3600
+
+                    if 0 <= days_remaining <= 1 or (days_remaining == 0 and hours_remaining > 0):
+                        ending_soon.append(banner)
+                        logger.info(f"Gacha ending soon: {banner.banner_type} (ends {banner.end_date})")
+                except Exception as e:
+                    logger.warning(f"Failed to parse end date for banner '{banner.banner_type}': {e}")
+                    continue
+
+            if not ending_soon:
+                logger.info("No gacha banners ending within 1 day")
+                return
+
+            # Build reminder embed
+            for banner in ending_soon:
+                try:
+                    embed = discord.Embed(
+                        title="⏰ GACHA ENDING SOON",
+                        color=discord.Color.red(),
+                        timestamp=discord.utils.utcnow()
+                    )
+
+                    embed.add_field(
+                        name="🎴 Banner",
+                        value=banner.banner_type,
+                        inline=False
+                    )
+
+                    embed.add_field(
+                        name="📅 Duration",
+                        value=f"{banner.start_date} – {banner.end_date}",
+                        inline=False
+                    )
+
+                    items_text = ""
+                    for item in banner.items:
+                        line_parts = [f"**{item.name}**"]
+                        if item.variant:
+                            line_parts.append(f"({item.variant})")
+                        if item.is_new:
+                            line_parts.append("🆕 **New**")
+                        if item.rate is not None:
+                            line_parts.append(f"`{item.rate}%`")
+                        items_text += "• " + " ".join(line_parts) + "\n"
+
+                    embed.add_field(
+                        name="⭐ Rate Up",
+                        value=items_text.strip(),
+                        inline=False
+                    )
+
+                    embed.set_footer(text="Source: GameTora")
+                    await gacha_channel.send(embed=embed)
+
+                except Exception as e:
+                    logger.error(f"Error sending gacha reminder for {banner.banner_type}: {e}", exc_info=True)
+                    continue
+
+            logger.info(f"Sent {len(ending_soon)} gacha ending-soon reminder(s)")
+
+        except Exception as e:
+            logger.error(f"Error in daily_gacha_check: {e}", exc_info=True)
+
+    @daily_gacha_check.before_loop
+    async def before_daily_gacha_check(self):
+        """Wait for bot to be ready before starting tasks"""
+        await self.bot.wait_until_ready()
+        logger.info("Bot ready, daily gacha check loop starting")
+
+    # ── Date Parsing Helper ────────────────────────────────────────────
+
+    def _parse_gacha_date(self, date_str: str) -> Optional[datetime]:
+        """
+        Parse a gacha banner date string like 'Jun 22, 2024' or '2024-06-22'
+        into a timezone-aware datetime (UTC).
+        """
+        if not date_str:
+            return None
+
+        date_str = date_str.strip()
+
+        # Try ISO format: YYYY-MM-DD
+        try:
+            parts = date_str.split('-')
+            if len(parts) == 3 and all(p.isdigit() for p in parts):
+                parsed = datetime.strptime(date_str, '%Y-%m-%d')
+                return pytz.UTC.localize(parsed)
+        except ValueError:
+            pass
+
+        # Try US format: "Mon DD, YYYY" (e.g. "Jun 22, 2024")
+        try:
+            # Remove day-of-week prefix if present
+            cleaned = re.sub(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s*', '', date_str)
+            parsed = datetime.strptime(cleaned, '%b %d, %Y')
+            return pytz.UTC.localize(parsed)
+        except (ValueError, IndexError):
+            pass
+
+        logger.warning(f"Could not parse gacha date: '{date_str}'")
+        return None

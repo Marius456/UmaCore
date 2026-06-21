@@ -187,6 +187,53 @@ class SettingsCommands(commands.Cog):
                     inline=False
                 )
             
+            # Global leaderboard channel
+            from models import BotSettings
+            lb_channel_id = await BotSettings.get_leaderboard_channel_id()
+            if lb_channel_id:
+                lb_channel = self.bot.get_channel(lb_channel_id)
+                if lb_channel:
+                    embed.add_field(
+                        name="📰 Leaderboard News Channel",
+                        value=f"{lb_channel.mention} (ID: {lb_channel_id})",
+                        inline=False
+                    )
+                else:
+                    embed.add_field(
+                        name="📰 Leaderboard News Channel",
+                        value=f"⚠️ Channel not found (ID: {lb_channel_id})",
+                        inline=False
+                    )
+            else:
+                embed.add_field(
+                    name="📰 Leaderboard News Channel",
+                    value="❌ Not configured (use `/set_leaderboard_channel`)",
+                    inline=False
+                )
+
+            # Global gacha reminder channel
+            gacha_channel_id = await BotSettings.get_gacha_channel_id()
+            if gacha_channel_id:
+                gacha_channel = self.bot.get_channel(gacha_channel_id)
+                if gacha_channel:
+                    embed.add_field(
+                        name="🎴 Gacha Reminder Channel",
+                        value=f"{gacha_channel.mention} (ID: {gacha_channel_id})",
+                        inline=False
+                    )
+                else:
+                    embed.add_field(
+                        name="🎴 Gacha Reminder Channel",
+                        value=f"⚠️ Channel not found (ID: {gacha_channel_id})",
+                        inline=False
+                    )
+            else:
+                embed.add_field(
+                    name="🎴 Gacha Reminder Channel",
+                    value="❌ Not configured (use `/set_gacha_channel`)",
+                    inline=False
+                )
+
             embed.set_footer(text="Use /set_report_channel and /set_alert_channel to configure")
             
             await interaction.followup.send(embed=embed)
@@ -252,6 +299,54 @@ class SettingsCommands(commands.Cog):
             logger.error(f"Error in post_monthly_info: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)}")
     
+    @app_commands.command(name="set_leaderboard_channel", description="Set the channel for daily leaderboard news reports")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_leaderboard_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        """Set the channel where daily leaderboard reports will be posted"""
+        await interaction.response.defer()
+
+        try:
+            from models import BotSettings
+            await BotSettings.set_leaderboard_channel_id(channel.id)
+
+            embed = discord.Embed(
+                title="✅ Leaderboard Channel Updated",
+                description=f"Daily leaderboard news will now be posted to {channel.mention}",
+                color=discord.Color.green(),
+                timestamp=discord.utils.utcnow()
+            )
+
+            await interaction.followup.send(embed=embed)
+            logger.info(f"Leaderboard channel set to {channel.name} ({channel.id}) by {interaction.user}")
+
+        except Exception as e:
+            logger.error(f"Error in set_leaderboard_channel: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)}")
+
+    @app_commands.command(name="set_gacha_channel", description="Set the channel for gacha ending-soon reminders")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_gacha_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        """Set the channel where gacha ending-soon reminders will be posted"""
+        await interaction.response.defer()
+
+        try:
+            from models import BotSettings
+            await BotSettings.set_gacha_channel_id(channel.id)
+
+            embed = discord.Embed(
+                title="✅ Gacha Channel Updated",
+                description=f"Gacha ending-soon reminders will now be posted to {channel.mention}",
+                color=discord.Color.green(),
+                timestamp=discord.utils.utcnow()
+            )
+
+            await interaction.followup.send(embed=embed)
+            logger.info(f"Gacha channel set to {channel.name} ({channel.id}) by {interaction.user}")
+
+        except Exception as e:
+            logger.error(f"Error in set_gacha_channel: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)}")
+
     # Apply autocomplete
     set_report_channel.autocomplete('club')(club_autocomplete)
     set_alert_channel.autocomplete('club')(club_autocomplete)
