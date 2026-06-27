@@ -38,14 +38,12 @@ class BotTasks:
     def start_tasks(self):
         """Start all scheduled tasks"""
         self.hourly_check.start()
-        self.daily_leaderboard_check.start()
         self.daily_gacha_check.start()
-        logger.info("Scheduled tasks started (hourly check, daily leaderboard, daily gacha)")
+        logger.info("Scheduled tasks started (hourly check, daily gacha)")
 
     def stop_tasks(self):
         """Stop all scheduled tasks"""
         self.hourly_check.cancel()
-        self.daily_leaderboard_check.cancel()
         self.daily_gacha_check.cancel()
         logger.info("Scheduled tasks stopped")
 
@@ -372,6 +370,31 @@ class BotTasks:
                 except Exception as e:
                     logger.error(f"❌ Error sending alerts for {club.club_name}: {e}", exc_info=True)
 
+                # STEP 8.5: Generate and send leaderboard news report (after daily scrape)
+                try:
+                    leaderboard_channel_id = await BotSettings.get_leaderboard_channel_id()
+                    if leaderboard_channel_id:
+                        leaderboard_channel = self.bot.get_channel(leaderboard_channel_id)
+                        if leaderboard_channel:
+                            club_tz = pytz.timezone(club.timezone)
+                            now = datetime.now(club_tz)
+                            year, month = now.year, now.month
+
+                            embed = await LeaderboardReportService.generate_leaderboard_report(
+                                club.club_id, club.club_name, year, month
+                            )
+                            await leaderboard_channel.send(embed=embed)
+                            logger.info(f"Leaderboard report sent for {club.club_name}")
+                        else:
+                            logger.error(f"Leaderboard channel {leaderboard_channel_id} not found")
+                    else:
+                        logger.debug(f"Leaderboard channel not configured, skipping leaderboard report for {club.club_name}")
+
+                except ValueError as e:
+                    logger.warning(f"Leaderboard report data error for {club.club_name}: {e}")
+                except Exception as e:
+                    logger.error(f"Error generating leaderboard report for {club.club_name}: {e}", exc_info=True)
+
                 # STEP 9: Final summary
                 logger.info("=" * 80)
                 logger.info(f"✅ Daily check complete for {club.club_name}!")
@@ -401,62 +424,6 @@ class BotTasks:
         """Wait for bot to be ready before starting tasks"""
         await self.bot.wait_until_ready()
         logger.info("Bot ready, multi-club hourly check loop starting")
-
-    # ── Daily Leaderboard News Task ────────────────────────────────────
-
-    @tasks.loop(hours=24)
-    async def daily_leaderboard_check(self):
-        """Generate and post leaderboard news reports for all active clubs"""
-        logger.info("=" * 80)
-        logger.info("Daily leaderboard check - generating news reports...")
-        logger.info("=" * 80)
-
-        leaderboard_channel_id = await BotSettings.get_leaderboard_channel_id()
-        if not leaderboard_channel_id:
-            logger.info("Leaderboard channel not configured, skipping leaderboard report")
-            return
-
-        leaderboard_channel = self.bot.get_channel(leaderboard_channel_id)
-        if not leaderboard_channel:
-            logger.error(f"Leaderboard channel {leaderboard_channel_id} not found")
-            return
-
-        try:
-            clubs = await Club.get_all_active()
-            logger.info(f"Found {len(clubs)} active club(s) for leaderboard reports")
-
-            for club in clubs:
-                try:
-                    club_tz = pytz.timezone(club.timezone)
-                    now = datetime.now(club_tz)
-                    year, month = now.year, now.month
-
-                    embed = await LeaderboardReportService.generate_leaderboard_report(
-                        club.club_id, club.club_name, year, month
-                    )
-                    await leaderboard_channel.send(embed=embed)
-                    logger.info(f"Leaderboard report sent for {club.club_name}")
-
-                    # Small delay between clubs to avoid rate limits
-                    await asyncio.sleep(1)
-
-                except ValueError as e:
-                    logger.warning(f"Leaderboard report data error for {club.club_name}: {e}")
-                    continue
-                except Exception as e:
-                    logger.error(f"Error generating leaderboard report for {club.club_name}: {e}", exc_info=True)
-                    continue
-
-            logger.info("Daily leaderboard check complete")
-
-        except Exception as e:
-            logger.error(f"Error in daily_leaderboard_check: {e}", exc_info=True)
-
-    @daily_leaderboard_check.before_loop
-    async def before_daily_leaderboard_check(self):
-        """Wait for bot to be ready before starting tasks"""
-        await self.bot.wait_until_ready()
-        logger.info("Bot ready, daily leaderboard check loop starting")
 
     # ── Daily Gacha Ending-Soon Reminder Task ──────────────────────────
 
