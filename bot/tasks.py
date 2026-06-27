@@ -560,5 +560,14 @@ class BotTasks:
         except (ValueError, IndexError):
             pass
 
+        # Try European format: "DD Mon YYYY, HH:MM" (e.g. "28 Jun 2026, 0:59")
+        try:
+            # Strip the time portion (after the comma)
+            date_part = date_str.split(',')[0].strip()
+            parsed = datetime.strptime(date_part, '%d %b %Y')
+            return pytz.UTC.localize(parsed)
+        except (ValueError, IndexError):
+            pass
+
         logger.warning(f"Could not parse gacha date: '{date_str}'")
         return None
