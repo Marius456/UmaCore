@@ -372,9 +372,8 @@ class BotTasks:
 
                 # STEP 8.5: Generate and send leaderboard news report (after daily scrape)
                 try:
-                    leaderboard_channel_id = await BotSettings.get_leaderboard_channel_id()
-                    if leaderboard_channel_id:
-                        leaderboard_channel = self.bot.get_channel(leaderboard_channel_id)
+                    if club.leaderboard_channel_id:
+                        leaderboard_channel = self.bot.get_channel(club.leaderboard_channel_id)
                         if leaderboard_channel:
                             club_tz = pytz.timezone(club.timezone)
                             now = datetime.now(club_tz)
@@ -386,9 +385,9 @@ class BotTasks:
                             await leaderboard_channel.send(embed=embed)
                             logger.info(f"Leaderboard report sent for {club.club_name}")
                         else:
-                            logger.error(f"Leaderboard channel {leaderboard_channel_id} not found")
+                            logger.error(f"Leaderboard channel {club.leaderboard_channel_id} not found for {club.club_name}")
                     else:
-                        logger.debug(f"Leaderboard channel not configured, skipping leaderboard report for {club.club_name}")
+                        logger.debug(f"Leaderboard channel not configured for {club.club_name}, skipping leaderboard report")
 
                 except ValueError as e:
                     logger.warning(f"Leaderboard report data error for {club.club_name}: {e}")
@@ -429,20 +428,10 @@ class BotTasks:
 
     @tasks.loop(hours=24)
     async def daily_gacha_check(self):
-        """Check for gacha banners ending within 1 day and send reminders"""
+        """Check for gacha banners ending within 1 day and send reminders to all clubs with gacha channels configured"""
         logger.info("=" * 80)
         logger.info("Daily gacha check - checking for ending banners...")
         logger.info("=" * 80)
-
-        gacha_channel_id = await BotSettings.get_gacha_channel_id()
-        if not gacha_channel_id:
-            logger.info("Gacha channel not configured, skipping gacha reminder")
-            return
-
-        gacha_channel = self.bot.get_channel(gacha_channel_id)
-        if not gacha_channel:
-            logger.error(f"Gacha channel {gacha_channel_id} not found")
-            return
 
         try:
             banners = await scrape_gacha_banners()
@@ -474,7 +463,8 @@ class BotTasks:
                 logger.info("No gacha banners ending within 1 day")
                 return
 
-            # Build reminder embed
+            # Build reminder embeds
+            reminder_embeds = []
             for banner in ending_soon:
                 try:
                     embed = discord.Embed(
@@ -513,13 +503,33 @@ class BotTasks:
                     )
 
                     embed.set_footer(text="Source: GameTora")
-                    await gacha_channel.send(embed=embed)
+                    reminder_embeds.append(embed)
 
                 except Exception as e:
-                    logger.error(f"Error sending gacha reminder for {banner.banner_type}: {e}", exc_info=True)
+                    logger.error(f"Error building gacha reminder for {banner.banner_type}: {e}", exc_info=True)
                     continue
 
-            logger.info(f"Sent {len(ending_soon)} gacha ending-soon reminder(s)")
+            if not reminder_embeds:
+                logger.info("No gacha reminders to send")
+                return
+
+            # Send to all clubs with a gacha channel configured
+            clubs = await Club.get_all_active()
+            sent_count = 0
+            for club in clubs:
+                if club.gacha_channel_id:
+                    gacha_channel = self.bot.get_channel(club.gacha_channel_id)
+                    if gacha_channel:
+                        for embed in reminder_embeds:
+                            try:
+                                await gacha_channel.send(embed=embed)
+                                sent_count += 1
+                            except Exception as e:
+                                logger.error(f"Error sending gacha reminder to {club.club_name} channel {club.gacha_channel_id}: {e}", exc_info=True)
+                    else:
+                        logger.error(f"Gacha channel {club.gacha_channel_id} not found for {club.club_name}")
+
+            logger.info(f"Sent gacha ending-soon reminders to {sent_count} club channel(s)")
 
         except Exception as e:
             logger.error(f"Error in daily_gacha_check: {e}", exc_info=True)

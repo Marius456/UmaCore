@@ -187,21 +187,19 @@ class SettingsCommands(commands.Cog):
                     inline=False
                 )
             
-            # Global leaderboard channel
-            from models import BotSettings
-            lb_channel_id = await BotSettings.get_leaderboard_channel_id()
-            if lb_channel_id:
-                lb_channel = self.bot.get_channel(lb_channel_id)
+            # Leaderboard channel (per-club)
+            if club_obj.leaderboard_channel_id:
+                lb_channel = self.bot.get_channel(club_obj.leaderboard_channel_id)
                 if lb_channel:
                     embed.add_field(
                         name="📰 Leaderboard News Channel",
-                        value=f"{lb_channel.mention} (ID: {lb_channel_id})",
+                        value=f"{lb_channel.mention} (ID: {club_obj.leaderboard_channel_id})",
                         inline=False
                     )
                 else:
                     embed.add_field(
                         name="📰 Leaderboard News Channel",
-                        value=f"⚠️ Channel not found (ID: {lb_channel_id})",
+                        value=f"⚠️ Channel not found (ID: {club_obj.leaderboard_channel_id})",
                         inline=False
                     )
             else:
@@ -211,20 +209,19 @@ class SettingsCommands(commands.Cog):
                     inline=False
                 )
 
-            # Global gacha reminder channel
-            gacha_channel_id = await BotSettings.get_gacha_channel_id()
-            if gacha_channel_id:
-                gacha_channel = self.bot.get_channel(gacha_channel_id)
+            # Gacha reminder channel (per-club)
+            if club_obj.gacha_channel_id:
+                gacha_channel = self.bot.get_channel(club_obj.gacha_channel_id)
                 if gacha_channel:
                     embed.add_field(
                         name="🎴 Gacha Reminder Channel",
-                        value=f"{gacha_channel.mention} (ID: {gacha_channel_id})",
+                        value=f"{gacha_channel.mention} (ID: {club_obj.gacha_channel_id})",
                         inline=False
                     )
                 else:
                     embed.add_field(
                         name="🎴 Gacha Reminder Channel",
-                        value=f"⚠️ Channel not found (ID: {gacha_channel_id})",
+                        value=f"⚠️ Channel not found (ID: {club_obj.gacha_channel_id})",
                         inline=False
                     )
             else:
@@ -301,23 +298,31 @@ class SettingsCommands(commands.Cog):
     
     @app_commands.command(name="set_leaderboard_channel", description="Set the channel for daily leaderboard news reports")
     @app_commands.checks.has_permissions(administrator=True)
-    async def set_leaderboard_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    async def set_leaderboard_channel(self, interaction: discord.Interaction, channel: discord.TextChannel, club: str):
         """Set the channel where daily leaderboard reports will be posted"""
         await interaction.response.defer()
 
         try:
-            from models import BotSettings
-            await BotSettings.set_leaderboard_channel_id(channel.id)
+            club_obj = await Club.get_by_name(club)
+            if not club_obj:
+                await interaction.followup.send(f"❌ Club '{club}' not found")
+                return
+
+            if not club_obj.belongs_to_guild(interaction.guild_id):
+                await interaction.followup.send(f"❌ Club '{club}' is not registered in this server.")
+                return
+
+            await club_obj.set_channels(leaderboard_channel_id=channel.id)
 
             embed = discord.Embed(
-                title="✅ Leaderboard Channel Updated",
+                title=f"✅ Leaderboard Channel Updated - {club}",
                 description=f"Daily leaderboard news will now be posted to {channel.mention}",
                 color=discord.Color.green(),
                 timestamp=discord.utils.utcnow()
             )
 
             await interaction.followup.send(embed=embed)
-            logger.info(f"Leaderboard channel set to {channel.name} ({channel.id}) by {interaction.user}")
+            logger.info(f"Leaderboard channel for {club} set to {channel.name} ({channel.id}) by {interaction.user}")
 
         except Exception as e:
             logger.error(f"Error in set_leaderboard_channel: {e}", exc_info=True)
@@ -325,23 +330,31 @@ class SettingsCommands(commands.Cog):
 
     @app_commands.command(name="set_gacha_channel", description="Set the channel for gacha ending-soon reminders")
     @app_commands.checks.has_permissions(administrator=True)
-    async def set_gacha_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    async def set_gacha_channel(self, interaction: discord.Interaction, channel: discord.TextChannel, club: str):
         """Set the channel where gacha ending-soon reminders will be posted"""
         await interaction.response.defer()
 
         try:
-            from models import BotSettings
-            await BotSettings.set_gacha_channel_id(channel.id)
+            club_obj = await Club.get_by_name(club)
+            if not club_obj:
+                await interaction.followup.send(f"❌ Club '{club}' not found")
+                return
+
+            if not club_obj.belongs_to_guild(interaction.guild_id):
+                await interaction.followup.send(f"❌ Club '{club}' is not registered in this server.")
+                return
+
+            await club_obj.set_channels(gacha_channel_id=channel.id)
 
             embed = discord.Embed(
-                title="✅ Gacha Channel Updated",
+                title=f"✅ Gacha Channel Updated - {club}",
                 description=f"Gacha ending-soon reminders will now be posted to {channel.mention}",
                 color=discord.Color.green(),
                 timestamp=discord.utils.utcnow()
             )
 
             await interaction.followup.send(embed=embed)
-            logger.info(f"Gacha channel set to {channel.name} ({channel.id}) by {interaction.user}")
+            logger.info(f"Gacha channel for {club} set to {channel.name} ({channel.id}) by {interaction.user}")
 
         except Exception as e:
             logger.error(f"Error in set_gacha_channel: {e}", exc_info=True)
@@ -350,6 +363,8 @@ class SettingsCommands(commands.Cog):
     # Apply autocomplete
     set_report_channel.autocomplete('club')(club_autocomplete)
     set_alert_channel.autocomplete('club')(club_autocomplete)
+    set_leaderboard_channel.autocomplete('club')(club_autocomplete)
+    set_gacha_channel.autocomplete('club')(club_autocomplete)
     channel_settings.autocomplete('club')(club_autocomplete)
     post_monthly_info.autocomplete('club')(club_autocomplete)
 

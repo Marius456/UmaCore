@@ -83,24 +83,7 @@ class BotSettings:
         await cls.set('monthly_info_channel_id', str(channel_id))
         await cls.set('monthly_info_message_id', str(message_id))
 
-    @classmethod
-    async def get_leaderboard_channel_id(cls) -> Optional[int]:
-        """Get the leaderboard report channel ID"""
-        value = await cls.get('leaderboard_channel_id')
-        return int(value) if value else None
-
-    @classmethod
-    async def set_leaderboard_channel_id(cls, channel_id: int):
-        """Set the leaderboard report channel ID"""
-        await cls.set('leaderboard_channel_id', str(channel_id))
-
-    @classmethod
-    async def get_gacha_channel_id(cls) -> Optional[int]:
-        """Get the gacha reminder channel ID"""
-        value = await cls.get('gacha_channel_id')
-        return int(value) if value else None
-
-    @classmethod
-    async def set_gacha_channel_id(cls, channel_id: int):
-        """Set the gacha reminder channel ID"""
-        await cls.set('gacha_channel_id', str(channel_id))
+    # Note: leaderboard_channel_id and gacha_channel_id moved to per-club storage
+    # in the clubs table. Use club.leaderboard_channel_id / club.gacha_channel_id
+    # and club_obj.set_channels(leaderboard_channel_id=..., gacha_channel_id=...)
+    # instead of these global settings.
