@@ -137,7 +137,23 @@ async def scrape_gacha_banners() -> List[GachaBanner]:
 
         try:
             logger.info(f"Loading {GACHA_URL}...")
-            await page.goto(GACHA_URL, wait_until="networkidle", timeout=60000)
+            # Use domcontentloaded instead of networkidle because gametora.com loads many
+            # third-party ad/analytics scripts that never stop fetching, causing networkidle
+            # to time out. The gacha data is server-side rendered by Next.js, so the full
+            # HTML with banner information is available immediately after DOM is ready.
+            await page.goto(GACHA_URL, wait_until="domcontentloaded", timeout=60000)
+
+            # Dismiss cookie consent popup (InMobi CMP) which can overlay banner content
+            try:
+                consent_accept = page.locator("#qc-cmp2-ui #accept-btn")
+                if await consent_accept.is_visible(timeout=5000):
+                    await consent_accept.click()
+                    logger.info("Dismissed cookie consent popup (Agree)")
+                    await page.wait_for_timeout(1000)
+                else:
+                    logger.debug("Cookie consent popup not found — may already be dismissed")
+            except Exception as e:
+                logger.debug(f"Cookie consent popup handling (non-critical): {e}")
 
             # Wait for banner containers to appear (JS-rendered content)
             await page.wait_for_selector(
