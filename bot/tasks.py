@@ -12,10 +12,13 @@ import calendar
 import re
 
 from models import Club, Member, ClubRankHistory, QuotaRequirement, BotSettings
-from scrapers import ChronoGenesisScraper, UmaMoeAPIScraper, scrape_gacha_banners
+from scrapers import (
+    ChronoGenesisScraper, UmaMoeAPIScraper, scrape_gacha_banners,
+    scrape_official_events, check_and_save as check_and_save_official_events,
+)
 from services import QuotaCalculator, BombManager, ReportGenerator, NotificationService, ScrapeLockManager, ScrapeContext
 from services.leaderboard_report_service import LeaderboardReportService
-from config.settings import USE_UMAMOE_API
+from config.settings import USE_UMAMOE_API, EVENTS_JSON_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +42,14 @@ class BotTasks:
         """Start all scheduled tasks"""
         self.hourly_check.start()
         self.daily_gacha_check.start()
-        logger.info("Scheduled tasks started (hourly check, daily gacha)")
+        self.daily_official_events_check.start()
+        logger.info("Scheduled tasks started (hourly check, daily gacha, daily official events)")
 
     def stop_tasks(self):
         """Stop all scheduled tasks"""
         self.hourly_check.cancel()
         self.daily_gacha_check.cancel()
+        self.daily_official_events_check.cancel()
         logger.info("Scheduled tasks stopped")
 
     @tasks.loop(hours=1)
@@ -539,6 +544,38 @@ class BotTasks:
         """Wait for bot to be ready before starting tasks"""
         await self.bot.wait_until_ready()
         logger.info("Bot ready, daily gacha check loop starting")
+
+    # ── Daily Official Events Scraper Task ─────────────────────────────
+
+    @tasks.loop(hours=24)
+    async def daily_official_events_check(self):
+        """
+        Scrape official umamusume.com news for upcoming in-game events
+        and save to JSON if new articles are detected.
+
+        Runs once per day, checks for new event articles by comparing
+        event titles against the previously-saved JSON file.
+        """
+        logger.info("=" * 80)
+        logger.info("Daily official events check - scraping news page...")
+        logger.info("=" * 80)
+
+        try:
+            logger.info(f"Checking for new official events → {EVENTS_JSON_PATH}")
+            changed = check_and_save_official_events(EVENTS_JSON_PATH)
+
+            if changed:
+                logger.info("✅ New official events detected and saved to JSON")
+            else:
+                logger.info("ℹ️ No new official events found (JSON unchanged)")
+        except Exception as e:
+            logger.error(f"Error in daily_official_events_check: {e}", exc_info=True)
+
+    @daily_official_events_check.before_loop
+    async def before_daily_official_events_check(self):
+        """Wait for bot to be ready before starting the events check task"""
+        await self.bot.wait_until_ready()
+        logger.info("Bot ready, daily official events check loop starting")
 
     # ── Date Parsing Helper ────────────────────────────────────────────
 
