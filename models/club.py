@@ -40,7 +40,7 @@ class Club:
     created_at: Optional[str]
     updated_at: Optional[str]
     leaderboard_channel_id: Optional[int] = None
-    gacha_channel_id: Optional[int] = None
+    events_channel_id: Optional[int] = None
     public_slug: Optional[str] = None
     
     @classmethod
@@ -61,7 +61,7 @@ class Club:
             RETURNING club_id, club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
                      timezone, scrape_time, bomb_trigger_days, bomb_countdown_days, bombs_enabled,
                      is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
-                     monthly_info_message_id, leaderboard_channel_id, gacha_channel_id,
+                     monthly_info_message_id, leaderboard_channel_id, events_channel_id,
                      created_at, updated_at, public_slug
         """
         row = await db.fetchrow(query, club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
@@ -77,7 +77,7 @@ class Club:
             SELECT club_id, club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
                    timezone, scrape_time, bomb_trigger_days, bomb_countdown_days, bombs_enabled,
                    is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
-                   monthly_info_message_id, leaderboard_channel_id, gacha_channel_id,
+                   monthly_info_message_id, leaderboard_channel_id, events_channel_id,
                    created_at, updated_at, public_slug
             FROM clubs
             WHERE club_id = $1
@@ -94,7 +94,7 @@ class Club:
             SELECT club_id, club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
                    timezone, scrape_time, bomb_trigger_days, bomb_countdown_days, bombs_enabled,
                    is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
-                   monthly_info_message_id, leaderboard_channel_id, gacha_channel_id,
+                   monthly_info_message_id, leaderboard_channel_id, events_channel_id,
                    created_at, updated_at, public_slug
             FROM clubs
             WHERE club_name = $1
@@ -111,7 +111,7 @@ class Club:
             SELECT club_id, club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
                    timezone, scrape_time, bomb_trigger_days, bomb_countdown_days, bombs_enabled,
                    is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
-                   monthly_info_message_id, leaderboard_channel_id, gacha_channel_id,
+                   monthly_info_message_id, leaderboard_channel_id, events_channel_id,
                    created_at, updated_at, public_slug
             FROM clubs
             WHERE is_active = TRUE
@@ -127,7 +127,7 @@ class Club:
             SELECT club_id, club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
                    timezone, scrape_time, bomb_trigger_days, bomb_countdown_days, bombs_enabled,
                    is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
-                   monthly_info_message_id, leaderboard_channel_id, gacha_channel_id,
+                   monthly_info_message_id, leaderboard_channel_id, events_channel_id,
                    created_at, updated_at, public_slug
             FROM clubs
             ORDER BY club_name
@@ -142,7 +142,7 @@ class Club:
             SELECT club_id, club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
                    timezone, scrape_time, bomb_trigger_days, bomb_countdown_days, bombs_enabled,
                    is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
-                   monthly_info_message_id, leaderboard_channel_id, gacha_channel_id,
+                   monthly_info_message_id, leaderboard_channel_id, events_channel_id,
                    created_at, updated_at, public_slug
             FROM clubs
             WHERE guild_id = $1 OR guild_id IS NULL
@@ -180,7 +180,7 @@ class Club:
         valid_fields = {'scrape_url', 'circle_id', 'daily_quota', 'quota_period', 'timezone',
                        'scrape_time', 'bomb_trigger_days', 'bomb_countdown_days', 'bombs_enabled',
                        'report_channel_id', 'alert_channel_id', 'leaderboard_channel_id',
-                       'gacha_channel_id'}
+                       'events_channel_id'}
 
         updates = {k: v for k, v in kwargs.items() if k in valid_fields}
         if not updates:
@@ -210,7 +210,7 @@ class Club:
     async def set_channels(self, report_channel_id: Optional[int] = None, 
                           alert_channel_id: Optional[int] = None,
                           leaderboard_channel_id: Optional[int] = None,
-                          gacha_channel_id: Optional[int] = None):
+                          events_channel_id: Optional[int] = None):
         """
         Update channel settings for this club.
         Only modifies columns for arguments that are explicitly passed as non-None,
@@ -223,8 +223,8 @@ class Club:
             updates['alert_channel_id'] = alert_channel_id
         if leaderboard_channel_id is not None:
             updates['leaderboard_channel_id'] = leaderboard_channel_id
-        if gacha_channel_id is not None:
-            updates['gacha_channel_id'] = gacha_channel_id
+        if events_channel_id is not None:
+            updates['events_channel_id'] = events_channel_id
         
         if not updates:
             return

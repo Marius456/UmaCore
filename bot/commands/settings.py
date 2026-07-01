@@ -209,25 +209,25 @@ class SettingsCommands(commands.Cog):
                     inline=False
                 )
 
-            # Gacha reminder channel (per-club)
-            if club_obj.gacha_channel_id:
-                gacha_channel = self.bot.get_channel(club_obj.gacha_channel_id)
-                if gacha_channel:
+            # Events notification channel (per-club)
+            if club_obj.events_channel_id:
+                events_channel = self.bot.get_channel(club_obj.events_channel_id)
+                if events_channel:
                     embed.add_field(
-                        name="🎴 Gacha Reminder Channel",
-                        value=f"{gacha_channel.mention} (ID: {club_obj.gacha_channel_id})",
+                        name="📰 Events Notification Channel",
+                        value=f"{events_channel.mention} (ID: {club_obj.events_channel_id})",
                         inline=False
                     )
                 else:
                     embed.add_field(
-                        name="🎴 Gacha Reminder Channel",
-                        value=f"⚠️ Channel not found (ID: {club_obj.gacha_channel_id})",
+                        name="📰 Events Notification Channel",
+                        value=f"⚠️ Channel not found (ID: {club_obj.events_channel_id})",
                         inline=False
                     )
             else:
                 embed.add_field(
-                    name="🎴 Gacha Reminder Channel",
-                    value="❌ Not configured (use `/set_gacha_channel`)",
+                    name="📰 Events Notification Channel",
+                    value="❌ Not configured (use `/set_events_channel`)",
                     inline=False
                 )
 
@@ -328,10 +328,10 @@ class SettingsCommands(commands.Cog):
             logger.error(f"Error in set_leaderboard_channel: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)}")
 
-    @app_commands.command(name="set_gacha_channel", description="Set the channel for gacha ending-soon reminders")
+    @app_commands.command(name="set_events_channel", description="Set the channel for event starting/ending-soon notifications")
     @app_commands.checks.has_permissions(administrator=True)
-    async def set_gacha_channel(self, interaction: discord.Interaction, channel: discord.TextChannel, club: str):
-        """Set the channel where gacha ending-soon reminders will be posted"""
+    async def set_events_channel(self, interaction: discord.Interaction, channel: discord.TextChannel, club: str):
+        """Set the channel where event starting/ending notifications will be posted"""
         await interaction.response.defer()
 
         try:
@@ -344,27 +344,27 @@ class SettingsCommands(commands.Cog):
                 await interaction.followup.send(f"❌ Club '{club}' is not registered in this server.")
                 return
 
-            await club_obj.set_channels(gacha_channel_id=channel.id)
+            await club_obj.set_channels(events_channel_id=channel.id)
 
             embed = discord.Embed(
-                title=f"✅ Gacha Channel Updated - {club}",
-                description=f"Gacha ending-soon reminders will now be posted to {channel.mention}",
+                title=f"✅ Events Channel Updated - {club}",
+                description=f"Event starting/ending notifications will now be posted to {channel.mention}",
                 color=discord.Color.green(),
                 timestamp=discord.utils.utcnow()
             )
 
             await interaction.followup.send(embed=embed)
-            logger.info(f"Gacha channel for {club} set to {channel.name} ({channel.id}) by {interaction.user}")
+            logger.info(f"Events channel for {club} set to {channel.name} ({channel.id}) by {interaction.user}")
 
         except Exception as e:
-            logger.error(f"Error in set_gacha_channel: {e}", exc_info=True)
+            logger.error(f"Error in set_events_channel: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)}")
 
     # Apply autocomplete
     set_report_channel.autocomplete('club')(club_autocomplete)
     set_alert_channel.autocomplete('club')(club_autocomplete)
     set_leaderboard_channel.autocomplete('club')(club_autocomplete)
-    set_gacha_channel.autocomplete('club')(club_autocomplete)
+    set_events_channel.autocomplete('club')(club_autocomplete)
     channel_settings.autocomplete('club')(club_autocomplete)
     post_monthly_info.autocomplete('club')(club_autocomplete)
 

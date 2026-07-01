@@ -3,17 +3,17 @@ Scheduled tasks for the Discord bot
 """
 import discord
 from discord.ext import tasks
+import json as json_mod
+import os
 from datetime import datetime, date, timedelta
 from typing import Optional
 import logging
 import pytz
 import asyncio
-import calendar
-import re
 
 from models import Club, Member, ClubRankHistory, QuotaRequirement, BotSettings
 from scrapers import (
-    ChronoGenesisScraper, UmaMoeAPIScraper, scrape_gacha_banners,
+    ChronoGenesisScraper, UmaMoeAPIScraper,
     scrape_official_events, check_and_save as check_and_save_official_events,
 )
 from services import QuotaCalculator, BombManager, ReportGenerator, NotificationService, ScrapeLockManager, ScrapeContext
@@ -36,19 +36,23 @@ class BotTasks:
         # Track last run per club per day (club_id_YYYY-MM-DD -> True)
         self.last_runs = {}
 
+        # Track which event notifications have been sent to avoid duplicates
+        # Key format: "{club_id}_{event_title[:80]}_{starting|ending}"
+        self._notified_events = set()
+
         logger.info("Multi-club tasks configured - will check all clubs hourly")
 
     def start_tasks(self):
         """Start all scheduled tasks"""
         self.hourly_check.start()
-        self.daily_gacha_check.start()
+        self.daily_event_notifications.start()
         self.daily_official_events_check.start()
-        logger.info("Scheduled tasks started (hourly check, daily gacha, daily official events)")
+        logger.info("Scheduled tasks started (hourly check, daily event notifications, daily official events)")
 
     def stop_tasks(self):
         """Stop all scheduled tasks"""
         self.hourly_check.cancel()
-        self.daily_gacha_check.cancel()
+        self.daily_event_notifications.cancel()
         self.daily_official_events_check.cancel()
         logger.info("Scheduled tasks stopped")
 
@@ -429,121 +433,146 @@ class BotTasks:
         await self.bot.wait_until_ready()
         logger.info("Bot ready, multi-club hourly check loop starting")
 
-    # ── Daily Gacha Ending-Soon Reminder Task ──────────────────────────
+    # ── Daily Event Notification Task ──────────────────────────────────
 
     @tasks.loop(hours=24)
-    async def daily_gacha_check(self):
-        """Check for gacha banners ending within 1 day and send reminders to all clubs with gacha channels configured"""
+    async def daily_event_notifications(self):
+        """
+        Check events.json for events starting or ending within 1 day
+        and send notifications to each club's events channel.
+        """
         logger.info("=" * 80)
-        logger.info("Daily gacha check - checking for ending banners...")
+        logger.info("Daily event notifications - checking events.json...")
         logger.info("=" * 80)
 
         try:
-            banners = await scrape_gacha_banners()
-            if not banners:
-                logger.info("No gacha banners found, skipping reminder")
+            if not os.path.exists(EVENTS_JSON_PATH):
+                logger.warning(f"Events file not found: {EVENTS_JSON_PATH}")
+                return
+
+            with open(EVENTS_JSON_PATH, "r", encoding="utf-8") as f:
+                data = json_mod.load(f)
+
+            events = data.get("events", [])
+            if not events:
+                logger.info("No events found in events.json")
                 return
 
             now = datetime.now(pytz.UTC)
+
+            # Separate events into starting-soon and ending-soon
+            starting_soon = []
             ending_soon = []
 
-            for banner in banners:
-                try:
-                    end_date = self._parse_gacha_date(banner.end_date)
-                    if end_date is None:
-                        continue
+            for event in events:
+                title = event.get("title", "Unknown event")
+                event_url = event.get("url", "")
 
-                    days_remaining = (end_date - now).days
-                    # Also check if it ends within the next 24 hours (days=0)
-                    hours_remaining = (end_date - now).total_seconds() / 3600
+                # Check starting-soon
+                start_str = event.get("start_time")
+                if start_str:
+                    try:
+                        start_dt = datetime.fromisoformat(start_str)
+                        if start_dt.tzinfo is None:
+                            start_dt = start_dt.replace(tzinfo=pytz.UTC)
+                        remaining = (start_dt - now).total_seconds()
+                        if 0 <= remaining <= 86400:  # within next 24 hours
+                            starting_soon.append((title, start_dt, event_url))
+                            logger.info(f"Event starting soon: {title[:60]} (starts {start_str})")
+                    except (ValueError, TypeError):
+                        logger.debug(f"Could not parse start_time for: {title[:40]}")
 
-                    if 0 <= days_remaining <= 1 or (days_remaining == 0 and hours_remaining > 0):
-                        ending_soon.append(banner)
-                        logger.info(f"Gacha ending soon: {banner.banner_type} (ends {banner.end_date})")
-                except Exception as e:
-                    logger.warning(f"Failed to parse end date for banner '{banner.banner_type}': {e}")
-                    continue
+                # Check ending-soon
+                end_str = event.get("end_time")
+                if end_str:
+                    try:
+                        end_dt = datetime.fromisoformat(end_str)
+                        if end_dt.tzinfo is None:
+                            end_dt = end_dt.replace(tzinfo=pytz.UTC)
+                        remaining = (end_dt - now).total_seconds()
+                        if 0 <= remaining <= 86400:  # within next 24 hours
+                            ending_soon.append((title, end_dt, event_url))
+                            logger.info(f"Event ending soon: {title[:60]} (ends {end_str})")
+                    except (ValueError, TypeError):
+                        logger.debug(f"Could not parse end_time for: {title[:40]}")
 
-            if not ending_soon:
-                logger.info("No gacha banners ending within 1 day")
+            if not starting_soon and not ending_soon:
+                logger.info("No events starting or ending within 1 day")
                 return
 
-            # Build reminder embeds
-            reminder_embeds = []
-            for banner in ending_soon:
-                try:
-                    embed = discord.Embed(
-                        title="⏰ GACHA ENDING SOON",
-                        color=discord.Color.red(),
-                        timestamp=discord.utils.utcnow()
-                    )
+            # Build notification embeds
+            notification_embeds = []
 
-                    embed.add_field(
-                        name="🎴 Banner",
-                        value=banner.banner_type,
-                        inline=False
-                    )
+            for title, dt, url in starting_soon:
+                embed = discord.Embed(
+                    title="⏰ Event Starting Soon",
+                    color=discord.Color.blue(),
+                    timestamp=discord.utils.utcnow()
+                )
+                embed.add_field(name="📰 Event", value=title, inline=False)
+                embed.add_field(
+                    name="📅 Starts",
+                    value=f"<t:{int(dt.timestamp())}:F> (<t:{int(dt.timestamp())}:R>)",
+                    inline=False
+                )
+                if url:
+                    embed.add_field(name="🔗 Link", value=url, inline=False)
+                embed.set_footer(text="Source: Umamusume Official News")
+                notification_embeds.append((embed, "starting", title))
 
-                    embed.add_field(
-                        name="📅 Duration",
-                        value=f"{banner.start_date} – {banner.end_date}",
-                        inline=False
-                    )
+            for title, dt, url in ending_soon:
+                embed = discord.Embed(
+                    title="⏳ Event Ending in 1 Day",
+                    color=discord.Color.red(),
+                    timestamp=discord.utils.utcnow()
+                )
+                embed.add_field(name="📰 Event", value=title, inline=False)
+                embed.add_field(
+                    name="📅 Ends",
+                    value=f"<t:{int(dt.timestamp())}:F> (<t:{int(dt.timestamp())}:R>)",
+                    inline=False
+                )
+                if url:
+                    embed.add_field(name="🔗 Link", value=url, inline=False)
+                embed.set_footer(text="Source: Umamusume Official News")
+                notification_embeds.append((embed, "ending", title))
 
-                    items_text = ""
-                    for item in banner.items:
-                        line_parts = [f"**{item.name}**"]
-                        if item.variant:
-                            line_parts.append(f"({item.variant})")
-                        if item.is_new:
-                            line_parts.append("🆕 **New**")
-                        if item.rate is not None:
-                            line_parts.append(f"`{item.rate}%`")
-                        items_text += "• " + " ".join(line_parts) + "\n"
-
-                    embed.add_field(
-                        name="⭐ Rate Up",
-                        value=items_text.strip(),
-                        inline=False
-                    )
-
-                    embed.set_footer(text="Source: GameTora")
-                    reminder_embeds.append(embed)
-
-                except Exception as e:
-                    logger.error(f"Error building gacha reminder for {banner.banner_type}: {e}", exc_info=True)
-                    continue
-
-            if not reminder_embeds:
-                logger.info("No gacha reminders to send")
-                return
-
-            # Send to all clubs with a gacha channel configured
+            # Send to all clubs with an events channel configured
             clubs = await Club.get_all_active()
             sent_count = 0
             for club in clubs:
-                if club.gacha_channel_id:
-                    gacha_channel = self.bot.get_channel(club.gacha_channel_id)
-                    if gacha_channel:
-                        for embed in reminder_embeds:
-                            try:
-                                await gacha_channel.send(embed=embed)
-                                sent_count += 1
-                            except Exception as e:
-                                logger.error(f"Error sending gacha reminder to {club.club_name} channel {club.gacha_channel_id}: {e}", exc_info=True)
-                    else:
-                        logger.error(f"Gacha channel {club.gacha_channel_id} not found for {club.club_name}")
+                if not club.events_channel_id:
+                    continue
 
-            logger.info(f"Sent gacha ending-soon reminders to {sent_count} club channel(s)")
+                events_channel = self.bot.get_channel(club.events_channel_id)
+                if not events_channel:
+                    logger.error(f"Events channel {club.events_channel_id} not found for {club.club_name}")
+                    continue
+
+                for embed, notif_type, event_title in notification_embeds:
+                    # Dedup check
+                    dedup_key = f"{club.club_id}_{event_title[:80]}_{notif_type}"
+                    if dedup_key in self._notified_events:
+                        logger.debug(f"Skipping duplicate notification: {dedup_key}")
+                        continue
+
+                    try:
+                        await events_channel.send(embed=embed)
+                        self._notified_events.add(dedup_key)
+                        sent_count += 1
+                    except Exception as e:
+                        logger.error(f"Error sending event notification to {club.club_name} channel {club.events_channel_id}: {e}", exc_info=True)
+
+            logger.info(f"Sent {sent_count} event notification(s) to club channels")
 
         except Exception as e:
-            logger.error(f"Error in daily_gacha_check: {e}", exc_info=True)
+            logger.error(f"Error in daily_event_notifications: {e}", exc_info=True)
 
-    @daily_gacha_check.before_loop
-    async def before_daily_gacha_check(self):
+    @daily_event_notifications.before_loop
+    async def before_daily_event_notifications(self):
         """Wait for bot to be ready before starting tasks"""
         await self.bot.wait_until_ready()
-        logger.info("Bot ready, daily gacha check loop starting")
+        logger.info("Bot ready, daily event notifications loop starting")
 
     # ── Daily Official Events Scraper Task ─────────────────────────────
 
@@ -577,44 +606,3 @@ class BotTasks:
         await self.bot.wait_until_ready()
         logger.info("Bot ready, daily official events check loop starting")
 
-    # ── Date Parsing Helper ────────────────────────────────────────────
-
-    def _parse_gacha_date(self, date_str: str) -> Optional[datetime]:
-        """
-        Parse a gacha banner date string like 'Jun 22, 2024' or '2024-06-22'
-        into a timezone-aware datetime (UTC).
-        """
-        if not date_str:
-            return None
-
-        date_str = date_str.strip()
-
-        # Try ISO format: YYYY-MM-DD
-        try:
-            parts = date_str.split('-')
-            if len(parts) == 3 and all(p.isdigit() for p in parts):
-                parsed = datetime.strptime(date_str, '%Y-%m-%d')
-                return pytz.UTC.localize(parsed)
-        except ValueError:
-            pass
-
-        # Try US format: "Mon DD, YYYY" (e.g. "Jun 22, 2024")
-        try:
-            # Remove day-of-week prefix if present
-            cleaned = re.sub(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s*', '', date_str)
-            parsed = datetime.strptime(cleaned, '%b %d, %Y')
-            return pytz.UTC.localize(parsed)
-        except (ValueError, IndexError):
-            pass
-
-        # Try European format: "DD Mon YYYY, HH:MM" (e.g. "28 Jun 2026, 0:59")
-        try:
-            # Strip the time portion (after the comma)
-            date_part = date_str.split(',')[0].strip()
-            parsed = datetime.strptime(date_part, '%d %b %Y')
-            return pytz.UTC.localize(parsed)
-        except (ValueError, IndexError):
-            pass
-
-        logger.warning(f"Could not parse gacha date: '{date_str}'")
-        return None
