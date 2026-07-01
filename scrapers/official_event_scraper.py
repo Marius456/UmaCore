@@ -41,7 +41,16 @@ LAUNCH_ARGS = [
     "--disable-web-security",
     "--disable-features=IsolateOrigins,site-per-process",
     "--window-size=1920,1080",
+    "--single-process",  # Better for Docker containers
+    "--disable-setuid-sandbox",  # Additional Docker safety
 ]
+
+# Detect if running in Docker
+IN_DOCKER = os.environ.get("RUNNING_IN_DOCKER") == "true" or os.path.exists("/.dockerenv")
+
+# Longer timeouts for Docker environment
+PAGE_LOAD_TIMEOUT = 90000 if IN_DOCKER else 60000  # 90s in Docker, 60s locally
+DEFAULT_WAIT_TIMEOUT = 5000 if IN_DOCKER else 3000  # 5s in Docker, 3s locally
 
 
 class EventType(str, Enum):
@@ -412,8 +421,8 @@ async def scrape_official_events() -> List[Event]:
         try:
             # ── Step 1: Load news list and expand ──────────────────────
             logger.info(f"Loading news page: {URL}")
-            await page.goto(URL, wait_until="domcontentloaded", timeout=60000)
-            await page.wait_for_timeout(3000)
+            await page.goto(URL, wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT)
+            await page.wait_for_timeout(DEFAULT_WAIT_TIMEOUT)
 
             view_more_selectors = [
                 "button:has-text('View More')",
@@ -426,7 +435,7 @@ async def scrape_official_events() -> List[Event]:
                 for sel in view_more_selectors:
                     try:
                         btn = page.locator(sel).first
-                        if await btn.count() > 0 and await btn.is_visible():
+                        if await btn.count() > 0 and await btn.is_visible(timeout=2000):
                             await btn.click()
                             await page.wait_for_timeout(2000)
                             clicked = True
@@ -438,7 +447,33 @@ async def scrape_official_events() -> List[Event]:
 
             # ── Step 2: Collect all visible article cards ─────────────
             cards = await _collect_article_cards(page)
+            
+            # Debug: save page HTML and screenshot if no cards found (especially in Docker)
             if not cards:
+                debug_dir = "debug_scraper"
+                os.makedirs(debug_dir, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                try:
+                    # Save screenshot
+                    screenshot_path = f"{debug_dir}/no_cards_{timestamp}.png"
+                    await page.screenshot(path=screenshot_path, full_page=True)
+                    logger.warning(f"No article cards found. Screenshot saved to {screenshot_path}")
+                    
+                    # Save HTML content
+                    html_path = f"{debug_dir}/no_cards_{timestamp}.html"
+                    html_content = await page.content()
+                    with open(html_path, "w", encoding="utf-8") as f:
+                        f.write(html_content)
+                    logger.warning(f"Page HTML saved to {html_path}")
+                    
+                    # Log some useful info
+                    body_text = await page.locator("body").inner_text()
+                    logger.warning(f"Page body text preview: {body_text[:500]}")
+                    
+                except Exception as debug_err:
+                    logger.error(f"Failed to save debug info: {debug_err}")
+                
                 logger.warning("No article cards found on the page")
                 return events
 
@@ -457,8 +492,9 @@ async def scrape_official_events() -> List[Event]:
                     continue
 
                 try:
-                    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                    await page.wait_for_timeout(2000)
+                    article_timeout = PAGE_LOAD_TIMEOUT
+                    await page.goto(url, wait_until="domcontentloaded", timeout=article_timeout)
+                    await page.wait_for_timeout(DEFAULT_WAIT_TIMEOUT)
                     body_text = await page.locator("body").inner_text()
                     start_time, end_time = _extract_times_from_body(body_text)
                     banner_image = await _extract_banner_image(page)

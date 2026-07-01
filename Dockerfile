@@ -34,6 +34,9 @@ RUN apt-get update && apt-get install -y \
     chromium \
     chromium-driver \
     && rm -rf /var/lib/apt/lists/*
+# Mark that we're running in Docker (used by scrapers for environment-specific behavior)
+ENV RUNNING_IN_DOCKER=true
+
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
