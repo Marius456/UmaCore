@@ -507,10 +507,10 @@ def _dedup_events(events: List[Event]) -> List[Event]:
     return result
 
 
-def check_and_save(json_path: str) -> bool:
+async def check_and_save(json_path: str) -> bool:
     """Run scraper once; save if new events detected."""
     known = _load_known_titles(json_path)
-    raw_events = asyncio.run(scrape_official_events())
+    raw_events = await scrape_official_events()
     events = _dedup_events(raw_events)
     logger.info(f"Dedup: {len(raw_events)} raw -> {len(events)} unique event(s)")
     current = {e.title for e in events}
@@ -526,4 +526,4 @@ def check_and_save(json_path: str) -> bool:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-    check_and_save("data/events.json")
+    asyncio.run(check_and_save("data/events.json"))

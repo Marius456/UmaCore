@@ -562,7 +562,7 @@ class BotTasks:
 
         try:
             logger.info(f"Checking for new official events → {EVENTS_JSON_PATH}")
-            changed = check_and_save_official_events(EVENTS_JSON_PATH)
+            changed = await check_and_save_official_events(EVENTS_JSON_PATH)
 
             if changed:
                 logger.info("✅ New official events detected and saved to JSON")
