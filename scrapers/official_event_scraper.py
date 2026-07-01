@@ -61,6 +61,7 @@ class Event:
     start_time: Optional[datetime]
     end_time: Optional[datetime]
     url: str
+    banner_image: Optional[str] = None
 
 
 # ── Date Parsing ──────────────────────────────────────────────────────────────
@@ -222,6 +223,58 @@ def _clean_title(raw: str) -> str:
 
 
 # ── Article Detail Extraction ────────────────────────────────────────────────
+
+async def _extract_banner_image(page: Page) -> Optional[str]:
+    """
+    Extract banner image URL from an article page.
+    
+    Tries multiple selectors in order:
+      1. Article banner image class (news-detail__image)
+      2. Open Graph meta tag (og:image)
+      3. Article header/banner images
+    
+    Returns absolute URL or None if not found.
+    """
+    # Try article banner image class first (most reliable for umamusume.com)
+    banner_selectors = [
+        '.news-detail__image',
+        'article img[src*="news"]',
+        'article img[src*="banner"]',
+    ]
+    for selector in banner_selectors:
+        try:
+            elem = page.locator(selector).first
+            if await elem.count() > 0:
+                url = await elem.get_attribute("src")
+                if url:
+                    if not url.startswith("http"):
+                        url = f"https://umamusume.com{url}" if url.startswith("/") else f"https://umamusume.com/{url}"
+                    logger.info(f"Found banner image via {selector}: {url}")
+                    return url
+        except Exception:
+            continue
+    
+    # Try Open Graph image as fallback
+    og_image_selectors = [
+        'meta[property="og:image"]',
+        'meta[name="twitter:image"]',
+    ]
+    for selector in og_image_selectors:
+        try:
+            elem = page.locator(selector).first
+            if await elem.count() > 0:
+                url = await elem.get_attribute("content")
+                if url:
+                    if not url.startswith("http"):
+                        url = f"https://umamusume.com{url}" if url.startswith("/") else f"https://umamusume.com/{url}"
+                    logger.info(f"Found banner image via {selector}: {url}")
+                    return url
+        except Exception:
+            continue
+    
+    logger.debug("No banner image found on article page")
+    return None
+
 
 def _extract_times_from_body(body_text: str) -> Tuple[Optional[datetime], Optional[datetime]]:
     """
@@ -408,9 +461,11 @@ async def scrape_official_events() -> List[Event]:
                     await page.wait_for_timeout(2000)
                     body_text = await page.locator("body").inner_text()
                     start_time, end_time = _extract_times_from_body(body_text)
+                    banner_image = await _extract_banner_image(page)
                 except Exception as e:
                     logger.warning(f"Failed to load article {url}: {e}")
                     start_time, end_time = None, None
+                    banner_image = None
 
                 events.append(Event(
                     title=title,
@@ -418,6 +473,7 @@ async def scrape_official_events() -> List[Event]:
                     start_time=start_time,
                     end_time=end_time,
                     url=url,
+                    banner_image=banner_image,
                 ))
 
                 if start_time or end_time:
@@ -466,6 +522,7 @@ def _save_events(events: List[Event], path: str) -> None:
                 "start_time": e.start_time.isoformat() if e.start_time else None,
                 "end_time": e.end_time.isoformat() if e.end_time else None,
                 "url": e.url,
+                "banner_image": e.banner_image,
             }
             for e in events
         ],

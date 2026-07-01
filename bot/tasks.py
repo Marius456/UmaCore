@@ -467,6 +467,7 @@ class BotTasks:
             for event in events:
                 title = event.get("title", "Unknown event")
                 event_url = event.get("url", "")
+                banner_image = event.get("banner_image")
 
                 # Check starting-soon
                 start_str = event.get("start_time")
@@ -477,7 +478,7 @@ class BotTasks:
                             start_dt = start_dt.replace(tzinfo=pytz.UTC)
                         remaining = (start_dt - now).total_seconds()
                         if 0 <= remaining <= 86400:  # within next 24 hours
-                            starting_soon.append((title, start_dt, event_url))
+                            starting_soon.append((title, start_dt, event_url, banner_image))
                             logger.info(f"Event starting soon: {title[:60]} (starts {start_str})")
                     except (ValueError, TypeError):
                         logger.debug(f"Could not parse start_time for: {title[:40]}")
@@ -491,7 +492,7 @@ class BotTasks:
                             end_dt = end_dt.replace(tzinfo=pytz.UTC)
                         remaining = (end_dt - now).total_seconds()
                         if 0 <= remaining <= 86400:  # within next 24 hours
-                            ending_soon.append((title, end_dt, event_url))
+                            ending_soon.append((title, end_dt, event_url, banner_image))
                             logger.info(f"Event ending soon: {title[:60]} (ends {end_str})")
                     except (ValueError, TypeError):
                         logger.debug(f"Could not parse end_time for: {title[:40]}")
@@ -503,7 +504,13 @@ class BotTasks:
             # Build notification embeds
             notification_embeds = []
 
-            for title, dt, url in starting_soon:
+            for event in starting_soon:
+                title, dt, url = event[0], event[1], event[2]
+                # Get banner image if available in the event data
+                banner_image = None
+                if len(event) > 3:
+                    banner_image = event[3]
+                
                 embed = discord.Embed(
                     title="⏰ Event Starting Soon",
                     color=discord.Color.blue(),
@@ -517,10 +524,18 @@ class BotTasks:
                 )
                 if url:
                     embed.add_field(name="🔗 Link", value=url, inline=False)
+                if banner_image:
+                    embed.set_image(url=banner_image)
                 embed.set_footer(text="Source: Umamusume Official News")
                 notification_embeds.append((embed, "starting", title))
 
-            for title, dt, url in ending_soon:
+            for event in ending_soon:
+                title, dt, url = event[0], event[1], event[2]
+                # Get banner image if available in the event data
+                banner_image = None
+                if len(event) > 3:
+                    banner_image = event[3]
+                
                 embed = discord.Embed(
                     title="⏳ Event Ending in 1 Day",
                     color=discord.Color.red(),
@@ -534,6 +549,8 @@ class BotTasks:
                 )
                 if url:
                     embed.add_field(name="🔗 Link", value=url, inline=False)
+                if banner_image:
+                    embed.set_image(url=banner_image)
                 embed.set_footer(text="Source: Umamusume Official News")
                 notification_embeds.append((embed, "ending", title))
 
