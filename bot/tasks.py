@@ -314,7 +314,7 @@ class BotTasks:
                     )
                     if status_summary['behind']:
                         logger.info(f"📨 Sending deficit notifications for {club.club_name}...")
-                        await self.notification_service.send_deficit_notifications(club.club_name, status_summary['behind'])
+                        await self.notification_service.send_deficit_notifications(club.club_name, status_summary['behind'], current_date=current_date)
 
                 except Exception as e:
                     logger.error(f"❌ Error sending DM notifications for {club.club_name}: {e}", exc_info=True)
