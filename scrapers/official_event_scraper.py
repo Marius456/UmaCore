@@ -387,7 +387,7 @@ async def _collect_article_cards(page: Page) -> List[Tuple[str, str]]:
     return cards
 
 
-async def scrape_official_events() -> List[Event]:
+async def scrape_official_events(known_titles: Optional[Set[str]] = None) -> List[Event]:
     """
     Scrape upcoming in-game events from the official Umamusume news page.
 
@@ -395,12 +395,19 @@ async def scrape_official_events() -> List[Event]:
       1. Load the news list page, click "View More" to expand
       2. Collect all visible article card titles + URLs
       3. For each matching event article, navigate directly to its URL
+         (unless the title is already in known_titles, in which case
+          skip the detail page navigation and return a placeholder event)
       4. Extract start/end times from the article body
+
+    Args:
+        known_titles: Optional set of event titles that are already saved.
+                      Events with these titles will skip detail-page navigation.
 
     Returns:
         List of Event dataclass instances.
     """
     events: List[Event] = []
+    known_titles = known_titles or set()
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -484,7 +491,12 @@ async def scrape_official_events() -> List[Event]:
                     logger.debug(f"Skipping non-event: '{title[:50]}'")
                     continue
 
-                logger.info(f"Processing '{title[:50]}' ({event_type.value})")
+                if title in known_titles:
+                    logger.debug(f"Skipping already-known event: '{title[:50]}'")
+                    events.append(Event(title=title, type=event_type, start_time=None, end_time=None, url=url))
+                    continue
+
+                logger.info(f"Processing new event: '{title[:50]}' ({event_type.value})")
 
                 # Navigate directly to the article URL
                 if not url:
@@ -547,9 +559,32 @@ def _load_known_titles(path: str) -> Set[str]:
         return set()
 
 
-def _save_events(events: List[Event], path: str) -> None:
+def _load_existing_events(path: str) -> dict[str, dict]:
+    """
+    Load full existing event data from saved JSON, keyed by title.
+    
+    Returns a dict: {title: {type, start_time, end_time, url, banner_image}}
+    """
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        result = {}
+        for e in data.get("events", []):
+            title = e.get("title")
+            if title:
+                result[title] = e
+        return result
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"Failed to load existing events: {e}")
+        return {}
+
+
+def _save_events(events: List[Event], path: str, merged_notified: Optional[dict[str, list]] = None) -> None:
     """Write events to JSON file."""
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    merged_notified = merged_notified or {}
     output = {
         "events": [
             {
@@ -559,6 +594,7 @@ def _save_events(events: List[Event], path: str) -> None:
                 "end_time": e.end_time.isoformat() if e.end_time else None,
                 "url": e.url,
                 "banner_image": e.banner_image,
+                "notified_clubs": merged_notified.get(e.title, []),
             }
             for e in events
         ],
@@ -601,19 +637,61 @@ def _dedup_events(events: List[Event]) -> List[Event]:
 
 
 async def check_and_save(json_path: str) -> bool:
-    """Run scraper once; save if new events detected."""
-    known = _load_known_titles(json_path)
-    raw_events = await scrape_official_events()
+    """
+    Run scraper once; save if new events detected.
+
+    For events already in the JSON file, the scraper skips detail-page
+    navigation. After scraping, existing detail data (start_time, end_time,
+    banner_image) is merged back into those placeholder events so the saved
+    file always has complete information for all events.
+    """
+    known_titles = _load_known_titles(json_path)
+    existing = _load_existing_events(json_path)
+
+    # Pass known titles so the scraper skips detail navigation for them
+    raw_events = await scrape_official_events(known_titles=known_titles)
     events = _dedup_events(raw_events)
     logger.info(f"Dedup: {len(raw_events)} raw -> {len(events)} unique event(s)")
+
+    # Merge existing detail data back into placeholder events (known titles
+    # were returned with null start/end/banner from the skip logic)
+    for e in events:
+        if e.title in existing and e.start_time is None and e.end_time is None:
+            existing_data = existing[e.title]
+            # Parse stored ISO strings back into datetime objects
+            start_str = existing_data.get("start_time")
+            end_str = existing_data.get("end_time")
+            if start_str:
+                try:
+                    e.start_time = datetime.fromisoformat(start_str)
+                except (ValueError, TypeError):
+                    pass
+            if end_str:
+                try:
+                    e.end_time = datetime.fromisoformat(end_str)
+                except (ValueError, TypeError):
+                    pass
+            if not e.banner_image:
+                e.banner_image = existing_data.get("banner_image")
+            logger.debug(f"Merged existing detail data for '{e.title[:50]}'")
+
+    # Collect existing notified_clubs data keyed by title
+    merged_notified = {}
+    for title, existing_data in existing.items():
+        clubs = existing_data.get("notified_clubs", [])
+        if clubs:
+            merged_notified[title] = clubs
+
     current = {e.title for e in events}
-    new_titles = current - known
+    new_titles = current - known_titles
     if new_titles:
         logger.info(f"New event(s): {', '.join(new_titles)}")
-        _save_events(events, json_path)
+        _save_events(events, json_path, merged_notified=merged_notified)
         return True
     else:
         logger.info(f"No new events ({len(events)} known)")
+        # Still save to persist any notified_clubs updates made by the notification task
+        _save_events(events, json_path, merged_notified=merged_notified)
         return False
 
 

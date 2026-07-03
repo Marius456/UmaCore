@@ -36,10 +36,6 @@ class BotTasks:
         # Track last run per club per day (club_id_YYYY-MM-DD -> True)
         self.last_runs = {}
 
-        # Track which event notifications have been sent to avoid duplicates
-        # Key format: "{club_id}_{event_title[:80]}_{starting|ending}"
-        self._notified_events = set()
-
         logger.info("Multi-club tasks configured - will check all clubs hourly")
 
     def start_tasks(self):
@@ -433,6 +429,102 @@ class BotTasks:
         await self.bot.wait_until_ready()
         logger.info("Bot ready, multi-club hourly check loop starting")
 
+    # ── Event Notification Helpers ─────────────────────────────────────
+
+    async def _notify_events_for_club(self, club: Club, event: dict, notif_type: str) -> bool:
+        """
+        Send an event notification embed to a club's events channel.
+        Uses the 'notified_clubs' list in the event dict for dedup.
+        
+        Returns True if notification was sent, False if skipped.
+        """
+        if not club.events_channel_id:
+            return False
+
+        events_channel = self.bot.get_channel(club.events_channel_id)
+        if not events_channel:
+            logger.error(f"Events channel {club.events_channel_id} not found for {club.club_name}")
+            return False
+
+        # Check notified_clubs list in the JSON event data
+        # club_id is stored as string in JSON, so compare as string
+        notified_clubs = event.get("notified_clubs", [])
+        if str(club.club_id) in notified_clubs:
+            logger.debug(f"Club {club.club_id} already notified for '{event.get('title', '')[:60]}' ({notif_type})")
+            return False
+
+        title = event.get("title", "Unknown event")
+        event_url = event.get("url", "")
+        banner_image = event.get("banner_image")
+
+        if notif_type == "starting":
+            try:
+                start_dt = datetime.fromisoformat(event["start_time"])
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=pytz.UTC)
+            except (ValueError, TypeError, KeyError):
+                return False
+
+            embed = discord.Embed(
+                title="⏰ Event Starting Soon",
+                color=discord.Color.blue(),
+                timestamp=discord.utils.utcnow()
+            )
+            embed.add_field(name="📰 Event", value=title, inline=False)
+            embed.add_field(
+                name="📅 Starts",
+                value=f"<t:{int(start_dt.timestamp())}:F> (<t:{int(start_dt.timestamp())}:R>)",
+                inline=False
+            )
+        else:  # ending
+            try:
+                end_dt = datetime.fromisoformat(event["end_time"])
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=pytz.UTC)
+            except (ValueError, TypeError, KeyError):
+                return False
+
+            embed = discord.Embed(
+                title="⏳ Event Ending in 1 Day",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            embed.add_field(name="📰 Event", value=title, inline=False)
+            embed.add_field(
+                name="📅 Ends",
+                value=f"<t:{int(end_dt.timestamp())}:F> (<t:{int(end_dt.timestamp())}:R>)",
+                inline=False
+            )
+
+        if event_url:
+            embed.add_field(name="🔗 Link", value=event_url, inline=False)
+        if banner_image:
+            embed.set_image(url=banner_image)
+        embed.set_footer(text="Source: Umamusume Official News")
+
+        try:
+            await events_channel.send(embed=embed)
+            # Mark as notified and save back to JSON
+            # Convert club_id to string for JSON serialization
+            notified_clubs.append(str(club.club_id))
+            event["notified_clubs"] = notified_clubs
+            self._save_events_json()
+            logger.info(f"Sent {notif_type} notification to {club.club_name}: '{title[:60]}'")
+            return True
+        except Exception as e:
+            logger.error(f"Error sending {notif_type} notification to {club.club_name}: {e}", exc_info=True)
+            return False
+
+    def _save_events_json(self) -> None:
+        """Save the current in-memory events data back to the JSON file."""
+        try:
+            if not hasattr(self, '_events_data') or not self._events_data:
+                return
+            with open(EVENTS_JSON_PATH, "w", encoding="utf-8") as f:
+                json_mod.dump(self._events_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save events JSON: {e}")
+
     # ── Daily Event Notification Task ──────────────────────────────────
 
     @tasks.loop(hours=24)
@@ -440,6 +532,11 @@ class BotTasks:
         """
         Check events.json for events starting or ending within 1 day
         and send notifications to each club's events channel.
+
+        Uses 'notified_clubs' per-event list (persisted in JSON) for dedup.
+        Checks events that started/ended within the last 24 hours as well
+        as upcoming events within the next 24 hours, so newly discovered
+        events that already started still get notified.
         """
         logger.info("=" * 80)
         logger.info("Daily event notifications - checking events.json...")
@@ -451,25 +548,20 @@ class BotTasks:
                 return
 
             with open(EVENTS_JSON_PATH, "r", encoding="utf-8") as f:
-                data = json_mod.load(f)
+                self._events_data = json_mod.load(f)
 
-            events = data.get("events", [])
+            events = self._events_data.get("events", [])
             if not events:
                 logger.info("No events found in events.json")
                 return
 
             now = datetime.now(pytz.UTC)
-
-            # Separate events into starting-soon and ending-soon
-            starting_soon = []
-            ending_soon = []
+            clubs = await Club.get_all_active()
 
             for event in events:
                 title = event.get("title", "Unknown event")
-                event_url = event.get("url", "")
-                banner_image = event.get("banner_image")
 
-                # Check starting-soon
+                # Check if this event should be notified as "starting"
                 start_str = event.get("start_time")
                 if start_str:
                     try:
@@ -477,13 +569,14 @@ class BotTasks:
                         if start_dt.tzinfo is None:
                             start_dt = start_dt.replace(tzinfo=pytz.UTC)
                         remaining = (start_dt - now).total_seconds()
-                        if 0 <= remaining <= 86400:  # within next 24 hours
-                            starting_soon.append((title, start_dt, event_url, banner_image))
-                            logger.info(f"Event starting soon: {title[:60]} (starts {start_str})")
+                        # Within 24 hours in the future OR already started within last 24h
+                        if -86400 <= remaining <= 86400:
+                            for club in clubs:
+                                await self._notify_events_for_club(club, event, "starting")
                     except (ValueError, TypeError):
                         logger.debug(f"Could not parse start_time for: {title[:40]}")
 
-                # Check ending-soon
+                # Check if this event should be notified as "ending"
                 end_str = event.get("end_time")
                 if end_str:
                     try:
@@ -491,96 +584,12 @@ class BotTasks:
                         if end_dt.tzinfo is None:
                             end_dt = end_dt.replace(tzinfo=pytz.UTC)
                         remaining = (end_dt - now).total_seconds()
-                        if 0 <= remaining <= 86400:  # within next 24 hours
-                            ending_soon.append((title, end_dt, event_url, banner_image))
-                            logger.info(f"Event ending soon: {title[:60]} (ends {end_str})")
+                        # Within 24 hours in the future OR already ended within last 24h
+                        if -86400 <= remaining <= 86400:
+                            for club in clubs:
+                                await self._notify_events_for_club(club, event, "ending")
                     except (ValueError, TypeError):
                         logger.debug(f"Could not parse end_time for: {title[:40]}")
-
-            if not starting_soon and not ending_soon:
-                logger.info("No events starting or ending within 1 day")
-                return
-
-            # Build notification embeds
-            notification_embeds = []
-
-            for event in starting_soon:
-                title, dt, url = event[0], event[1], event[2]
-                # Get banner image if available in the event data
-                banner_image = None
-                if len(event) > 3:
-                    banner_image = event[3]
-                
-                embed = discord.Embed(
-                    title="⏰ Event Starting Soon",
-                    color=discord.Color.blue(),
-                    timestamp=discord.utils.utcnow()
-                )
-                embed.add_field(name="📰 Event", value=title, inline=False)
-                embed.add_field(
-                    name="📅 Starts",
-                    value=f"<t:{int(dt.timestamp())}:F> (<t:{int(dt.timestamp())}:R>)",
-                    inline=False
-                )
-                if url:
-                    embed.add_field(name="🔗 Link", value=url, inline=False)
-                if banner_image:
-                    embed.set_image(url=banner_image)
-                embed.set_footer(text="Source: Umamusume Official News")
-                notification_embeds.append((embed, "starting", title))
-
-            for event in ending_soon:
-                title, dt, url = event[0], event[1], event[2]
-                # Get banner image if available in the event data
-                banner_image = None
-                if len(event) > 3:
-                    banner_image = event[3]
-                
-                embed = discord.Embed(
-                    title="⏳ Event Ending in 1 Day",
-                    color=discord.Color.red(),
-                    timestamp=discord.utils.utcnow()
-                )
-                embed.add_field(name="📰 Event", value=title, inline=False)
-                embed.add_field(
-                    name="📅 Ends",
-                    value=f"<t:{int(dt.timestamp())}:F> (<t:{int(dt.timestamp())}:R>)",
-                    inline=False
-                )
-                if url:
-                    embed.add_field(name="🔗 Link", value=url, inline=False)
-                if banner_image:
-                    embed.set_image(url=banner_image)
-                embed.set_footer(text="Source: Umamusume Official News")
-                notification_embeds.append((embed, "ending", title))
-
-            # Send to all clubs with an events channel configured
-            clubs = await Club.get_all_active()
-            sent_count = 0
-            for club in clubs:
-                if not club.events_channel_id:
-                    continue
-
-                events_channel = self.bot.get_channel(club.events_channel_id)
-                if not events_channel:
-                    logger.error(f"Events channel {club.events_channel_id} not found for {club.club_name}")
-                    continue
-
-                for embed, notif_type, event_title in notification_embeds:
-                    # Dedup check
-                    dedup_key = f"{club.club_id}_{event_title[:80]}_{notif_type}"
-                    if dedup_key in self._notified_events:
-                        logger.debug(f"Skipping duplicate notification: {dedup_key}")
-                        continue
-
-                    try:
-                        await events_channel.send(embed=embed)
-                        self._notified_events.add(dedup_key)
-                        sent_count += 1
-                    except Exception as e:
-                        logger.error(f"Error sending event notification to {club.club_name} channel {club.events_channel_id}: {e}", exc_info=True)
-
-            logger.info(f"Sent {sent_count} event notification(s) to club channels")
 
         except Exception as e:
             logger.error(f"Error in daily_event_notifications: {e}", exc_info=True)
@@ -601,6 +610,9 @@ class BotTasks:
 
         Runs once per day, checks for new event articles by comparing
         event titles against the previously-saved JSON file.
+        
+        If new events are found, immediately notify all clubs so they
+        don't miss events that started before the scraped_at time.
         """
         logger.info("=" * 80)
         logger.info("Daily official events check - scraping news page...")
