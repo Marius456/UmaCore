@@ -410,8 +410,14 @@ async def scrape_official_events(known_titles: Optional[Set[str]] = None) -> Lis
     known_titles = known_titles or set()
 
     async with async_playwright() as p:
+        proxy_address = "http://100.111.216.3:8888"
         browser = await p.chromium.launch(
-            headless=True, args=LAUNCH_ARGS, timeout=30000,
+            headless=True,
+            args=LAUNCH_ARGS,
+            timeout=30000,
+            proxy={
+                "server": proxy_address
+            },
         )
         context = await browser.new_context(
             user_agent=(
