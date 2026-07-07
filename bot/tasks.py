@@ -487,9 +487,10 @@ class BotTasks:
             return False
 
         # Check notified_clubs list in the JSON event data
-        # club_id is stored as string in JSON, so compare as string
+        # Uses "{club_id}_{notif_type}" format to distinguish starting vs ending notifications
         notified_clubs = event.get("notified_clubs", [])
-        if str(club.club_id) in notified_clubs:
+        dedup_key = f"{club.club_id}_{notif_type}"
+        if dedup_key in notified_clubs:
             logger.debug(f"Club {club.club_id} already notified for '{event.get('title', '')[:60]}' ({notif_type})")
             return False
 
@@ -545,8 +546,8 @@ class BotTasks:
         try:
             await events_channel.send(embed=embed)
             # Mark as notified and save back to JSON
-            # Convert club_id to string for JSON serialization
-            notified_clubs.append(str(club.club_id))
+            # Uses "{club_id}_{notif_type}" format to distinguish starting vs ending notifications
+            notified_clubs.append(dedup_key)
             event["notified_clubs"] = notified_clubs
             self._save_events_json()
             logger.info(f"Sent {notif_type} notification to {club.club_name}: '{title[:60]}'")
