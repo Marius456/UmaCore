@@ -13,7 +13,7 @@ import asyncio
 
 from models import Club, Member, ClubRankHistory, QuotaRequirement, BotSettings
 from scrapers import (
-    ChronoGenesisScraper, UmaMoeAPIScraper,
+    ChronoGenesisScraper, UmaMoeAPIScraper, DataNotAvailableError,
     scrape_official_events, check_and_save as check_and_save_official_events,
 )
 from services import QuotaCalculator, BombManager, ReportGenerator, NotificationService, ScrapeLockManager, ScrapeContext
@@ -81,8 +81,6 @@ class BotTasks:
                             continue
 
                         logger.info(f"⏰ Time to check {club.club_name} ({now_in_club_tz.strftime('%H:%M')} {club.timezone})")
-
-                        self.last_runs[run_key] = True
 
                         asyncio.create_task(self.daily_check_for_club(club))
                     else:
@@ -163,6 +161,7 @@ class BotTasks:
                     logger.info(f"Using ChronoGenesis scraper for {club.club_name}")
 
                 # STEP 2: Scrape with retries
+                # First, do 3 fast retries with backoff (catches transient network errors)
                 for attempt in range(1, max_retries + 1):
                     try:
                         logger.info(f"🔍 Scraping {club.club_name} (attempt {attempt}/{max_retries})...")
@@ -175,6 +174,14 @@ class BotTasks:
                         else:
                             raise ValueError("Scraper returned empty data")
 
+                    except DataNotAvailableError as e:
+                        # Data not available yet — this is expected, will retry in long loop below
+                        last_error = e
+                        logger.warning(f"📡 Data not available yet for {club.club_name} (attempt {attempt}/{max_retries}): {e}")
+                        if attempt < max_retries:
+                            await asyncio.sleep(retry_delay)
+                            retry_delay *= 2
+
                     except Exception as e:
                         last_error = e
                         logger.error(f"❌ Scraping failed for {club.club_name} (attempt {attempt}/{max_retries}): {e}")
@@ -184,10 +191,36 @@ class BotTasks:
                             await asyncio.sleep(retry_delay)
                             retry_delay *= 2
 
-                # STEP 3: Handle scraping failure
+                # STEP 3: If all fast retries failed with DataNotAvailableError, enter long retry loop
+                if not scraped_data and isinstance(last_error, DataNotAvailableError):
+                    logger.warning(
+                        f"⏳ Data not yet available for {club.club_name} after {max_retries} fast retries. "
+                        f"Entering 10-minute retry loop until data arrives..."
+                    )
+                    while not scraped_data:
+                        await asyncio.sleep(600)  # 10 minutes
+                        try:
+                            logger.info(f"🔍 Retrying scrape for {club.club_name} (10-min cycle)...")
+                            scraped_data = await scraper.scrape()
+                            current_day = scraper.get_current_day()
+                            if scraped_data:
+                                logger.info(f"✅ Scraping successful for {club.club_name} ({len(scraped_data)} members found)")
+                                break
+                            else:
+                                raise ValueError("Scraper returned empty data")
+                        except DataNotAvailableError as e:
+                            logger.warning(f"📡 Data still not available for {club.club_name}. Waiting another 10 minutes...")
+                            last_error = e
+                        except Exception as e:
+                            logger.error(f"❌ Scrape failed in 10-min retry loop for {club.club_name}: {e}")
+                            last_error = e
+                            # For non-DataNotAvailableError, exit the loop and report failure
+                            break
+
+                # STEP 3b: Handle scraping failure (all retries exhausted)
                 if not scraped_data:
                     error_msg = (
-                        f"Failed to scrape data after {max_retries} attempts.\n\n"
+                        f"Failed to scrape data after multiple retries.\n\n"
                         f"**Last error:** {str(last_error)}\n\n"
                         f"**Most likely cause:**\n"
                         f"• Data for current day not yet available on Uma.moe\n"
@@ -398,6 +431,13 @@ class BotTasks:
                     logger.warning(f"Leaderboard report data error for {club.club_name}: {e}")
                 except Exception as e:
                     logger.error(f"Error generating leaderboard report for {club.club_name}: {e}", exc_info=True)
+
+                # Mark this club as successfully completed for today
+                club_tz = pytz.timezone(club.timezone)
+                now_in_club_tz = datetime.now(club_tz)
+                run_key = f"{club.club_id}_{now_in_club_tz.date()}"
+                self.last_runs[run_key] = True
+                logger.info(f"✅ Marked {club.club_name} as completed for {now_in_club_tz.date()}")
 
                 # STEP 9: Final summary
                 logger.info("=" * 80)
