@@ -41,14 +41,12 @@ class BotTasks:
     def start_tasks(self):
         """Start all scheduled tasks"""
         self.hourly_check.start()
-        self.daily_event_notifications.start()
         self.daily_official_events_check.start()
-        logger.info("Scheduled tasks started (hourly check, daily event notifications, daily official events)")
+        logger.info("Scheduled tasks started (hourly check, daily official events)")
 
     def stop_tasks(self):
         """Stop all scheduled tasks"""
         self.hourly_check.cancel()
-        self.daily_event_notifications.cancel()
         self.daily_official_events_check.cancel()
         logger.info("Scheduled tasks stopped")
 
@@ -566,10 +564,9 @@ class BotTasks:
         except Exception as e:
             logger.error(f"Failed to save events JSON: {e}")
 
-    # ── Daily Event Notification Task ──────────────────────────────────
+    # ── Event Notifications ────────────────────────────────────────────
 
-    @tasks.loop(hours=24)
-    async def daily_event_notifications(self):
+    async def event_notifications(self):
         """
         Check events.json for events starting or ending within 1 day
         and send notifications to each club's events channel.
@@ -580,7 +577,7 @@ class BotTasks:
         events that already started still get notified.
         """
         logger.info("=" * 80)
-        logger.info("Daily event notifications - checking events.json...")
+        logger.info("Event notifications - checking events.json...")
         logger.info("=" * 80)
 
         try:
@@ -633,13 +630,7 @@ class BotTasks:
                         logger.debug(f"Could not parse end_time for: {title[:40]}")
 
         except Exception as e:
-            logger.error(f"Error in daily_event_notifications: {e}", exc_info=True)
-
-    @daily_event_notifications.before_loop
-    async def before_daily_event_notifications(self):
-        """Wait for bot to be ready before starting tasks"""
-        await self.bot.wait_until_ready()
-        logger.info("Bot ready, daily event notifications loop starting")
+            logger.error(f"Error in event_notifications: {e}", exc_info=True)
 
     # ── Daily Official Events Scraper Task ─────────────────────────────
 
@@ -669,6 +660,10 @@ class BotTasks:
                 logger.info("ℹ️ No new official events found (JSON unchanged)")
         except Exception as e:
             logger.error(f"Error in daily_official_events_check: {e}", exc_info=True)
+            return
+
+        # Notify clubs about events that are starting/ending within 1 day
+        await self.event_notifications()
 
     @daily_official_events_check.before_loop
     async def before_daily_official_events_check(self):
