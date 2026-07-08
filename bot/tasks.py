@@ -568,12 +568,12 @@ class BotTasks:
 
     async def event_notifications(self):
         """
-        Check events.json for events starting or ending within 1 day
+        Check events.json for events starting or ending within 1.5 days
         and send notifications to each club's events channel.
 
         Uses 'notified_clubs' per-event list (persisted in JSON) for dedup.
-        Checks events that started/ended within the last 24 hours as well
-        as upcoming events within the next 24 hours, so newly discovered
+        Checks events that started/ended within the last 36 hours as well
+        as upcoming events within the next 36 hours, so newly discovered
         events that already started still get notified.
         """
         logger.info("=" * 80)
@@ -607,8 +607,8 @@ class BotTasks:
                         if start_dt.tzinfo is None:
                             start_dt = start_dt.replace(tzinfo=pytz.UTC)
                         remaining = (start_dt - now).total_seconds()
-                        # Within 24 hours in the future OR already started within last 24h
-                        if -86400 <= remaining <= 86400:
+                        # Within 36 hours in the future OR already started within last 36h
+                        if -129600 <= remaining <= 129600:
                             for club in clubs:
                                 await self._notify_events_for_club(club, event, "starting")
                     except (ValueError, TypeError):
@@ -622,8 +622,8 @@ class BotTasks:
                         if end_dt.tzinfo is None:
                             end_dt = end_dt.replace(tzinfo=pytz.UTC)
                         remaining = (end_dt - now).total_seconds()
-                        # Within 24 hours in the future OR already ended within last 24h
-                        if -86400 <= remaining <= 86400:
+                        # Within 36 hours in the future OR already ended within last 36h
+                        if -129600 <= remaining <= 129600:
                             for club in clubs:
                                 await self._notify_events_for_club(club, event, "ending")
                     except (ValueError, TypeError):
@@ -662,7 +662,7 @@ class BotTasks:
             logger.error(f"Error in daily_official_events_check: {e}", exc_info=True)
             return
 
-        # Notify clubs about events that are starting/ending within 1 day
+        # Notify clubs about events that are starting/ending within 1.5 days
         await self.event_notifications()
 
     @daily_official_events_check.before_loop
