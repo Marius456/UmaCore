@@ -487,7 +487,7 @@ class AdminCommands(commands.Cog):
                 bombs_data = []
 
             effective_quota = await QuotaRequirement.get_quota_for_date(club_obj.club_id, current_date)
-            daily_reports = self.report_generator.create_daily_report(
+            daily_reports = await self.report_generator.create_daily_report(
                 club_obj.club_name, effective_quota, status_summary, bombs_data, current_date,
                 rank_data=rank_data, quota_period=club_obj.quota_period
             )

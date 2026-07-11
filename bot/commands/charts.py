@@ -1,6 +1,7 @@
 """
 Chart commands for visualizing member fan progression
 """
+import asyncio
 import calendar
 import discord
 from discord import app_commands
@@ -247,7 +248,7 @@ class ChartCommands(commands.Cog):
                 return
 
             try:
-                img_bytes = _build_chart(member_data)
+                img_bytes = await asyncio.to_thread(_build_chart, member_data)
             except Exception as e:
                 logger.error(f"Failed to render chart image: {e}", exc_info=True)
                 await interaction.followup.send(

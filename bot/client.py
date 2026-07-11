@@ -9,7 +9,7 @@ import logging
 from config.settings import DISCORD_TOKEN
 from config.database import db
 from .tasks import BotTasks
-from services.report_generator import _close_playwright_browser
+from services.report_generator import _close_playwright_browser_async
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,7 @@ class UmamusumeBot(commands.Bot):
             self.tasks_manager.stop_tasks()
         
         # Close Playwright browser used for report image rendering
-        _close_playwright_browser()
+        await _close_playwright_browser_async()
         
         await super().close()
         logger.info("Bot shut down successfully")

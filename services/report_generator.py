@@ -2,6 +2,7 @@
 Discord report generation service
 """
 import io
+import asyncio
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 import discord
@@ -19,24 +20,25 @@ ReportEmbed = Tuple[discord.Embed, List[discord.File]]
 
 # Shared Playwright browser for rendering table images (lazy-initialised)
 _playwright_browser = None
-_playwright_instance = None
+_playwright_context = None
+_playwright = None
 
 
-def _get_playwright_browser():
+async def _get_playwright_browser_async():
     """
     Get or create a shared Playwright Chromium browser instance for rendering
-    Plotly table images. Uses sync API since _generate_table_image is synchronous.
+    Plotly table images. Uses async API since it's called from async contexts.
     """
-    global _playwright_browser, _playwright_instance
+    global _playwright_browser, _playwright
     if _playwright_browser is not None and _playwright_browser.is_connected():
         return _playwright_browser
 
-    from playwright.sync_api import sync_playwright
+    from playwright.async_api import async_playwright
 
-    if _playwright_instance is None:
-        _playwright_instance = sync_playwright().start()
+    if _playwright is None:
+        _playwright = await async_playwright().start()
 
-    _playwright_browser = _playwright_instance.chromium.launch(
+    _playwright_browser = await _playwright.chromium.launch(
         headless=True,
         args=[
             "--no-sandbox",
@@ -51,21 +53,21 @@ def _get_playwright_browser():
     return _playwright_browser
 
 
-def _close_playwright_browser():
+async def _close_playwright_browser_async():
     """Close the shared Playwright browser (call on bot shutdown)."""
-    global _playwright_browser, _playwright_instance
+    global _playwright_browser, _playwright
     if _playwright_browser:
         try:
-            _playwright_browser.close()
+            await _playwright_browser.close()
         except Exception:
             pass
         _playwright_browser = None
-    if _playwright_instance:
+    if _playwright:
         try:
-            _playwright_instance.stop()
+            await _playwright.stop()
         except Exception:
             pass
-        _playwright_instance = None
+        _playwright = None
     logger.info("Closed shared Playwright browser for table image rendering")
 
 
@@ -86,7 +88,7 @@ class ReportGenerator:
             return f"{num / 1_000:.1f}K"
         return str(num)
 
-    def _generate_table_image(self, headers: List[str], rows: List[List], title_color: str, filename: str) -> discord.File:
+    async def _generate_table_image(self, headers: List[str], rows: List[List], title_color: str, filename: str) -> discord.File:
         """Generate a styled table image using Plotly + Playwright screenshot and return it as a Discord file attachment."""
         # Convert hex color like 0x00FF00 to "#00FF00" format
         hex_str = f"#{title_color:06X}" if isinstance(title_color, int) else title_color
@@ -121,22 +123,22 @@ class ReportGenerator:
         # Render the figure to HTML, then screenshot with Playwright
         html_str = pio.to_html(fig, include_plotlyjs='cdn', full_html=True)
 
-        browser = _get_playwright_browser()
-        page = browser.new_page()
+        browser = await _get_playwright_browser_async()
+        page = await browser.new_page()
         try:
-            page.set_content(html_str, wait_until='networkidle')
+            await page.set_content(html_str, wait_until='networkidle')
             # Wait a brief moment for the plotly.js render to complete
-            page.wait_for_timeout(500)
+            await page.wait_for_timeout(500)
 
             # Locate the plotly graph div and take a screenshot of it
             plot_div = page.locator('.plotly-graph-div')
-            screenshot_bytes = plot_div.screenshot(timeout=15000)
+            screenshot_bytes = await plot_div.screenshot(timeout=15000)
 
             buf = io.BytesIO(screenshot_bytes)
             buf.seek(0)
             return discord.File(buf, filename=filename)
         finally:
-            page.close()
+            await page.close()
 
     def _prepare_table_data(self, members_list: List[Dict], start_index: int = 1, daily_quota: int = 0) -> List[List]:
         """Converts the member dicts into a list of lists for tabulate"""
@@ -259,8 +261,8 @@ class ReportGenerator:
 
         return sections
 
-    def _generate_table_embeds(self, title: str, color: int, headers: List[str],
-                                data_rows: List[List], image_prefix: str) -> List[ReportEmbed]:
+    async def _generate_table_embeds(self, title: str, color: int, headers: List[str],
+                                      data_rows: List[List], image_prefix: str) -> List[ReportEmbed]:
         """Generate one or more embeds with table images from prepared data rows."""
         if not data_rows:
             return []
@@ -273,7 +275,7 @@ class ReportGenerator:
             image_filename = f"{image_prefix}_{idx}.png"
 
             # Generate the image
-            file = self._generate_table_image(headers, chunk, color, image_filename)
+            file = await self._generate_table_image(headers, chunk, color, image_filename)
 
             embed = discord.Embed(
                 title=embed_title,
@@ -287,10 +289,10 @@ class ReportGenerator:
 
         return embeds_with_files
 
-    def create_daily_report(self, club_name: str, daily_quota: int, status_summary: Dict,
-                            bombs_data: List[Dict], report_date: date,
-                            rank_data: Optional[Dict] = None,
-                            quota_period: str = 'daily') -> List[ReportEmbed]:
+    async def create_daily_report(self, club_name: str, daily_quota: int, status_summary: Dict,
+                                   bombs_data: List[Dict], report_date: date,
+                                   rank_data: Optional[Dict] = None,
+                                   quota_period: str = 'daily') -> List[ReportEmbed]:
         """
         Create the main daily report embeds.
 
@@ -365,7 +367,7 @@ class ReportGenerator:
                 start_index=1,
                 daily_quota=daily_quota
             )
-            table_embeds = self._generate_table_embeds(
+            table_embeds = await self._generate_table_embeds(
                 title="✅ On Track",
                 color=COLOR_ON_TRACK,
                 headers=["#", "Name", "Daily", "Surplus", "Avg", "Total"],
@@ -380,7 +382,7 @@ class ReportGenerator:
                 status_summary['behind'],
                 start_index=on_track_count + 1
             )
-            table_embeds = self._generate_table_embeds(
+            table_embeds = await self._generate_table_embeds(
                 title="⚠️ Behind Quota",
                 color=COLOR_BEHIND,
                 headers=["#", "Name", "Daily", "Deficit", "Avg", "Total"],

@@ -361,7 +361,7 @@ class QuotaCommands(commands.Cog):
             bombs_data = await self.bomb_manager.get_active_bombs_with_members()
             
             from config.settings import DAILY_QUOTA
-            daily_reports = self.report_generator.create_daily_report(
+            daily_reports = await self.report_generator.create_daily_report(
                 "Club", DAILY_QUOTA, status_summary, bombs_data, current_date
             )
             
