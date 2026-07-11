@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple
 import discord
 import logging
 import plotly.graph_objects as go
+import plotly.io as pio
 from tabulate import tabulate
 
 from config.settings import COLOR_ON_TRACK, COLOR_BEHIND, COLOR_BOMB, COLOR_INFO
@@ -15,6 +16,57 @@ logger = logging.getLogger(__name__)
 
 # Each embed in the report can carry optional file attachments (for table images)
 ReportEmbed = Tuple[discord.Embed, List[discord.File]]
+
+# Shared Playwright browser for rendering table images (lazy-initialised)
+_playwright_browser = None
+_playwright_instance = None
+
+
+def _get_playwright_browser():
+    """
+    Get or create a shared Playwright Chromium browser instance for rendering
+    Plotly table images. Uses sync API since _generate_table_image is synchronous.
+    """
+    global _playwright_browser, _playwright_instance
+    if _playwright_browser is not None and _playwright_browser.is_connected():
+        return _playwright_browser
+
+    from playwright.sync_api import sync_playwright
+
+    if _playwright_instance is None:
+        _playwright_instance = sync_playwright().start()
+
+    _playwright_browser = _playwright_instance.chromium.launch(
+        headless=True,
+        args=[
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--single-process",
+            "--no-zygote",
+        ],
+        timeout=30000,
+    )
+    logger.info("Started shared Playwright browser for table image rendering")
+    return _playwright_browser
+
+
+def _close_playwright_browser():
+    """Close the shared Playwright browser (call on bot shutdown)."""
+    global _playwright_browser, _playwright_instance
+    if _playwright_browser:
+        try:
+            _playwright_browser.close()
+        except Exception:
+            pass
+        _playwright_browser = None
+    if _playwright_instance:
+        try:
+            _playwright_instance.stop()
+        except Exception:
+            pass
+        _playwright_instance = None
+    logger.info("Closed shared Playwright browser for table image rendering")
 
 
 class ReportGenerator:
@@ -35,7 +87,7 @@ class ReportGenerator:
         return str(num)
 
     def _generate_table_image(self, headers: List[str], rows: List[List], title_color: str, filename: str) -> discord.File:
-        """Generate a styled table image using plotly and return it as a Discord file attachment."""
+        """Generate a styled table image using Plotly + Playwright screenshot and return it as a Discord file attachment."""
         # Convert hex color like 0x00FF00 to "#00FF00" format
         hex_str = f"#{title_color:06X}" if isinstance(title_color, int) else title_color
 
@@ -66,10 +118,25 @@ class ReportGenerator:
             font=dict(family='Arial')
         )
 
-        buf = io.BytesIO()
-        fig.write_image(buf, format='png', engine='kaleido')
-        buf.seek(0)
-        return discord.File(buf, filename=filename)
+        # Render the figure to HTML, then screenshot with Playwright
+        html_str = pio.to_html(fig, include_plotlyjs='cdn', full_html=True)
+
+        browser = _get_playwright_browser()
+        page = browser.new_page()
+        try:
+            page.set_content(html_str, wait_until='networkidle')
+            # Wait a brief moment for the plotly.js render to complete
+            page.wait_for_timeout(500)
+
+            # Locate the plotly graph div and take a screenshot of it
+            plot_div = page.locator('.plotly-graph-div')
+            screenshot_bytes = plot_div.screenshot(timeout=15000)
+
+            buf = io.BytesIO(screenshot_bytes)
+            buf.seek(0)
+            return discord.File(buf, filename=filename)
+        finally:
+            page.close()
 
     def _prepare_table_data(self, members_list: List[Dict], start_index: int = 1, daily_quota: int = 0) -> List[List]:
         """Converts the member dicts into a list of lists for tabulate"""

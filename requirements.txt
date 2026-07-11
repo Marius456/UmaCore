@@ -13,7 +13,6 @@ playwright>=1.60.0
 
 # Data Visualization
 plotly>=5.18.0
-kaleido>=0.2.1
 
 # Utilities
 python-dotenv>=1.0.0

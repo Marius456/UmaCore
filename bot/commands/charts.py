@@ -74,8 +74,9 @@ logger = logging.getLogger(__name__)
 
 
 def _build_chart(member_data: dict[str, dict]) -> bytes:
-    """Render the Plotly chart and return PNG bytes."""
+    """Render the Plotly chart and return PNG bytes using Playwright screenshot."""
     import plotly.graph_objects as go
+    import plotly.io as pio
 
     fig = go.Figure()
     for name, data in member_data.items():
@@ -143,7 +144,32 @@ def _build_chart(member_data: dict[str, dict]) -> bytes:
         hovermode="x unified",
     )
 
-    return fig.to_image(format="png", scale=2)
+    # Render to HTML and screenshot with Playwright
+    html_str = pio.to_html(fig, include_plotlyjs='cdn', full_html=True)
+
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--single-process",
+                "--no-zygote",
+            ],
+            timeout=30000,
+        )
+        page = browser.new_page()
+        try:
+            page.set_content(html_str, wait_until='networkidle')
+            page.wait_for_timeout(1000)
+            plot_div = page.locator('.plotly-graph-div')
+            screenshot_bytes = plot_div.screenshot(timeout=15000)
+            return screenshot_bytes
+        finally:
+            page.close()
+            browser.close()
 
 
 class ChartCommands(commands.Cog):
@@ -176,7 +202,7 @@ class ChartCommands(commands.Cog):
             import plotly.graph_objects  # noqa: F401 — verify installed early
         except ImportError:
             await interaction.followup.send(
-                "❌ Plotly is not installed. Run `pip install plotly kaleido`."
+                "❌ Plotly is not installed. Run `pip install plotly`."
             )
             return
 
@@ -226,7 +252,7 @@ class ChartCommands(commands.Cog):
                 logger.error(f"Failed to render chart image: {e}", exc_info=True)
                 await interaction.followup.send(
                     "❌ Failed to render chart image. "
-                    "Make sure `kaleido` is installed: `pip install kaleido`"
+                    "Make sure Playwright is installed: `pip install playwright`"
                 )
                 return
 
