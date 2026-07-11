@@ -28,6 +28,7 @@ class Overtake(NamedTuple):
     daily_diff: int
     eta_days: float
     target_rank: int
+    drama_score: float           # composite: smaller gap + faster rate = more dramatic
 
 class EfficiencyKing(NamedTuple):
     name: str
@@ -129,26 +130,26 @@ class LeaderboardReportService:
 
         # --- Section 1: Headline ---
         headline = cls._assemble_headline(leader_change, king, tank, daily_rankings.get(latest_date))
-        embed.add_field(name="🔥 HEADLINE NEWS", value=headline + "\n\n━━━━━━━━━━━━━━━━━━━━━", inline=False)
+        embed.add_field(name="🔥 HEADLINE NEWS", value=headline + "\n\n───", inline=False)
 
         # --- Section 2: Momentum ---
         momentum = cls._assemble_momentum(king, tank, consistency, today_records, club_record, latest_date, daily_leader, leader_change, best_week=best_week)
-        embed.add_field(name="📈 THE MOMENTUM SHIFT", value=(momentum or "_Stable activity today._") + "\n\n━━━━━━━━━━━━━━━━━━━━━", inline=False)
+        embed.add_field(name="THE MOMENTUM SHIFT", value=(momentum or "_Stable activity today._") + "\n\n───", inline=False)
 
         # --- Section 3: Battle Zone ---
         battles = cls._assemble_battle_zone(overtakes, rivalries)
         if battles:
-            embed.add_field(name="⚔️ THE BATTLE ZONE", value=battles + "\n\n━━━━━━━━━━━━━━━━━━━━━", inline=False)
+            embed.add_field(name="THE BATTLE ZONE", value=battles + "\n\n───", inline=False)
 
         # --- Section 4: Milestones ---
         milestone_text = cls._format_milestone_watch(milestones)
         if milestones:
-            embed.add_field(name="🎯 MILESTONE TRACKER", value=milestone_text + "\n\n━━━━━━━━━━━━━━━━━━━━━", inline=False)
+            embed.add_field(name="MILESTONE TRACKER", value=milestone_text + "\n\n───", inline=False)
 
         # --- Section 5: Movers ---
         condensed = cls._compute_condensed_movers(movers)
         if condensed:
-            embed.add_field(name="⬆️⬇️ TOP MOVERS", value=cls._format_condensed_movers(condensed), inline=False)
+            embed.add_field(name="TOP MOVERS", value=cls._format_condensed_movers(condensed), inline=False)
 
         embed.set_footer(text=f"{club_name} · Powering Through {calendar.month_name[month]}")
         return embed
@@ -309,11 +310,18 @@ class LeaderboardReportService:
             if rate_diff > 0:
                 eta = gap / rate_diff
                 if 0 < eta <= 14:
+                    # Drama score: smaller gap + faster rate = more dramatic
+                    # Normalize: gap in millions, rate in millions
+                    gap_m = gap / 1_000_000
+                    rate_m = rate_diff / 1_000_000
+                    # Higher score = more dramatic (inverse of gap, scaled by rate)
+                    drama = max(0, (1.0 / (gap_m + 0.1)) * min(rate_m, 5.0))
                     results.append(
-                        Overtake(below["name"], above["name"], gap, rate_diff, round(eta, 1), above["rank"])
+                        Overtake(below["name"], above["name"], gap, rate_diff, round(eta, 1), above["rank"], round(drama, 2))
                     )
 
-        return sorted(results, key=lambda x: x.eta_days)[:3]
+        # Sort by drama score descending (most dramatic first)
+        return sorted(results, key=lambda x: x.drama_score, reverse=True)[:3]
 
     @classmethod
     def _compute_rivalries(
@@ -395,6 +403,8 @@ class LeaderboardReportService:
                     "name_b": b,
                     "swap_count": swaps,
                     "rank_range": (min(info_a["rank"], info_b["rank"]), max(info_a["rank"], info_b["rank"])),
+                    "rank_a": info_a["rank"],
+                    "rank_b": info_b["rank"],
                     "who_leads": who_leads,
                     "fan_gap": gap,
                     "score": score
@@ -782,14 +792,27 @@ class LeaderboardReportService:
             )
 
         if records["members"]:
-            pb_lines = [f"**🏆 New PBs**"]
-            for m in records["members"]:
-                prev = cls._fmt_fans(m["prev_best_delta"]) if m["prev_best_delta"] is not None else "N/A"
-                pb_lines.append(
-                    f"**{m['name']}** — **+{cls._fmt_fans(m['delta'])}** "
-                    f"(prev best +{prev})"
-                )
-            parts.append("\n".join(pb_lines))
+            # Separate true new PBs from matched PBs
+            true_pbs = [m for m in records["members"] if not m["is_tie"]]
+            matched_pbs = [m for m in records["members"] if m["is_tie"]]
+
+            if true_pbs:
+                pb_lines = [f"**🏆 New PBs**"]
+                for m in true_pbs:
+                    prev = cls._fmt_fans(m["prev_best_delta"]) if m["prev_best_delta"] is not None else "N/A"
+                    pb_lines.append(
+                        f"**{m['name']}** — **+{cls._fmt_fans(m['delta'])}** "
+                        f"(prev best +{prev})"
+                    )
+                parts.append("\n".join(pb_lines))
+
+            if matched_pbs:
+                matched_lines = [f"**⚖️ Matched PBs**"]
+                for m in matched_pbs:
+                    matched_lines.append(
+                        f"**{m['name']}** — matched their PB of **+{cls._fmt_fans(m['delta'])}**"
+                    )
+                parts.append("\n".join(matched_lines))
 
         return "\n\n".join(parts)
 
@@ -829,27 +852,29 @@ class LeaderboardReportService:
         if rivalries:
             r_lines = []
             for r in rivalries:
-                min_rank, max_rank = r["rank_range"]
                 r_lines.append(
-                    f"⚔️ **{r['name_a']}** vs **{r['name_b']}** "
-                    f"({r['swap_count']} swaps) — **{r['who_leads']}** leads by "
-                    f"{cls._fmt_fans(r['fan_gap'])} "
-                    f"(#{min_rank} vs #{max_rank})"
+                    f"**{r['name_a']}** (#{r['rank_a']}) vs **{r['name_b']}** (#{r['rank_b']}) — "
+                    f"**{r['who_leads']}** leads by {cls._fmt_fans(r['fan_gap'])} "
+                    f"({r['swap_count']} swaps)"
                 )
-            parts.append("**⚔️ Monthly Rivalries**\n\n" + "\n".join(r_lines))
+            parts.append("**Monthly Rivalries**\n\n" + "\n".join(r_lines))
 
         return "\n\n".join(parts)
 
     # --- Formatting Utilities ---
 
     @classmethod
-    def _fmt_fans(cls, n: int) -> str:
+    def _fmt_fans(cls, n: int, suffix: str = "") -> str:
         abs_n = abs(n)
         if abs_n >= 1_000_000:
-            return f"{n / 1_000_000:.1f}M"
-        if abs_n >= 1_000:
-            return f"{n / 1_000:.1f}K"
-        return str(n)
+            result = f"{n / 1_000_000:.1f}M"
+        elif abs_n >= 1_000:
+            result = f"{n / 1_000:.1f}K"
+        else:
+            result = str(n)
+        if suffix:
+            result += f" {suffix}"
+        return result
 
     @classmethod
     def _fmt_date(cls, d: date) -> str:
@@ -1116,10 +1141,11 @@ class LeaderboardReportService:
     ) -> Dict[str, Any]:
         """
         Members whose personal best single-day fan gain occurred TODAY.
-        Returns {members: [{name, delta, prev_best_delta}], count}
+        Returns {members: [{name, delta, prev_best_delta, is_tie}], count}
         sorted by delta desc — all members are listed, no truncation.
         prev_best_delta is the member's previous best (second in sorted list)
         or None if this is their only recorded day.
+        is_tie is True when today's gain equals the previous best (matched PB).
         """
         today_bests: List[Dict] = []
         for name, deltas in daily_deltas.items():
@@ -1130,13 +1156,16 @@ class LeaderboardReportService:
             if best["date"] == latest_date:
                 # prev_best is the next best (index 1) if it exists
                 prev_best = deltas[1]["delta"] if len(deltas) > 1 else None
-                # Only include if they have a genuine previous best to beat
+                # Skip if no genuine previous best to beat
                 if prev_best is None or prev_best <= 0:
                     continue
+                # Check if this is a tie (matched PB, not a new record)
+                is_tie = (best["delta"] == prev_best)
                 today_bests.append({
                     "name": name,
                     "delta": best["delta"],
                     "prev_best_delta": prev_best,
+                    "is_tie": is_tie,
                 })
 
         today_bests.sort(key=lambda r: r["delta"], reverse=True)
