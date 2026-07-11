@@ -13,12 +13,12 @@ import asyncio
 
 from models import Club, Member, ClubRankHistory, QuotaRequirement, BotSettings
 from scrapers import (
-    ChronoGenesisScraper, UmaMoeAPIScraper, DataNotAvailableError,
+    UmaMoeAPIScraper, DataNotAvailableError,
     scrape_official_events, check_and_save as check_and_save_official_events,
 )
 from services import QuotaCalculator, BombManager, ReportGenerator, NotificationService, ScrapeLockManager, ScrapeContext
 from services.leaderboard_report_service import LeaderboardReportService
-from config.settings import USE_UMAMOE_API, EVENTS_JSON_PATH
+from config.settings import EVENTS_JSON_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -125,38 +125,34 @@ class BotTasks:
                 current_day = None
                 last_error = None
 
-                # STEP 1: Select and initialize scraper with validation
-                if USE_UMAMOE_API:
-                    if not club.circle_id:
-                        logger.error(f"No circle_id configured for {club.club_name} (required when Uma.moe API is enabled)")
-                        error_embed = self.report_generator.create_error_report(
-                            club.club_name,
-                            f"⚠️ **Missing Circle ID for {club.club_name}**\n\n"
-                            f"Uma.moe API is enabled but no circle_id has been set.\n\n"
-                            f"**To fix this:**\n"
-                            f"Use `/edit_club club:{club.club_name} circle_id:<numeric_id>`\n\n"
-                            f"**How to find your Circle ID:**\n"
-                            f"1. Go to https://uma.moe/circles/\n"
-                            f"2. Search for **{club.club_name}**\n"
-                            f"3. Copy the number from the URL"
-                        )
-                        await report_channel.send(embed=error_embed)
-                        return
+                # STEP 1: Initialize Uma.moe API scraper with validation
+                if not club.circle_id:
+                    logger.error(f"No circle_id configured for {club.club_name}")
+                    error_embed = self.report_generator.create_error_report(
+                        club.club_name,
+                        f"⚠️ **Missing Circle ID for {club.club_name}**\n\n"
+                        f"No circle_id has been set for this club.\n\n"
+                        f"**To fix this:**\n"
+                        f"Use `/edit_club club:{club.club_name} circle_id:<numeric_id>`\n\n"
+                        f"**How to find your Circle ID:**\n"
+                        f"1. Go to https://uma.moe/circles/\n"
+                        f"2. Search for **{club.club_name}**\n"
+                        f"3. Copy the number from the URL"
+                    )
+                    await report_channel.send(embed=error_embed)
+                    return
 
-                    if not club.is_circle_id_valid():
-                        logger.error(f"Invalid circle_id format for {club.club_name}: '{club.circle_id}' (must be numeric)")
-                        error_embed = self.report_generator.create_error_report(
-                            club.club_name,
-                            club.get_circle_id_help_message()
-                        )
-                        await report_channel.send(embed=error_embed)
-                        return
+                if not club.is_circle_id_valid():
+                    logger.error(f"Invalid circle_id format for {club.club_name}: '{club.circle_id}' (must be numeric)")
+                    error_embed = self.report_generator.create_error_report(
+                        club.club_name,
+                        club.get_circle_id_help_message()
+                    )
+                    await report_channel.send(embed=error_embed)
+                    return
 
-                    scraper = UmaMoeAPIScraper(club.circle_id)
-                    logger.info(f"Using Uma.moe API scraper for {club.club_name} (circle_id: {club.circle_id})")
-                else:
-                    scraper = ChronoGenesisScraper(club.scrape_url)
-                    logger.info(f"Using ChronoGenesis scraper for {club.club_name}")
+                scraper = UmaMoeAPIScraper(club.circle_id)
+                logger.info(f"Using Uma.moe API scraper for {club.club_name} (circle_id: {club.circle_id})")
 
                 # STEP 2: Scrape with retries
                 # First, do 3 fast retries with backoff (catches transient network errors)
@@ -247,29 +243,28 @@ class BotTasks:
                     current_date = data_date
                     logger.info(f"Using scraper's data date: {current_date} (previous-month fallback)")
 
-                # Extract and persist club rank data (Uma.moe API only)
+                # Extract and persist club rank data
                 rank_data = None
-                if isinstance(scraper, UmaMoeAPIScraper):
-                    monthly_rank = scraper.get_monthly_rank()
-                    last_month_rank = scraper.get_last_month_rank()
-                    yesterday_rank = scraper.get_yesterday_rank()
+                monthly_rank = scraper.get_monthly_rank()
+                last_month_rank = scraper.get_last_month_rank()
+                yesterday_rank = scraper.get_yesterday_rank()
 
-                    if monthly_rank is not None:
-                        try:
-                            await ClubRankHistory.save(club.club_id, current_date, monthly_rank, monthly_rank)
-                        except Exception as e:
-                            logger.error(f"Failed to save rank data for {club.club_name}: {e}", exc_info=True)
+                if monthly_rank is not None:
+                    try:
+                        await ClubRankHistory.save(club.club_id, current_date, monthly_rank, monthly_rank)
+                    except Exception as e:
+                        logger.error(f"Failed to save rank data for {club.club_name}: {e}", exc_info=True)
 
-                        rank_data = {
-                            'monthly_rank': monthly_rank,
-                            'last_month_rank': last_month_rank,
-                            'yesterday_rank': yesterday_rank,
-                        }
-                        logger.info(
-                            f"Rank data for {club.club_name}: "
-                            f"monthly={monthly_rank}, yesterday={yesterday_rank}, "
-                            f"last_month={last_month_rank}"
-                        )
+                    rank_data = {
+                        'monthly_rank': monthly_rank,
+                        'last_month_rank': last_month_rank,
+                        'yesterday_rank': yesterday_rank,
+                    }
+                    logger.info(
+                        f"Rank data for {club.club_name}: "
+                        f"monthly={monthly_rank}, yesterday={yesterday_rank}, "
+                        f"last_month={last_month_rank}"
+                    )
 
                 # STEP 4: Process the scraped data
                 try:

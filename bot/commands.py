@@ -8,10 +8,10 @@ from datetime import datetime, date
 import logging
 import pytz
 
-from config.settings import TIMEZONE, SCRAPE_URL
-from scrapers import ChronoGenesisScraper
+from config.settings import TIMEZONE
+from scrapers import UmaMoeAPIScraper
 from services import QuotaCalculator, BombManager, ReportGenerator
-from models import Member, QuotaHistory, Bomb, QuotaRequirement, BotSettings
+from models import Member, QuotaHistory, Bomb, QuotaRequirement, BotSettings, Club
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,6 @@ class QuotaCommands(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        self.scraper = ChronoGenesisScraper(SCRAPE_URL)
         self.quota_calculator = QuotaCalculator()
         self.bomb_manager = BombManager()
         self.report_generator = ReportGenerator()
@@ -318,6 +317,22 @@ class QuotaCommands(commands.Cog):
             if not alert_channel:
                 alert_channel = report_channel
             
+            # Get circle_id from the first active club (legacy single-club support)
+            clubs = await Club.get_all_active()
+            if not clubs:
+                await interaction.followup.send("❌ No active clubs found. Use `/force_check` in the admin commands instead.")
+                return
+
+            club = clubs[0]
+            if not club.circle_id:
+                await interaction.followup.send(
+                    f"❌ No circle_id configured for {club.club_name}. "
+                    f"Use `/edit_club club:{club.club_name} circle_id:<numeric_id>` first."
+                )
+                return
+
+            scraper = UmaMoeAPIScraper(club.circle_id)
+
             # Scrape with retry logic
             max_retries = 3
             retry_delay = 10
@@ -326,9 +341,9 @@ class QuotaCommands(commands.Cog):
             
             for attempt in range(1, max_retries + 1):
                 try:
-                    await interaction.followup.send(f"🔄 Scraping website (attempt {attempt}/{max_retries})...")
-                    scraped_data = await self.scraper.scrape()
-                    current_day = self.scraper.get_current_day()
+                    await interaction.followup.send(f"🔄 Scraping {club.club_name} (attempt {attempt}/{max_retries})...")
+                    scraped_data = await scraper.scrape()
+                    current_day = scraper.get_current_day()
                     
                     if scraped_data:
                         break

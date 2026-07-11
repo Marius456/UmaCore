@@ -9,10 +9,9 @@ import logging
 import pytz
 import asyncio
 
-from scrapers import ChronoGenesisScraper, UmaMoeAPIScraper
+from scrapers import UmaMoeAPIScraper
 from services import QuotaCalculator, BombManager, ReportGenerator, MonthlyInfoService
 from models import Member, QuotaRequirement, BotSettings, Club, ClubRankHistory
-from config.settings import USE_UMAMOE_API
 
 logger = logging.getLogger(__name__)
 
@@ -369,35 +368,30 @@ class AdminCommands(commands.Cog):
             current_datetime = datetime.now(club_tz)
             current_date = current_datetime.date()
 
-            # Select scraper
-            if USE_UMAMOE_API:
-                if not club_obj.circle_id:
-                    await interaction.followup.send(
-                        f"❌ **Missing Circle ID for {club}**\n\n"
-                        f"Uma.moe API is enabled but no circle_id has been set.\n\n"
-                        f"**To fix this:**\n"
-                        f"Use `/edit_club club:{club} circle_id:<numeric_id>`\n\n"
-                        f"**How to find your Circle ID:**\n"
-                        f"1. Go to https://uma.moe/circles/\n"
-                        f"2. Search for **{club}**\n"
-                        f"3. Copy the number from the URL"
-                    )
-                    logger.error(f"No circle_id configured for {club_obj.club_name} (required when Uma.moe API is enabled)")
-                    return
+            # Initialize Uma.moe API scraper with validation
+            if not club_obj.circle_id:
+                await interaction.followup.send(
+                    f"❌ **Missing Circle ID for {club}**\n\n"
+                    f"No circle_id has been set for this club.\n\n"
+                    f"**To fix this:**\n"
+                    f"Use `/edit_club club:{club} circle_id:<numeric_id>`\n\n"
+                    f"**How to find your Circle ID:**\n"
+                    f"1. Go to https://uma.moe/circles/\n"
+                    f"2. Search for **{club}**\n"
+                    f"3. Copy the number from the URL"
+                )
+                logger.error(f"No circle_id configured for {club_obj.club_name}")
+                return
 
-                if not club_obj.is_circle_id_valid():
-                    error_msg = club_obj.get_circle_id_help_message()
-                    await interaction.followup.send(error_msg)
-                    logger.error(f"Invalid circle_id format for {club}: '{club_obj.circle_id}'")
-                    return
+            if not club_obj.is_circle_id_valid():
+                error_msg = club_obj.get_circle_id_help_message()
+                await interaction.followup.send(error_msg)
+                logger.error(f"Invalid circle_id format for {club}: '{club_obj.circle_id}'")
+                return
 
-                scraper = UmaMoeAPIScraper(club_obj.circle_id)
-                await interaction.followup.send(f"Using Uma.moe API scraper for {club}...")
-                logger.info(f"Using Uma.moe API scraper for {club_obj.club_name} (circle_id: {club_obj.circle_id})")
-            else:
-                scraper = ChronoGenesisScraper(club_obj.scrape_url)
-                await interaction.followup.send(f"Using ChronoGenesis scraper for {club}...")
-                logger.info(f"Using ChronoGenesis scraper for {club_obj.club_name}")
+            scraper = UmaMoeAPIScraper(club_obj.circle_id)
+            await interaction.followup.send(f"Using Uma.moe API scraper for {club}...")
+            logger.info(f"Using Uma.moe API scraper for {club_obj.club_name} (circle_id: {club_obj.circle_id})")
 
             # Scrape with retry logic
             max_retries = 3
@@ -430,29 +424,28 @@ class AdminCommands(commands.Cog):
                 current_date = data_date
                 logger.info(f"Using scraper's data date: {current_date} (previous-month fallback)")
 
-            # Extract and persist club rank data (Uma.moe API only)
+            # Extract and persist club rank data
             rank_data = None
-            if isinstance(scraper, UmaMoeAPIScraper):
-                monthly_rank = scraper.get_monthly_rank()
-                last_month_rank = scraper.get_last_month_rank()
-                yesterday_rank = scraper.get_yesterday_rank()
+            monthly_rank = scraper.get_monthly_rank()
+            last_month_rank = scraper.get_last_month_rank()
+            yesterday_rank = scraper.get_yesterday_rank()
 
-                if monthly_rank is not None:
-                    try:
-                        await ClubRankHistory.save(club_obj.club_id, current_date, monthly_rank, monthly_rank)
-                    except Exception as e:
-                        logger.error(f"Failed to save rank data for {club_obj.club_name}: {e}", exc_info=True)
+            if monthly_rank is not None:
+                try:
+                    await ClubRankHistory.save(club_obj.club_id, current_date, monthly_rank, monthly_rank)
+                except Exception as e:
+                    logger.error(f"Failed to save rank data for {club_obj.club_name}: {e}", exc_info=True)
 
-                    rank_data = {
-                        'monthly_rank': monthly_rank,
-                        'last_month_rank': last_month_rank,
-                        'yesterday_rank': yesterday_rank,
-                    }
-                    logger.info(
-                        f"Rank data for {club_obj.club_name}: "
-                        f"monthly={monthly_rank}, yesterday={yesterday_rank}, "
-                        f"last_month={last_month_rank}"
-                    )
+                rank_data = {
+                    'monthly_rank': monthly_rank,
+                    'last_month_rank': last_month_rank,
+                    'yesterday_rank': yesterday_rank,
+                }
+                logger.info(
+                    f"Rank data for {club_obj.club_name}: "
+                    f"monthly={monthly_rank}, yesterday={yesterday_rank}, "
+                    f"last_month={last_month_rank}"
+                )
 
             # Process scraped data
             await interaction.followup.send("⚙️ Processing data...")
