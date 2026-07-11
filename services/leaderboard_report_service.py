@@ -9,6 +9,7 @@ from collections import defaultdict
 from datetime import date
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple, NamedTuple
+from enum import Enum
 from uuid import UUID
 
 import discord
@@ -82,6 +83,25 @@ class Achievement(NamedTuple):
     description: str          # Human-readable narrative
 
 
+class HeadlineType(Enum):
+    COMEBACK = "comeback"
+    DOMINATION = "domination"
+    UPSET = "upset"
+    CLUTCH = "clutch"
+    STREAK = "streak"
+    CHAOS = "chaos"
+    BREAKOUT = "breakout"
+    QUIET = "quiet"
+
+
+class BotMood(Enum):
+    PEACEFUL = "peaceful"       # Few changes
+    CHAOTIC = "chaotic"         # Many changes
+    INTENSE = "intense"         # Leader under attack
+    IMPRESSED = "impressed"     # Huge grinder
+    NEUTRAL = "neutral"         # Default
+
+
 class LeaderboardReportService:
     """Generates a rich 'sports broadcast' style news report for club activity."""
 
@@ -149,9 +169,15 @@ class LeaderboardReportService:
             if eta is not None:
                 milestone_etas[m.name] = eta
 
+        # Phase 3: Mood, rare achievements
+        mood = cls._determine_mood(movers, leader_change, len(overtakes))
+        rare_achievements = cls._compute_rare_achievements(daily_rankings, daily_deltas, club_record, latest_date)
+        all_awards = (funny_awards or []) + (rare_achievements or [])
+        total_movers_count = len(movers.get("climbers", [])) + len(movers.get("fallers", []))
+
         # 3. Assemble Embed
         embed = discord.Embed(
-            title=f"📰 Leaderboard News — {club_name}",
+            title=f"🥕 Leaderboard News — {club_name}",
             description=(
                 f"**{date(year, month, 1).strftime('%B %Y')}** · {member_count} members\n"
                 f"_{cls._fmt_date(latest_date)} update_"
@@ -161,7 +187,7 @@ class LeaderboardReportService:
         )
 
         # --- Section 1: Headline ---
-        headline = cls._assemble_headline(leader_change, king, tank, daily_rankings.get(latest_date))
+        headline = cls._generate_headline(leader_change, king, tank, daily_rankings.get(latest_date), mood, overtakes, total_movers_count)
         embed.add_field(name="🔥 HEADLINE NEWS", value=headline + "\n\n───", inline=False)
 
         # --- Section 2: Momentum ---
@@ -906,6 +932,186 @@ class LeaderboardReportService:
                 f"~{round(overtake.eta_days)} days"
             )
 
+    # ── Phase 2.16 + Phase 3: Headlines, Mood, Rare Achievements ──────────
+
+    @classmethod
+    def _determine_mood(
+        cls,
+        movers: Dict[str, List[Dict]],
+        leader_change: Dict[str, Any],
+        overtakes_count: int,
+    ) -> BotMood:
+        """Detect the day's character based on activity level."""
+        total_movers = len(movers.get("climbers", [])) + len(movers.get("fallers", []))
+        if leader_change["changed"] and overtakes_count >= 2:
+            return BotMood.CHAOTIC
+        if leader_change["changed"] and leader_change["old_streak"] >= 5:
+            return BotMood.INTENSE
+        if total_movers >= 4:
+            return BotMood.CHAOTIC
+        if overtakes_count >= 2:
+            return BotMood.INTENSE
+        if total_movers <= 1:
+            return BotMood.PEACEFUL
+        return BotMood.NEUTRAL
+
+    @classmethod
+    def _generate_headline(
+        cls,
+        leader_change: Dict[str, Any],
+        king: Optional[EfficiencyKing],
+        tank: Optional[TankAnalysis],
+        today_entries: Optional[List[Dict]],
+        mood: BotMood,
+        overtakes: List[Overtake],
+        movers_count: int,
+    ) -> str:
+        """Generate varied headline types based on the day's events."""
+        # Priority 1: Leader change
+        if leader_change["changed"]:
+            streak = leader_change["old_streak"]
+            old = leader_change["old_leader"]
+            new_ld = leader_change["new_leader"]
+            swaps = leader_change["swap_count_7d"]
+
+            if swaps >= 3:
+                return (
+                    f"🌪️ Absolute chaos at the top! **{new_ld}** retakes #1 from **{old}** "
+                    f"— the crown has changed hands {swaps} times this week!"
+                )
+            if streak >= 5:
+                return (
+                    f"👑 **{new_ld}** dethrones **{old}** after a dominant **{streak}-day reign**!"
+                )
+            if streak >= 3:
+                return (
+                    f"🏆 **{new_ld}** has overtaken **{old}** for #1! "
+                    f"({streak} day streak broken!)"
+                )
+            return (
+                f"🏆 **{new_ld}** has overtaken **{old}** for #1!"
+            )
+
+        # Priority 2: Domination (king is also #1)
+        if king and tank and king.name == tank.name:
+            return (
+                f"👑 **{king.name}** is dominating the field, "
+                f"leading in both momentum and defensive surplus!"
+            )
+
+        # Priority 3: Streak headline
+        if tank and tank.is_dynasty and tank.daily_gain > tank.daily_gain_2nd:
+            return (
+                f"🔥 **{tank.name}** extends their reign to **{tank.streak} days** at #1 — "
+                f"no one can keep up!"
+            )
+
+        # Priority 4: Clutch / milestone focus
+        if king and king.pct_above_avg > 100:
+            return (
+                f"🎯 **{king.name}** is on fire — performing **{king.pct_above_avg}%** above their average!"
+            )
+
+        # Priority 5: Chaos (many overtakes)
+        if len(overtakes) >= 2 and movers_count >= 3:
+            return (
+                f"🌪️ Four positions changed today — the most movement we've seen this week!"
+            )
+
+        # Priority 6: Comeback (leader losing ground)
+        if tank and tank.pressure_streak >= 2:
+            return (
+                f"⚔️ **{tank.name_2nd}** is breathing down **{tank.name}**'s neck — "
+                f"{tank.pressure_streak} days of mounting pressure!"
+            )
+
+        # Priority 7: Standard breakout star
+        if king:
+            return (
+                f"🔥 **{king.name}** is today's breakout star, "
+                f"performing {king.pct_above_avg}% above their usual pace!"
+            )
+
+        # Priority 8: Peaceful / quiet day
+        if today_entries:
+            top = today_entries[0]
+            if mood == BotMood.PEACEFUL:
+                return (
+                    f"😌 A quiet day across the leaderboard. "
+                    f"**{top['name']}** holds steady at #1 with {cls._fmt_fans(top['fans'])} fans."
+                )
+            return (
+                f"👑 **{top['name']}** remains steady at #1 "
+                f"with {cls._fmt_fans(top['fans'])} fans."
+            )
+
+        return "_Leaderboard remains stable._"
+
+    @classmethod
+    def _compute_rare_achievements(
+        cls,
+        daily_rankings: Dict[date, List[Dict]],
+        daily_deltas: Dict[str, List[Dict]],
+        club_record: Optional[Dict[str, Any]],
+        latest_date: date,
+    ) -> List[Achievement]:
+        """Detect rare achievements: first 5M+ day, 3 PBs in a week, first to milestone."""
+        achievements: List[Achievement] = []
+        today_entries = daily_rankings.get(latest_date, [])
+        today_map = {e["name"]: e for e in today_entries}
+
+        # First 5M+ day
+        for name, deltas in daily_deltas.items():
+            if name not in today_map:
+                continue
+            # Check if any delta >= 5M
+            has_5m = any(d["delta"] >= 5_000_000 for d in deltas)
+            if has_5m:
+                # Check if this is their first 5M+ day
+                five_m_days = [d for d in deltas if d["delta"] >= 5_000_000]
+                if len(five_m_days) == 1 and five_m_days[0]["date"] == latest_date:
+                    achievements.append(Achievement(
+                        name=name,
+                        achievement_type="rare",
+                        title="First 5M+ Day",
+                        description=f"🏅 **{name}** cracked **5 million fans** in a single day for the first time!",
+                    ))
+
+        # 3 PBs in one week (check if any member has 3+ PB entries in last 7 days)
+        from datetime import timedelta
+        week_ago = latest_date - timedelta(days=7)
+        for name, deltas in daily_deltas.items():
+            if name not in today_map:
+                continue
+            # Sort by date to find PBs
+            by_date = sorted(deltas, key=lambda d: d["date"])
+            pb_count = 0
+            prev_best = 0
+            for d in by_date:
+                if d["date"] < week_ago:
+                    continue
+                if d["delta"] > prev_best:
+                    pb_count += 1
+                    prev_best = d["delta"]
+            if pb_count >= 3:
+                achievements.append(Achievement(
+                    name=name,
+                    achievement_type="rare",
+                    title="PB Spree",
+                    description=f"⚡ **{name}** set **{pb_count} personal bests** in the last week!",
+                ))
+
+        # Club record (highest single day gain)
+        if club_record:
+            achievements.append(Achievement(
+                name=club_record["name"],
+                achievement_type="rare",
+                title="Club Record",
+                description=f"📊 **{club_record['name']}** holds this month's club record with **+{club_record['delta']:,}** fans in a single day!",
+            ))
+
+        return achievements[:3]
+
     # --- Assembly Helpers (The 'Polishing' Layer) ---
 
     @classmethod
@@ -972,7 +1178,7 @@ class LeaderboardReportService:
 
         if daily_leader:
             parts.append(
-                f"**🏃 The Sprinter** — **{daily_leader['name']}** "
+                f"**🥇 Top Trainer** — **{daily_leader['name']}** "
                 f"(+{cls._fmt_fans(daily_leader['daily'])}) gained the most fans today!"
             )
 
