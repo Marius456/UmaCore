@@ -24,14 +24,24 @@ _playwright_context = None
 _playwright = None
 
 
-async def _get_playwright_browser_async():
+async def _ensure_playwright_browser_async():
     """
-    Get or create a shared Playwright Chromium browser instance for rendering
-    Plotly table images. Uses async API since it's called from async contexts.
+    Ensure a healthy shared Playwright browser instance exists.
+    Performs a real health check (not just is_connected()) and re-launches
+    if the browser has died. Returns the browser instance.
     """
-    global _playwright_browser, _playwright
-    if _playwright_browser is not None and _playwright_browser.is_connected():
-        return _playwright_browser
+    global _playwright_browser, _playwright_context, _playwright
+
+    # If we have a browser, do a real health check by trying to use it
+    if _playwright_browser is not None:
+        try:
+            # Quick health check — try to create and close a page
+            page = await _playwright_browser.new_page()
+            await page.close()
+            return _playwright_browser
+        except Exception:
+            logger.warning("Playwright browser is dead, re-launching...")
+            await _close_playwright_browser_async()
 
     from playwright.async_api import async_playwright
 
@@ -49,13 +59,33 @@ async def _get_playwright_browser_async():
         ],
         timeout=30000,
     )
+    # Create a persistent context to avoid default-context corruption issues
+    _playwright_context = await _playwright_browser.new_context()
     logger.info("Started shared Playwright browser for table image rendering")
     return _playwright_browser
 
 
+async def _get_browser_context_async():
+    """
+    Get or create a persistent browser context from the shared browser.
+    The context is reused across renders for better performance.
+    """
+    global _playwright_context
+    browser = await _ensure_playwright_browser_async()
+    if _playwright_context is None or not _playwright_context.browser:
+        _playwright_context = await browser.new_context()
+    return _playwright_context
+
+
 async def _close_playwright_browser_async():
     """Close the shared Playwright browser (call on bot shutdown)."""
-    global _playwright_browser, _playwright
+    global _playwright_browser, _playwright_context, _playwright
+    if _playwright_context:
+        try:
+            await _playwright_context.close()
+        except Exception:
+            pass
+        _playwright_context = None
     if _playwright_browser:
         try:
             await _playwright_browser.close()
@@ -123,8 +153,9 @@ class ReportGenerator:
         # Render the figure to HTML, then screenshot with Playwright
         html_str = pio.to_html(fig, include_plotlyjs='cdn', full_html=True)
 
-        browser = await _get_playwright_browser_async()
-        page = await browser.new_page()
+        # Use persistent context for better reliability
+        context = await _get_browser_context_async()
+        page = await context.new_page()
         try:
             await page.set_content(html_str, wait_until='networkidle')
             # Wait a brief moment for the plotly.js render to complete
@@ -137,6 +168,22 @@ class ReportGenerator:
             buf = io.BytesIO(screenshot_bytes)
             buf.seek(0)
             return discord.File(buf, filename=filename)
+        except Exception as e:
+            # If the browser died mid-render, try once more with a fresh launch
+            logger.warning(f"Playwright render failed (will retry once): {e}")
+            await _close_playwright_browser_async()
+            context = await _get_browser_context_async()
+            page = await context.new_page()
+            try:
+                await page.set_content(html_str, wait_until='networkidle')
+                await page.wait_for_timeout(500)
+                plot_div = page.locator('.plotly-graph-div')
+                screenshot_bytes = await plot_div.screenshot(timeout=15000)
+                buf = io.BytesIO(screenshot_bytes)
+                buf.seek(0)
+                return discord.File(buf, filename=filename)
+            finally:
+                await page.close()
         finally:
             await page.close()
 
