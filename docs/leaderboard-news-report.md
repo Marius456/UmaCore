@@ -442,7 +442,8 @@ Sub-sections (each with a bold label):
 - **🏅 Records** — Today's personal bests + month's best club record
 
 ### Section 3: ⚔️ THE BATTLE ZONE
-Sub-sections (sorted by urgency):
+Sub-sections (sorted by order):
+- **✅ Yesterday's Calls** — Verdicts on yesterday's close predicted overtakes (✅ landed / ❌ fell short)
 - **🚨 Urgent Overtakes** — Overtakes with ETA < 2 days (within 48h)
 - **⏳ On the Horizon** — Overtakes with ETA >= 2 days
 - **⚔️ Monthly Rivalries** — Top 3 rivalry pairs by swap count
