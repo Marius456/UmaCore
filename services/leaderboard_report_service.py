@@ -16,6 +16,7 @@ import discord
 
 from config.settings import COLOR_INFO
 from models import QuotaHistory
+from services.prediction_store import save_predictions, load_predictions
 
 logger = logging.getLogger(__name__)
 
@@ -154,8 +155,8 @@ class LeaderboardReportService:
         club_activity = cls._compute_club_activity(daily_rankings, latest_date)
         mvp = cls._compute_club_mvp(king, tank, daily_leader, consistency, latest_date, today_records)
         funny_awards = cls._compute_funny_awards(daily_rankings, daily_deltas, latest_date)
-        yesterday_results = cls._compute_yesterday_results(daily_rankings, overtakes, latest_date)
-        teaser = cls._generate_teaser(overtakes, milestones, tank, leader_change, daily_deltas)
+        yesterday_results = cls._compute_yesterday_results(daily_rankings, latest_date, club_name)
+        teaser, predictions_for_export = cls._generate_teaser(overtakes, milestones, tank, leader_change, daily_deltas)
         month_name = calendar.month_name[month]
         # Add rivalry context to top rivalry
         if rivalries:
@@ -184,6 +185,10 @@ class LeaderboardReportService:
         club_goal = cls._compute_club_goal_tracker(daily_rankings, latest_date)
         # History records
         history_records = cls._compute_history_records(daily_deltas, daily_rankings, latest_date)
+
+        # Save today's predictions for tomorrow's "Yesterday's Calls" section
+        if predictions_for_export:
+            save_predictions(club_name, latest_date, predictions_for_export)
 
         # 3. Assemble Embed
         embed = discord.Embed(
@@ -857,46 +862,49 @@ class LeaderboardReportService:
     def _compute_yesterday_results(
         cls,
         daily_rankings: Dict[date, List[Dict]],
-        overtakes: List[Overtake],
         latest_date: date,
+        club_name: str,
     ) -> List[Dict[str, Any]]:
-        """Check if yesterday's predicted overtakes happened (✅/❌)."""
+        """
+        Check if yesterday's predicted overtakes happened (OK / MISS).
+        Uses saved predictions from the previous day's report.
+        If no saved predictions exist, returns empty list (section is skipped).
+        """
         yesterday_date = cls._get_previous_day(daily_rankings, latest_date)
         if yesterday_date is None:
             return []
 
-        yesterday_entries = daily_rankings.get(yesterday_date, [])
         today_entries = daily_rankings.get(latest_date, [])
-        if not yesterday_entries or not today_entries:
+        if not today_entries:
             return []
 
-        # Build rank lookups
-        today_ranks = {e["name"]: e["rank"] for e in today_entries}
-        yesterday_ranks = {e["name"]: e["rank"] for e in yesterday_entries}
+        # Load yesterday's saved predictions
+        saved_predictions = load_predictions(club_name, yesterday_date)
+        if saved_predictions is None:
+            # No saved predictions — skip the "Yesterday's Calls" section entirely
+            return []
 
-        # We can't know which overtakes were predicted yesterday unless we re-compute
-        # Instead, check adjacent pairs that were close yesterday
+        # Build today's rank lookup
+        today_ranks = {e["name"]: e["rank"] for e in today_entries}
+
         results = []
-        for i in range(len(yesterday_entries) - 1):
-            above, below = yesterday_entries[i], yesterday_entries[i + 1]
-            gap = above["fans"] - below["fans"]
-            rate_diff = below["daily"] - above["daily"]
-            if rate_diff > 0:
-                eta = gap / rate_diff
-                if 0 < eta <= 2:  # Was predicted within 2 days
-                    # Did the overtake happen?
-                    below_rank_today = today_ranks.get(below["name"])
-                    above_rank_today = today_ranks.get(above["name"])
-                    if below_rank_today is not None and above_rank_today is not None:
-                        if below_rank_today < above_rank_today:
-                            results.append({
-                                "challenger": below["name"],
-                                "target": above["name"],
-                                "landed": True,
-                            })
-                        elif below_rank_today == above_rank_today:
-                            # Still tied or overtake in progress
-                            pass
+        for pred in saved_predictions:
+            challenger = pred["challenger"]
+            target = pred["target"]
+            target_rank = pred.get("target_rank")
+
+            challenger_rank_today = today_ranks.get(challenger)
+            target_rank_today = today_ranks.get(target)
+
+            if challenger_rank_today is not None and target_rank_today is not None:
+                # The challenger succeeded if they now have a better (lower) rank than the target
+                landed = challenger_rank_today < target_rank_today
+                results.append({
+                    "challenger": challenger,
+                    "target": target,
+                    "target_rank": target_rank,
+                    "landed": landed,
+                })
 
         return results[:3]
 
@@ -908,14 +916,26 @@ class LeaderboardReportService:
         tank: Optional[TankAnalysis],
         leader_change: Dict[str, Any],
         daily_deltas: Dict[str, List[Dict]],
-    ) -> Optional[str]:
-        """Generate 'Watch tomorrow' section with 2-3 predictions."""
+    ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+        """
+        Generate 'Watch tomorrow' section with 2-3 predictions.
+        Returns (teaser_text, predictions_for_export).
+        """
         items = []
+        predictions_for_export = []
 
         # Overtakes happening soon
         for o in overtakes[:2]:
             if o.eta_days <= 2:
                 items.append(f"• **{o.challenger}** is expected to overtake **{o.target}** for #{o.target_rank}")
+                predictions_for_export.append({
+                    "challenger": o.challenger,
+                    "target": o.target,
+                    "target_rank": o.target_rank,
+                    "gap_fans": o.gap_fans,
+                    "daily_diff": o.daily_diff,
+                    "eta_days": o.eta_days,
+                })
 
         # Milestones close
         for m in milestones[:2]:
@@ -926,11 +946,20 @@ class LeaderboardReportService:
         # Leader under pressure
         if tank and tank.pressure_streak >= 1 and tank.eta_days is not None and tank.eta_days <= 7:
             items.append(f"• Can **{tank.name}** hold off **{tank.name_2nd}**?")
+            predictions_for_export.append({
+                "challenger": tank.name_2nd,
+                "target": tank.name,
+                "target_rank": 1,
+                "gap_fans": tank.gap_to_next,
+                "daily_diff": tank.daily_gain_2nd - tank.daily_gain,
+                "eta_days": tank.eta_days,
+            })
 
         if not items:
-            return None
+            return (None, predictions_for_export)
 
-        return "**👀 Watch tomorrow:**\n\n" + "\n".join(items[:3])
+        teaser_text = "**👀 Watch tomorrow:**\n\n" + "\n".join(items[:3])
+        return (teaser_text, predictions_for_export)
 
     @classmethod
     def _format_rivalry_with_context(
@@ -1643,6 +1672,20 @@ class LeaderboardReportService:
         month_name: Optional[str] = None,
     ) -> str:
         parts = []
+
+        # Close the loop on yesterday's predictions
+        if yesterday_results:
+            y_lines = []
+            for r in yesterday_results:
+                mark = "OK" if r.get("landed") else "MISS"
+                verb = "overtook" if r.get("landed") else "fell short of"
+                rank = r.get("target_rank")
+                rank_str = f" for #{rank}" if rank is not None else ""
+                y_lines.append(
+                    f"• {mark} **{r['challenger']}** {verb} "
+                    f"**{r['target']}**{rank_str}"
+                )
+            parts.append("**Yesterday's Calls**\n\n" + "\n".join(y_lines))
 
         if overtakes:
             urgent = [o for o in overtakes if o.eta_days < 2]
