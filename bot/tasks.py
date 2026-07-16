@@ -567,9 +567,7 @@ class BotTasks:
         and send notifications to each club's events channel.
 
         Uses 'notified_clubs' per-event list (persisted in JSON) for dedup.
-        Checks events that started/ended within the last 36 hours as well
-        as upcoming events within the next 36 hours, so newly discovered
-        events that already started still get notified.
+        Checks upcoming events within the next 36 hours.
         """
         logger.info("=" * 80)
         logger.info("Event notifications - checking events.json...")
@@ -602,8 +600,8 @@ class BotTasks:
                         if start_dt.tzinfo is None:
                             start_dt = start_dt.replace(tzinfo=pytz.UTC)
                         remaining = (start_dt - now).total_seconds()
-                        # Within 36 hours in the future OR already started within last 36h
-                        if -129600 <= remaining <= 129600:
+                        # Within 36 hours in the future
+                        if 0 <= remaining <= 129600:
                             for club in clubs:
                                 await self._notify_events_for_club(club, event, "starting")
                     except (ValueError, TypeError):
