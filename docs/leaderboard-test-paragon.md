@@ -81,7 +81,7 @@ _Jul 16 update_
 ## CLUB ACTIVITY
 
 **Total fans gained today**: +56.0M
-**Active members**: 30/30
+**Active members**: 24/30
 **Average gain**: +1.9M
 
 ───
@@ -113,6 +113,6 @@ _Jul 16 update_
 
 ---
 
-*Generated at: 2026-07-17 16:22:48.690687+00:00*
+*Generated at: 2026-07-17 16:40:27.720556+00:00*
 
 *Footer: Paragon · Powering Through July*

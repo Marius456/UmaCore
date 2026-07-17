@@ -154,7 +154,7 @@ class LeaderboardReportService:
 
         # Phase 2: New analytics
         streaks = cls._compute_streaks(daily_rankings, daily_deltas, latest_date)
-        club_activity = cls._compute_club_activity(daily_rankings, latest_date)
+        club_activity = cls._compute_club_activity(daily_rankings, latest_date, member_count)
         mvp = cls._compute_club_mvp(king, tank, daily_leader, consistency, latest_date, today_records)
         funny_awards = cls._compute_funny_awards(daily_rankings, daily_deltas, latest_date)
         yesterday_results = cls._compute_yesterday_results(daily_rankings, latest_date, club_name)
@@ -743,16 +743,17 @@ class LeaderboardReportService:
         cls,
         daily_rankings: Dict[date, List[Dict]],
         latest_date: date,
+        member_count: int = 0,
     ) -> Dict[str, Any]:
         """Total fans gained today, active member count, average gain."""
         today_entries = daily_rankings.get(latest_date, [])
         if not today_entries:
             return {"total_gain": 0, "active_count": 0, "avg_gain": 0}
 
-        active = [e for e in today_entries if e["daily"] > 0]
-        total_gain = sum(e["daily"] for e in active)
+        active = [e for e in today_entries if e["daily"] > 500_000]
+        total_gain = sum(e["daily"] for e in today_entries if e["daily"] > 0)
         active_count = len(active)
-        avg_gain = round(total_gain / active_count) if active_count > 0 else 0
+        avg_gain = round(total_gain / member_count) if member_count > 0 else 0
 
         return {
             "total_gain": total_gain,
