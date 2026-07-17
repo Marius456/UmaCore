@@ -43,8 +43,8 @@ _Jul 16 update_
 
 **Yesterday's Calls**
 
-• OK **Moekofi** overtook **ZT** for #23
-• MISS **Birb** fell short of **Yuki** for #8
+• ✅ **Moekofi** overtook **ZT** for #23
+• ❌ **Birb** fell short of **Yuki** for #8
 
 **🚨 Urgent Overtakes**
 
@@ -103,6 +103,6 @@ _Jul 16 update_
 
 ---
 
-*Generated at: 2026-07-17 18:57:03.627550+00:00*
+*Generated at: 2026-07-17 21:06:26.282179+00:00*
 
 *Footer: Paragon · Powering Through July*

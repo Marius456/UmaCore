@@ -1655,7 +1655,7 @@ class LeaderboardReportService:
         if yesterday_results:
             y_lines = []
             for r in yesterday_results:
-                mark = "OK" if r.get("landed") else "MISS"
+                mark = "✅" if r.get("landed") else "❌"
                 verb = "overtook" if r.get("landed") else "fell short of"
                 rank = r.get("target_rank")
                 rank_str = f" for #{rank}" if rank is not None else ""
