@@ -103,16 +103,6 @@ _Jul 16 update_
 
 ---
 
-## LOOKING AHEAD
-
-**👀 Watch tomorrow:**
-
-• **Yuki** is expected to overtake **PHBant** for #6
-• **Mysty** is expected to overtake **Birb** for #9
-• **Dragon** is one good day away from **25.0M**
-
----
-
-*Generated at: 2026-07-17 16:40:27.720556+00:00*
+*Generated at: 2026-07-17 18:57:03.627550+00:00*
 
 *Footer: Paragon · Powering Through July*

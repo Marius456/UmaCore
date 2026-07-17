@@ -158,7 +158,19 @@ class LeaderboardReportService:
         mvp = cls._compute_club_mvp(king, tank, daily_leader, consistency, latest_date, today_records)
         funny_awards = cls._compute_funny_awards(daily_rankings, daily_deltas, latest_date)
         yesterday_results = cls._compute_yesterday_results(daily_rankings, latest_date, club_name)
-        teaser, predictions_for_export = cls._generate_teaser(overtakes, milestones, tank, leader_change, daily_deltas)
+        # Export predictions for tomorrow's "Yesterday's Calls" section
+        predictions_for_export = [
+            {
+                "challenger": o.challenger,
+                "target": o.target,
+                "target_rank": o.target_rank,
+                "gap_fans": o.gap_fans,
+                "daily_diff": o.daily_diff,
+                "eta_days": o.eta_days,
+            }
+            for o in overtakes[:2]
+            if o.eta_days <= 2
+        ]
         month_name = calendar.month_name[month]
         # Add rivalry context to top rivalry
         if rivalries:
@@ -260,10 +272,6 @@ class LeaderboardReportService:
                 f"{rank_str}"
             )
             embed.add_field(name="📈 CLUB GOAL", value=goal_text, inline=False)
-
-        # --- Section 9: Teaser ---
-        if teaser:
-            embed.add_field(name="LOOKING AHEAD", value=teaser, inline=False)
 
         embed.set_footer(text=f"{club_name} · Powering Through {month_name}")
         return embed
@@ -914,59 +922,6 @@ class LeaderboardReportService:
                 })
 
         return results[:3]
-
-    @classmethod
-    def _generate_teaser(
-        cls,
-        overtakes: List[Overtake],
-        milestones: List[Milestone],
-        tank: Optional[TankAnalysis],
-        leader_change: Dict[str, Any],
-        daily_deltas: Dict[str, List[Dict]],
-    ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
-        """
-        Generate 'Watch tomorrow' section with 2-3 predictions.
-        Returns (teaser_text, predictions_for_export).
-        """
-        items = []
-        predictions_for_export = []
-
-        # Overtakes happening soon
-        for o in overtakes[:2]:
-            if o.eta_days <= 2:
-                items.append(f"• **{o.challenger}** is expected to overtake **{o.target}** for #{o.target_rank}")
-                predictions_for_export.append({
-                    "challenger": o.challenger,
-                    "target": o.target,
-                    "target_rank": o.target_rank,
-                    "gap_fans": o.gap_fans,
-                    "daily_diff": o.daily_diff,
-                    "eta_days": o.eta_days,
-                })
-
-        # Milestones close
-        for m in milestones[:2]:
-            eta = cls._compute_milestone_eta(m.name, m.total, m.milestone, daily_deltas)
-            if eta is not None and eta <= 3:
-                items.append(f"• **{m.name}** is one good day away from **{cls._fmt_fans(m.milestone)}**")
-
-        # Leader under pressure
-        if tank and tank.pressure_streak >= 1 and tank.eta_days is not None and tank.eta_days <= 7:
-            items.append(f"• Can **{tank.name}** hold off **{tank.name_2nd}**?")
-            predictions_for_export.append({
-                "challenger": tank.name_2nd,
-                "target": tank.name,
-                "target_rank": 1,
-                "gap_fans": tank.gap_to_next,
-                "daily_diff": tank.daily_gain_2nd - tank.daily_gain,
-                "eta_days": tank.eta_days,
-            })
-
-        if not items:
-            return (None, predictions_for_export)
-
-        teaser_text = "**👀 Watch tomorrow:**\n\n" + "\n".join(items[:3])
-        return (teaser_text, predictions_for_export)
 
     @classmethod
     def _format_rivalry_with_context(
