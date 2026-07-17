@@ -226,6 +226,9 @@ class UmaMoeAPIScraper(BaseScraper):
         self._monthly_rank: Optional[int] = None
         self._last_month_rank: Optional[int] = None
         self._yesterday_rank: Optional[int] = None
+        # Club tier progress fields from the API response (nested inside "circle" key)
+        self._fans_to_next_tier: Optional[int] = None
+        self._fans_to_lower_tier: Optional[int] = None
         super().__init__(self.base_url)
 
     async def _fetch_via_direct_api(self, year: int, month: int) -> Optional[dict]:
@@ -486,10 +489,16 @@ class UmaMoeAPIScraper(BaseScraper):
             self._monthly_rank = circle_data.get("monthly_rank")
             self._last_month_rank = circle_data.get("last_month_rank")
             self._yesterday_rank = circle_data.get("yesterday_rank")
+            self._fans_to_next_tier = circle_data.get("fans_to_next_tier")
+            self._fans_to_lower_tier = circle_data.get("fans_to_lower_tier")
             logger.info(
                 f"Club ranks: monthly_rank={self._monthly_rank}, "
                 f"last_month_rank={self._last_month_rank}, "
                 f"yesterday_rank={self._yesterday_rank}"
+            )
+            logger.info(
+                f"Club tier progress: fans_to_next_tier={self._fans_to_next_tier}, "
+                f"fans_to_lower_tier={self._fans_to_lower_tier}"
             )
 
             # Detect end-of-month JST rollover: uma.moe always returns the CURRENT
@@ -697,6 +706,14 @@ class UmaMoeAPIScraper(BaseScraper):
     def get_yesterday_rank(self) -> Optional[int]:
         """Return the club's rank as of yesterday (from circle.yesterday_rank)."""
         return self._yesterday_rank
+
+    def get_fans_to_next_tier(self) -> Optional[int]:
+        """Return the fans needed to reach the next club tier (from circle.fans_to_next_tier)."""
+        return self._fans_to_next_tier
+
+    def get_fans_to_lower_tier(self) -> Optional[int]:
+        """Return the fans above the lower club tier (from circle.fans_to_lower_tier)."""
+        return self._fans_to_lower_tier
 
 
 __all__ = ['UmaMoeAPIScraper', '_close_browser', 'DataNotAvailableError']

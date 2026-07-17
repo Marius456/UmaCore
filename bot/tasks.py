@@ -248,6 +248,8 @@ class BotTasks:
                 monthly_rank = scraper.get_monthly_rank()
                 last_month_rank = scraper.get_last_month_rank()
                 yesterday_rank = scraper.get_yesterday_rank()
+                fans_to_next_tier = scraper.get_fans_to_next_tier()
+                fans_to_lower_tier = scraper.get_fans_to_lower_tier()
 
                 if monthly_rank is not None:
                     try:
@@ -259,12 +261,20 @@ class BotTasks:
                         'monthly_rank': monthly_rank,
                         'last_month_rank': last_month_rank,
                         'yesterday_rank': yesterday_rank,
+                        'fans_to_next_tier': fans_to_next_tier,
+                        'fans_to_lower_tier': fans_to_lower_tier,
                     }
                     logger.info(
                         f"Rank data for {club.club_name}: "
                         f"monthly={monthly_rank}, yesterday={yesterday_rank}, "
                         f"last_month={last_month_rank}"
                     )
+                    if fans_to_next_tier is not None:
+                        logger.info(
+                            f"Tier progress for {club.club_name}: "
+                            f"fans_to_next_tier={fans_to_next_tier:,}, "
+                            f"fans_to_lower_tier={fans_to_lower_tier:,}"
+                        )
 
                 # STEP 4: Process the scraped data
                 try:
@@ -410,8 +420,15 @@ class BotTasks:
                             now = datetime.now(club_tz)
                             year, month = now.year, now.month
 
+                            # Pass tier progress data from the scraper if available
+                            tier_kwargs = {}
+                            if rank_data:
+                                tier_kwargs['fans_to_next_tier'] = rank_data.get('fans_to_next_tier')
+                                tier_kwargs['fans_to_lower_tier'] = rank_data.get('fans_to_lower_tier')
+
                             embed = await LeaderboardReportService.generate_leaderboard_report(
-                                club.club_id, club.club_name, year, month
+                                club.club_id, club.club_name, year, month,
+                                **tier_kwargs,
                             )
                             await leaderboard_channel.send(embed=embed)
                             logger.info(f"Leaderboard report sent for {club.club_name}")

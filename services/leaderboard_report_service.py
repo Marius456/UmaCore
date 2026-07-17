@@ -112,7 +112,9 @@ class LeaderboardReportService:
 
     @classmethod
     async def generate_leaderboard_report(
-        cls, club_id: UUID, club_name: str, year: int, month: int
+        cls, club_id: UUID, club_name: str, year: int, month: int,
+        fans_to_next_tier: Optional[int] = None,
+        fans_to_lower_tier: Optional[int] = None,
     ) -> discord.Embed:
         """
         Fetch the month's QuotaHistory, compute all analysis segments,
@@ -182,7 +184,11 @@ class LeaderboardReportService:
             movers, milestones, rare_achievements,
         )
         # Club goal tracker
-        club_goal = cls._compute_club_goal_tracker(daily_rankings, latest_date)
+        club_goal = cls._compute_club_goal_tracker(
+            daily_rankings, latest_date,
+            fans_to_next_tier=fans_to_next_tier,
+            fans_to_lower_tier=fans_to_lower_tier,
+        )
         # History records
         history_records = cls._compute_history_records(daily_deltas, daily_rankings, latest_date)
 
@@ -1123,17 +1129,31 @@ class LeaderboardReportService:
         latest_date: date,
         monthly_rank: Optional[int] = None,
         last_month_rank: Optional[int] = None,
+        fans_to_next_tier: Optional[int] = None,
+        fans_to_lower_tier: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Generate club-level goal progress using available rank data."""
+        """Generate club-level goal progress using API tier data."""
         today_entries = daily_rankings.get(latest_date, [])
         if not today_entries:
             return None
 
         total_fans = sum(e["fans"] for e in today_entries)
-        # Estimate S-rank target: roughly 3B for a 30-member club
-        # This is a placeholder — real target would come from game data
-        s_rank_target = 3_000_000_000
-        progress_pct = min(100, round((total_fans / s_rank_target) * 100, 1))
+
+        # Use real API tier data if available, otherwise fall back to estimate
+        if fans_to_next_tier is not None and fans_to_lower_tier is not None:
+            # Progress toward next tier: how far along we are between lower and next tier
+            # At the start of a tier, fans_to_lower_tier = 0, fans_to_next_tier = full gap
+            # As we progress, fans_to_lower_tier grows and fans_to_next_tier shrinks
+            total_tier_range = fans_to_next_tier + fans_to_lower_tier
+            if total_tier_range > 0:
+                progress_pct = min(100, round((fans_to_lower_tier / total_tier_range) * 100, 1))
+            else:
+                progress_pct = 0.0
+        else:
+            # Fallback: estimate S-rank target at roughly 3B for a 30-member club
+            s_rank_target = 3_000_000_000
+            progress_pct = min(100, round((total_fans / s_rank_target) * 100, 1))
+
         filled = max(0, min(10, int((progress_pct / 100) * 10)))
         bar = "▰" * filled + "▱" * (10 - filled)
 
@@ -1143,6 +1163,8 @@ class LeaderboardReportService:
             "bar": bar,
             "monthly_rank": monthly_rank,
             "last_month_rank": last_month_rank,
+            "fans_to_next_tier": fans_to_next_tier,
+            "fans_to_lower_tier": fans_to_lower_tier,
         }
 
         if monthly_rank is not None and last_month_rank is not None:
