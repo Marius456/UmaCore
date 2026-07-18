@@ -221,6 +221,7 @@ class HighscoreService:
         for member in members:
             trainer_name = member.get("trainer_name")
             daily_fans = member.get("daily_fans", [])
+            next_month_start = member.get("next_month_start")
 
             if not trainer_name or not daily_fans:
                 continue
@@ -238,6 +239,17 @@ class HighscoreService:
                     "date": row_date,
                     "lifetime_fans": lifetime_total,
                     "trainer_name": trainer_name,
+                })
+
+            # If next_month_start is available, append a synthetic end-of-month
+            # entry so _compute_best_monthly_total can use the true final value.
+            if next_month_start is not None and next_month_start > 0:
+                end_of_month = date(year, month, last_day)
+                rows.append({
+                    "date": end_of_month,
+                    "lifetime_fans": next_month_start,
+                    "trainer_name": trainer_name,
+                    "is_end_of_month": True,
                 })
 
         return rows, monthly_rank
@@ -290,7 +302,8 @@ class HighscoreService:
         """
         Compute the best monthly fan total per member using lifetime values.
         For each member+month pair, uses the difference between the last
-        day's lifetime value and the previous month's last value.
+        day's lifetime value (preferring next_month_start if available)
+        and the previous month's last value.
         """
         # Group by trainer_name, then by (year, month)
         member_data: Dict[str, List[Tuple[date, int]]] = defaultdict(list)
@@ -302,7 +315,11 @@ class HighscoreService:
         best: Optional[Dict[str, Any]] = None
 
         for name, entries in member_data.items():
-            entries.sort(key=lambda x: x[0])
+            # Sort by (date, lifetime_fans) so that for the same date,
+            # the synthetic end-of-month entry (higher fans) comes after
+            # the regular daily entry. This ensures monthly_last picks
+            # next_month_start when available.
+            entries.sort(key=lambda x: (x[0], x[1]))
 
             # For each month, find the first and last entry's lifetime value.
             # This allows computing the actual gain within the month.
@@ -312,10 +329,10 @@ class HighscoreService:
                 key = (d.year, d.month)
                 if key not in monthly_first:
                     monthly_first[key] = fans  # first day's value
-                monthly_last[key] = fans       # last day's value (keeps updating)
+                monthly_last[key] = fans       # last entry's value (keeps updating)
 
-            # Compute monthly total = last day of month - first day of month
-            # (or last day of current month - last day of previous month for
+            # Compute monthly total = last entry of month - first entry of month
+            # (or last entry of current month - last entry of previous month for
             #  subsequent months, which is equivalent via transitive subtraction)
             sorted_keys = sorted(monthly_last.keys())
             for idx, (year, month) in enumerate(sorted_keys):
