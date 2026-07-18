@@ -57,6 +57,9 @@ class HighscoreService:
         best_daily = cls._compute_best_daily_gain(api_rows)
         best_monthly = cls._compute_best_monthly_total(api_rows)
 
+        # 2b. Compute longest streak as #1
+        longest_streak = cls._compute_longest_first_place_streak(api_rows)
+
         # 3a. Compute best monthly rank from API (excluding current/incomplete month)
         now = datetime.now(timezone.utc)
         current_key = (now.year, now.month)
@@ -134,6 +137,22 @@ class HighscoreService:
         embed.add_field(
             name="📊 Monthly Club Rank:",
             value=monthly_rank_value,
+            inline=False,
+        )
+
+        # --- Longest 1st Place Streak ---
+        if longest_streak:
+            start_str = longest_streak["start_date"].strftime("%B %d, %Y")
+            end_str = longest_streak["end_date"].strftime("%B %d, %Y")
+            streak_value = (
+                f"**{longest_streak['name']}** — {longest_streak['streak']} consecutive days at #1\n"
+                f"({start_str} → {end_str})"
+            )
+        else:
+            streak_value = "_No streak data available._"
+        embed.add_field(
+            name="👑 Longest 1st Place Streak",
+            value=streak_value,
             inline=False,
         )
 
@@ -357,6 +376,91 @@ class HighscoreService:
                     }
 
         return best
+
+    @classmethod
+    def _compute_longest_first_place_streak(
+        cls, rows: list
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Compute the longest consecutive streak of holding 1st place (highest
+        lifetime_fans) across all dates in the data.
+
+        Returns a dict with keys:
+          - name: the member who held #1
+          - streak: number of consecutive days
+          - start_date: first day of the streak
+          - end_date: last day of the streak
+        or None if insufficient data.
+        """
+        # Group rows by date, keeping the highest lifetime_fans per member per date
+        date_entries: Dict[date, List[Tuple[str, int]]] = defaultdict(list)
+        for row in rows:
+            date_entries[row["date"]].append(
+                (row["trainer_name"], row["lifetime_fans"])
+            )
+
+        sorted_dates = sorted(date_entries.keys())
+        if len(sorted_dates) < 2:
+            return None
+
+        # For each date, find the member(s) with the highest lifetime_fans.
+        # If there's a tie, we don't count a streak (no single clear #1).
+        daily_leader: Dict[date, Optional[str]] = {}
+        for d in sorted_dates:
+            entries = date_entries[d]
+            # Find max fans
+            max_fans = max(f for _, f in entries)
+            # Find all members at that max
+            leaders = [name for name, fans in entries if fans == max_fans]
+            if len(leaders) == 1:
+                daily_leader[d] = leaders[0]
+            else:
+                daily_leader[d] = None  # tie — no clear leader
+
+        # Walk through dates tracking streaks
+        best_streak = 0
+        best_name: Optional[str] = None
+        best_start: Optional[date] = None
+        best_end: Optional[date] = None
+
+        current_name: Optional[str] = None
+        current_streak = 0
+        current_start: Optional[date] = None
+
+        for d in sorted_dates:
+            leader = daily_leader[d]
+            if leader is None:
+                # Tie or no data — reset
+                current_name = None
+                current_streak = 0
+                current_start = None
+                continue
+
+            if leader == current_name:
+                # Same leader — extend streak
+                current_streak += 1
+                # end_date implicitly updated on each iteration
+            else:
+                # New leader — start new streak
+                current_name = leader
+                current_streak = 1
+                current_start = d
+
+            if current_streak > best_streak:
+                best_streak = current_streak
+                best_name = current_name
+                best_start = current_start
+                best_end = d
+
+        if best_streak < 2:
+            return None
+
+        return {
+            "name": best_name,
+            "streak": best_streak,
+            "start_date": best_start,
+            "end_date": best_end,
+        }
 
     # ── Date Helpers ────────────────────────────────────────────────────
 
