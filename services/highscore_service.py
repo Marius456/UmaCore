@@ -156,6 +156,23 @@ class HighscoreService:
             inline=False,
         )
 
+        # --- Longest #1 by Total Fans ---
+        longest_total_streak = cls._compute_longest_first_place_streak_by_total(api_rows)
+        if longest_total_streak:
+            start_str = longest_total_streak["start_date"].strftime("%B %d, %Y")
+            end_str = longest_total_streak["end_date"].strftime("%B %d, %Y")
+            total_streak_value = (
+                f"**{longest_total_streak['name']}** — {longest_total_streak['streak']} consecutive days holding #1 by total fans\n"
+                f"({start_str} → {end_str})"
+            )
+        else:
+            total_streak_value = "_No streak data available._"
+        embed.add_field(
+            name="👑 Longest #1 Reign (Total Fans)",
+            value=total_streak_value,
+            inline=False,
+        )
+
         embed.set_footer(text=f"{club_name} · All-Time Records")
         return embed
 
@@ -470,6 +487,92 @@ class HighscoreService:
             else:
                 # New leader — start new streak
                 current_name = leader
+                current_streak = 1
+                current_start = d
+
+            if current_streak > best_streak:
+                best_streak = current_streak
+                best_name = current_name
+                best_start = current_start
+                best_end = d
+
+        if best_streak < 2:
+            return None
+
+        return {
+            "name": best_name,
+            "streak": best_streak,
+            "start_date": best_start,
+            "end_date": best_end,
+        }
+
+    @classmethod
+    def _compute_longest_first_place_streak_by_total(
+        cls, rows: list
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Compute the longest consecutive streak of holding 1st place by total
+        lifetime cumulative fans across all dates in the data.
+
+        For each date, the member with the highest lifetime_fans is #1.
+        Streaks cross month boundaries seamlessly — if the same member holds
+        #1 across multiple months, the streak continues.
+
+        Returns a dict with keys:
+          - name: the member who held #1
+          - streak: number of consecutive days
+          - start_date: first day of the streak
+          - end_date: last day of the streak
+        or None if insufficient data.
+        """
+        # 1. Group rows by date, find the member with highest lifetime_fans each day
+        # daily_leader[date] = (name, lifetime_fans)
+        daily_leader: Dict[date, Tuple[str, int]] = {}
+        for row in rows:
+            d = row["date"]
+            name = row["trainer_name"]
+            fans = row["lifetime_fans"]
+
+            if d in daily_leader:
+                existing_name, existing_fans = daily_leader[d]
+                if fans > existing_fans:
+                    daily_leader[d] = (name, fans)
+                elif fans == existing_fans:
+                    # Tie — mark as None so we reset the streak
+                    daily_leader[d] = (None, fans)
+            else:
+                daily_leader[d] = (name, fans)
+
+        sorted_dates = sorted(daily_leader.keys())
+        if len(sorted_dates) < 2:
+            return None
+
+        # 2. Walk through dates tracking streaks
+        best_streak = 0
+        best_name: Optional[str] = None
+        best_start: Optional[date] = None
+        best_end: Optional[date] = None
+
+        current_name: Optional[str] = None
+        current_streak = 0
+        current_start: Optional[date] = None
+
+        for d in sorted_dates:
+            leader_name, _ = daily_leader[d]
+
+            if leader_name is None:
+                # Tie — reset
+                current_name = None
+                current_streak = 0
+                current_start = None
+                continue
+
+            if leader_name == current_name:
+                # Same leader — extend streak
+                current_streak += 1
+            else:
+                # New leader — start new streak
+                current_name = leader_name
                 current_streak = 1
                 current_start = d
 
