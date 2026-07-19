@@ -537,7 +537,23 @@ class HighscoreService:
                 (row["date"], row["lifetime_fans"])
             )
 
-        # 2. Build next_month_start mapping from synthetic end-of-month entries
+        # 2. Compute daily gain per member per date (needed for day-1 tiebreaker)
+        daily_gain: Dict[date, Dict[str, int]] = defaultdict(dict)
+        for name, entries in member_data.items():
+            entries.sort(key=lambda x: x[0])
+            for i in range(1, len(entries)):
+                prev_date, prev_fans = entries[i - 1]
+                curr_date, curr_fans = entries[i]
+                days_diff = (curr_date - prev_date).days
+                if days_diff != 1:
+                    continue
+                delta = curr_fans - prev_fans
+                if delta > 0:
+                    existing = daily_gain[curr_date].get(name, 0)
+                    if delta > existing:
+                        daily_gain[curr_date][name] = delta
+
+        # 3. Build next_month_start mapping from synthetic end-of-month entries
         next_month_start_map: Dict[str, Dict[Tuple[int, int], int]] = defaultdict(dict)
         for row in rows:
             if row.get("is_end_of_month"):
@@ -545,7 +561,7 @@ class HighscoreService:
                 month_key = (row["date"].year, row["date"].month)
                 next_month_start_map[member][month_key] = row["lifetime_fans"]
 
-        # 3. Determine month_start_lifetime for each member+month.
+        # 4. Determine month_start_lifetime for each member+month.
         #    month_start = lifetime_fans at end of previous month.
         #    For the first month a member appears, use their first day's value.
         member_active_months: Dict[str, List[int]] = {}
@@ -581,7 +597,7 @@ class HighscoreService:
                         month_start_lifetime[month_key][name] = fans
                         break
 
-        # 4. For EVERY date in the data, compute cumulative gain and leader
+        # 5. For EVERY date in the data, compute cumulative gain and leader
         all_dates = sorted({row["date"] for row in rows})
         if len(all_dates) < 2:
             return None
@@ -639,7 +655,7 @@ class HighscoreService:
                         best = name
                 daily_leader[d] = best
 
-        # 5. Walk through dates tracking streaks
+        # 6. Walk through dates tracking streaks
         best_streak = 0
         best_name: Optional[str] = None
         best_start: Optional[date] = None
@@ -650,6 +666,15 @@ class HighscoreService:
         current_start: Optional[date] = None
 
         for d in all_dates:
+            month_key = (d.year, d.month)
+
+            # Streaks cannot cross month boundaries
+            if month_key != current_month:
+                current_name = None
+                current_streak = 0
+                current_start = None
+                current_month = month_key
+
             leader = daily_leader.get(d)
             if leader is None:
                 # Tie or no data — reset
