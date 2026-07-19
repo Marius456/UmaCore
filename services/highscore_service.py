@@ -156,19 +156,19 @@ class HighscoreService:
             inline=False,
         )
 
-        # --- Longest #1 by Total Fans ---
+        # --- Longest #1 Reign ---
         longest_total_streak = cls._compute_longest_first_place_streak_by_total(api_rows)
         if longest_total_streak:
             start_str = longest_total_streak["start_date"].strftime("%B %d, %Y")
             end_str = longest_total_streak["end_date"].strftime("%B %d, %Y")
             total_streak_value = (
-                f"**{longest_total_streak['name']}** — {longest_total_streak['streak']} consecutive days holding #1 by total fans\n"
+                f"**{longest_total_streak['name']}** — {longest_total_streak['streak']} consecutive days in 1st place\n"
                 f"({start_str} → {end_str})"
             )
         else:
             total_streak_value = "_No streak data available._"
         embed.add_field(
-            name="👑 Longest #1 Reign (Total Fans)",
+            name="👑 Longest #1 Reign",
             value=total_streak_value,
             inline=False,
         )
@@ -511,12 +511,13 @@ class HighscoreService:
         cls, rows: list
     ) -> Optional[Dict[str, Any]]:
         """
-        Compute the longest consecutive streak of holding 1st place by total
-        lifetime cumulative fans across all dates in the data.
+        Compute the longest consecutive streak of holding 1st place by cumulative
+        club fan gain within each month.
 
-        For each date, the member with the highest lifetime_fans is #1.
-        Streaks cross month boundaries seamlessly — if the same member holds
-        #1 across multiple months, the streak continues.
+        For each member, daily gains are computed from lifetime values. Then for
+        each date, each member's cumulative gain since the start of the current
+        month is calculated. The member with the highest cumulative gain is #1.
+        At month boundaries, cumulative gains reset to 0 for everyone.
 
         Returns a dict with keys:
           - name: the member who held #1
@@ -525,29 +526,71 @@ class HighscoreService:
           - end_date: last day of the streak
         or None if insufficient data.
         """
-        # 1. Group rows by date, find the member with highest lifetime_fans each day
-        # daily_leader[date] = (name, lifetime_fans)
-        daily_leader: Dict[date, Tuple[str, int]] = {}
+        # 1. Group rows by member, sorted by date
+        member_data: Dict[str, List[Tuple[date, int]]] = defaultdict(list)
         for row in rows:
-            d = row["date"]
-            name = row["trainer_name"]
-            fans = row["lifetime_fans"]
+            member_data[row["trainer_name"]].append(
+                (row["date"], row["lifetime_fans"])
+            )
 
-            if d in daily_leader:
-                existing_name, existing_fans = daily_leader[d]
-                if fans > existing_fans:
-                    daily_leader[d] = (name, fans)
-                elif fans == existing_fans:
-                    # Tie — mark as None so we reset the streak
-                    daily_leader[d] = (None, fans)
-            else:
-                daily_leader[d] = (name, fans)
+        # 2. Compute daily gain per member per date
+        # daily_gain[date][member] = fans gained on that date
+        daily_gain: Dict[date, Dict[str, int]] = defaultdict(dict)
+        for name, entries in member_data.items():
+            entries.sort(key=lambda x: x[0])
+            for i in range(1, len(entries)):
+                prev_date, prev_fans = entries[i - 1]
+                curr_date, curr_fans = entries[i]
 
-        sorted_dates = sorted(daily_leader.keys())
+                # Must be consecutive calendar days
+                days_diff = (curr_date - prev_date).days
+                if days_diff != 1:
+                    continue
+
+                delta = curr_fans - prev_fans
+                if delta > 0:
+                    existing = daily_gain[curr_date].get(name, 0)
+                    if delta > existing:
+                        daily_gain[curr_date][name] = delta
+
+        sorted_dates = sorted(daily_gain.keys())
         if len(sorted_dates) < 2:
             return None
 
-        # 2. Walk through dates tracking streaks
+        # 3. For each date, compute cumulative gain within the current month
+        #    for each member, and find who has the highest cumulative gain.
+        cumulative_gains: Dict[str, int] = defaultdict(int)
+        current_month: Optional[Tuple[int, int]] = None
+
+        # daily_leader[date] = name of member with highest cumulative gain
+        daily_leader: Dict[date, Optional[str]] = {}
+
+        for d in sorted_dates:
+            month_key = (d.year, d.month)
+
+            # Reset cumulative gains at month boundary
+            if month_key != current_month:
+                cumulative_gains.clear()
+                current_month = month_key
+
+            # Add today's gains to cumulative totals
+            today_gains = daily_gain.get(d, {})
+            for name, gain in today_gains.items():
+                cumulative_gains[name] += gain
+
+            if not cumulative_gains:
+                daily_leader[d] = None
+                continue
+
+            # Find member with highest cumulative gain
+            max_cumulative = max(cumulative_gains.values())
+            leaders = [name for name, g in cumulative_gains.items() if g == max_cumulative]
+            if len(leaders) == 1:
+                daily_leader[d] = leaders[0]
+            else:
+                daily_leader[d] = None  # tie — no clear leader
+
+        # 4. Walk through dates tracking streaks
         best_streak = 0
         best_name: Optional[str] = None
         best_start: Optional[date] = None
@@ -558,21 +601,20 @@ class HighscoreService:
         current_start: Optional[date] = None
 
         for d in sorted_dates:
-            leader_name, _ = daily_leader[d]
-
-            if leader_name is None:
-                # Tie — reset
+            leader = daily_leader[d]
+            if leader is None:
+                # Tie or no data — reset
                 current_name = None
                 current_streak = 0
                 current_start = None
                 continue
 
-            if leader_name == current_name:
+            if leader == current_name:
                 # Same leader — extend streak
                 current_streak += 1
             else:
                 # New leader — start new streak
-                current_name = leader_name
+                current_name = leader
                 current_streak = 1
                 current_start = d
 
