@@ -514,10 +514,14 @@ class HighscoreService:
         Compute the longest consecutive streak of holding 1st place by cumulative
         club fan gain within each month.
 
-        For each member, daily gains are computed from lifetime values. Then for
-        each date, each member's cumulative gain since the start of the current
-        month is calculated. The member with the highest cumulative gain is #1.
-        At month boundaries, cumulative gains reset to 0 for everyone.
+        For each member, cumulative gain since the start of the current month is
+        calculated as (lifetime_fans on date) - (lifetime_fans at end of previous
+        month). The member with the highest cumulative gain is #1. At month
+        boundaries, cumulative gains reset.
+
+        On the first day of a month (or any day where multiple members have the
+        same cumulative gain), ties are broken by the member's absolute lifetime
+        fans on that date.
 
         Returns a dict with keys:
           - name: the member who held #1
@@ -533,39 +537,60 @@ class HighscoreService:
                 (row["date"], row["lifetime_fans"])
             )
 
-        # 2. Compute daily gain per member per date
-        # daily_gain[date][member] = fans gained on that date
-        daily_gain: Dict[date, Dict[str, int]] = defaultdict(dict)
+        # 2. Build next_month_start mapping from synthetic end-of-month entries
+        next_month_start_map: Dict[str, Dict[Tuple[int, int], int]] = defaultdict(dict)
+        for row in rows:
+            if row.get("is_end_of_month"):
+                member = row["trainer_name"]
+                month_key = (row["date"].year, row["date"].month)
+                next_month_start_map[member][month_key] = row["lifetime_fans"]
+
+        # 3. Determine month_start_lifetime for each member+month.
+        #    month_start = lifetime_fans at end of previous month.
+        #    For the first month a member appears, use their first day's value.
+        member_active_months: Dict[str, List[int]] = {}
         for name, entries in member_data.items():
-            entries.sort(key=lambda x: x[0])
-            for i in range(1, len(entries)):
-                prev_date, prev_fans = entries[i - 1]
-                curr_date, curr_fans = entries[i]
+            months = sorted({d.year * 12 + d.month for d, _ in entries})
+            member_active_months[name] = list(set(months))
 
-                # Must be consecutive calendar days
-                days_diff = (curr_date - prev_date).days
-                if days_diff != 1:
-                    continue
+        all_months = sorted({(row["date"].year, row["date"].month) for row in rows})
+        month_start_lifetime: Dict[Tuple[int, int], Dict[str, int]] = {}
+        for year, month in all_months:
+            month_key = (year, month)
+            month_start_lifetime[month_key] = {}
+            for name in member_data:
+                prev_month_key = None
+                for pm in member_active_months[name]:
+                    if pm < year * 12 + month:
+                        prev_month_key = pm
+                    else:
+                        break
+                if prev_month_key is not None:
+                    pm_year = prev_month_key // 12
+                    pm_month = prev_month_key % 12
+                    if pm_month == 0:
+                        pm_month = 12
+                        pm_year -= 1
+                    val = next_month_start_map.get(name, {}).get((pm_year, pm_month))
+                    if val is not None:
+                        month_start_lifetime[month_key][name] = val
+                        continue
+                # Fallback: first entry of current month
+                for d, fans in member_data[name]:
+                    if d.year == year and d.month == month:
+                        month_start_lifetime[month_key][name] = fans
+                        break
 
-                delta = curr_fans - prev_fans
-                if delta > 0:
-                    existing = daily_gain[curr_date].get(name, 0)
-                    if delta > existing:
-                        daily_gain[curr_date][name] = delta
-
-        sorted_dates = sorted(daily_gain.keys())
-        if len(sorted_dates) < 2:
+        # 4. For EVERY date in the data, compute cumulative gain and leader
+        all_dates = sorted({row["date"] for row in rows})
+        if len(all_dates) < 2:
             return None
 
-        # 3. For each date, compute cumulative gain within the current month
-        #    for each member, and find who has the highest cumulative gain.
         cumulative_gains: Dict[str, int] = defaultdict(int)
-        current_month: Optional[Tuple[int, int]] = None
-
-        # daily_leader[date] = name of member with highest cumulative gain
+        current_month = None
         daily_leader: Dict[date, Optional[str]] = {}
 
-        for d in sorted_dates:
+        for d in all_dates:
             month_key = (d.year, d.month)
 
             # Reset cumulative gains at month boundary
@@ -573,24 +598,48 @@ class HighscoreService:
                 cumulative_gains.clear()
                 current_month = month_key
 
-            # Add today's gains to cumulative totals
-            today_gains = daily_gain.get(d, {})
+            # Compute gain for each member on this date:
+            # gain = lifetime_fans_today - month_start_lifetime
+            # This gives the true cumulative gain from month start.
+            today_gains: Dict[str, int] = {}
+            member_fans_today: Dict[str, int] = {}
+            for name, entries in member_data.items():
+                for d2, fans in entries:
+                    if d2 == d:
+                        member_fans_today[name] = fans
+                        break
+
+            for name, fans_today in member_fans_today.items():
+                start_val = month_start_lifetime.get(month_key, {}).get(name)
+                if start_val is None:
+                    continue
+                gain = fans_today - start_val
+                # Record even if 0 so we can break ties by absolute fans
+                today_gains[name] = gain
+
             for name, gain in today_gains.items():
-                cumulative_gains[name] += gain
+                cumulative_gains[name] = gain
 
             if not cumulative_gains:
                 daily_leader[d] = None
                 continue
 
-            # Find member with highest cumulative gain
             max_cumulative = max(cumulative_gains.values())
             leaders = [name for name, g in cumulative_gains.items() if g == max_cumulative]
             if len(leaders) == 1:
                 daily_leader[d] = leaders[0]
             else:
-                daily_leader[d] = None  # tie — no clear leader
+                # Tie: break by highest absolute lifetime fans today
+                best = None
+                best_fans = -1
+                for name in leaders:
+                    fans = member_fans_today.get(name, 0)
+                    if fans > best_fans:
+                        best_fans = fans
+                        best = name
+                daily_leader[d] = best
 
-        # 4. Walk through dates tracking streaks
+        # 5. Walk through dates tracking streaks
         best_streak = 0
         best_name: Optional[str] = None
         best_start: Optional[date] = None
@@ -600,8 +649,8 @@ class HighscoreService:
         current_streak = 0
         current_start: Optional[date] = None
 
-        for d in sorted_dates:
-            leader = daily_leader[d]
+        for d in all_dates:
+            leader = daily_leader.get(d)
             if leader is None:
                 # Tie or no data — reset
                 current_name = None
