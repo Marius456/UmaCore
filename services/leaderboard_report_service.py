@@ -108,6 +108,8 @@ class LeaderboardReportService:
 
     MILESTONES = [1_000_000, 5_000_000, 10_000_000, 25_000_000, 50_000_000, 100_000_000]
 
+    FIELD_MAX = 1024
+
     # ── Public entry point ──────────────────────────────────────────────
 
     @classmethod
@@ -115,10 +117,11 @@ class LeaderboardReportService:
         cls, club_id: UUID, club_name: str, year: int, month: int,
         fans_to_next_tier: Optional[int] = None,
         fans_to_lower_tier: Optional[int] = None,
-    ) -> discord.Embed:
+    ) -> List[discord.Embed]:
         """
         Fetch the month's QuotaHistory, compute all analysis segments,
-        and return a single rich Embed.
+        and return a list of Embeds (overflow fields are split into
+        additional followup embeds).
         """
         rows = await QuotaHistory.get_current_month_for_club(club_id, year, month)
         if not rows:
@@ -208,8 +211,8 @@ class LeaderboardReportService:
         if predictions_for_export:
             save_predictions(club_name, latest_date, predictions_for_export)
 
-        # 3. Assemble Embed
-        embed = discord.Embed(
+        # 3. Assemble Embeds
+        main_embed = discord.Embed(
             title=f"🥕 Leaderboard News — {club_name}",
             description=(
                 f"**{date(year, month, 1).strftime('%B %Y')}** · {member_count} members\n"
@@ -219,9 +222,40 @@ class LeaderboardReportService:
             timestamp=discord.utils.utcnow(),
         )
 
+        # We'll build a list: [main_embed, overflow_embed_1, overflow_embed_2, ...]
+        embeds = [main_embed]
+        overflow_index = 1
+
+        def add_field(name: str, value: str, inline: bool = False) -> None:
+            """
+            Add a field to the current (last) embed, or if the value exceeds
+            the 1024-char limit, create a new continuation embed and add it
+            there instead.
+            """
+            nonlocal overflow_index
+            # Truncate value to 1024 chars for the field limit
+            if len(value) > cls.FIELD_MAX:
+                truncated_value = value[: cls.FIELD_MAX - 3] + "..."
+            else:
+                truncated_value = value
+
+            # Try to add to the current last embed
+            current_embed = embeds[-1]
+            try:
+                current_embed.add_field(name=name, value=truncated_value, inline=inline)
+            except (ValueError, discord.HTTPException):
+                # Embed has too many fields (25 max) — create continuation
+                continuation = discord.Embed(
+                    title=f"🥕 {club_name} (continued {overflow_index})",
+                    color=COLOR_INFO,
+                )
+                overflow_index += 1
+                continuation.add_field(name=name, value=truncated_value, inline=inline)
+                embeds.append(continuation)
+
         # --- Section 1: Headline ---
         headline = cls._generate_headline(leader_change, king, tank, daily_rankings.get(latest_date), mood, overtakes, total_movers_count)
-        embed.add_field(name="🔥 HEADLINE NEWS", value=headline + "\n\n───", inline=False)
+        add_field(name="🔥 HEADLINE NEWS", value=headline + "\n\n───")
 
         # --- Section 2: Momentum ---
         momentum = cls._assemble_momentum(
@@ -230,22 +264,22 @@ class LeaderboardReportService:
             streaks=streaks, club_activity=club_activity, mvp=mvp,
             funny_awards=funny_awards,
         )
-        embed.add_field(name="THE MOMENTUM SHIFT", value=(momentum or "_Stable activity today._") + "\n\n───", inline=False)
+        add_field(name="THE MOMENTUM SHIFT", value=(momentum or "_Stable activity today._") + "\n\n───")
 
         # --- Section 3: Battle Zone ---
         battles = cls._assemble_battle_zone(overtakes, rivalries, yesterday_results, month_name)
         if battles:
-            embed.add_field(name="THE BATTLE ZONE", value=battles + "\n\n───", inline=False)
+            add_field(name="THE BATTLE ZONE", value=battles + "\n\n───")
 
         # --- Section 4: Milestones ---
         milestone_text = cls._format_milestone_watch(milestones, milestone_etas)
         if milestones:
-            embed.add_field(name="MILESTONE TRACKER", value=milestone_text + "\n\n───", inline=False)
+            add_field(name="MILESTONE TRACKER", value=milestone_text + "\n\n───")
 
         # --- Section 5: Movers ---
         condensed = cls._compute_condensed_movers(movers)
         if condensed:
-            embed.add_field(name="TOP MOVERS", value=cls._format_condensed_movers(condensed), inline=False)
+            add_field(name="TOP MOVERS", value=cls._format_condensed_movers(condensed))
 
         # --- Section 6: Club Activity ---
         if club_activity and club_activity["active_count"] > 0:
@@ -254,11 +288,11 @@ class LeaderboardReportService:
                 f"**Active members**: {club_activity['active_count']}/{member_count}\n"
                 f"**Average gain**: +{cls._fmt_fans(club_activity['avg_gain'])}"
             )
-            embed.add_field(name="CLUB ACTIVITY", value=activity_text + "\n\n───", inline=False)
+            add_field(name="CLUB ACTIVITY", value=activity_text + "\n\n───")
 
         # --- Section 7: History & Records ---
         if history_records:
-            embed.add_field(name="📊 MONTHLY RECORDS", value="\n".join(history_records) + "\n\n───", inline=False)
+            add_field(name="📊 MONTHLY RECORDS", value="\n".join(history_records) + "\n\n───")
 
         # --- Section 8: Club Goal ---
         if club_goal:
@@ -271,10 +305,11 @@ class LeaderboardReportService:
                 f"**Progress**: [{club_goal['bar']}] {club_goal['progress_pct']:.1f}%"
                 f"{rank_str}"
             )
-            embed.add_field(name="📈 CLUB GOAL", value=goal_text, inline=False)
+            add_field(name="📈 CLUB GOAL", value=goal_text)
 
-        embed.set_footer(text=f"{club_name} · Powering Through {month_name}")
-        return embed
+        # Set footer on the main embed
+        main_embed.set_footer(text=f"{club_name} · Powering Through {month_name}")
+        return embeds
 
     # --- Computation Logic ---
 

@@ -68,8 +68,8 @@ class LeaderboardCommands(commands.Cog):
             now = datetime.now(club_tz)
             year, month = now.year, now.month
 
-            # Generate the report embed
-            embed = await LeaderboardReportService.generate_leaderboard_report(
+            # Generate the report embeds (overflow fields split into followup embeds)
+            embeds = await LeaderboardReportService.generate_leaderboard_report(
                 club_obj.club_id,
                 club_obj.club_name,
                 year,
@@ -77,7 +77,9 @@ class LeaderboardCommands(commands.Cog):
             )
 
             # Send to the interaction channel
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=embeds[0])
+            for extra_embed in embeds[1:]:
+                await interaction.followup.send(embed=extra_embed)
 
             # Also post to the club's report channel if configured and different
             if (
@@ -86,7 +88,9 @@ class LeaderboardCommands(commands.Cog):
             ):
                 report_channel = self.bot.get_channel(club_obj.report_channel_id)
                 if report_channel:
-                    await report_channel.send(embed=embed)
+                    await report_channel.send(embed=embeds[0])
+                    for extra_embed in embeds[1:]:
+                        await report_channel.send(embed=extra_embed)
                     logger.info(
                         f"leaderboard_report crossposted to report channel "
                         f"{club_obj.report_channel_id} for {club}"
