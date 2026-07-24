@@ -168,7 +168,7 @@ class LeaderboardReportService:
                 "daily_diff": o.daily_diff,
                 "eta_days": o.eta_days,
             }
-            for o in overtakes[:2]
+            for o in overtakes[:3]
             if o.eta_days <= 2
         ]
         month_name = calendar.month_name[month]
