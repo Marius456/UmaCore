@@ -1,13 +1,13 @@
 # 📰 Leaderboard News — Paragon
 
 **July 2026** · 30 members
-_Jul 16 update_
+_Jul 24 update_
 
 ---
 
 ## 🔥 HEADLINE NEWS
 
-🔥 **Secretariat** extends their reign to **12 days** at #1 — no one can keep up!
+🎯 **fatcat** is on fire — performing **419.0%** above their average!
 
 ───
 
@@ -17,23 +17,18 @@ _Jul 16 update_
 
 **🏆 Club MVP**
 
-**Mysty** — performed 127.7% above their average, gaining +5,641,960 fans today
+**fatcat** — performed 419.0% above their average, gaining +8,872,909 fans today
 
-**🥇 Top Trainer** — **GlorpFanfiction** (+6.0M) gained the most fans today!
+**🥇 Top Trainer** — **PHBant** (+15.4M) gained the most fans today!
 
-**🏅 Best Week** — **Secretariat** (avg +5.2M/day over the last 7 days)
+**🏅 Best Week** — **Mariartis** (avg +10.1M/day over the last 7 days)
 
-**🏛️ THE DYNASTY**
+**🏃 THE VANGUARD**
 
-**Secretariat**'s rule is absolute. After **12 days**, they remain unmovable and continue to pull away—no one can challenge the throne.
-
-**🔥 Overperforming** — **Otter** (+186.6%)
+**Mariartis** holds a slim **18.7M** edge at **#1** — vulnerable territory when both sides are pulling **+12.6M** and **+11.4M** per day. **Secretariat** is right on their heels.
 
 **🏆 New PBs**
-**GlorpFanfiction** — **+6.0M** (prev best +5.3M)
-**Mysty** — **+5.6M** (prev best +4.2M)
-**Luprin** — **+4.2M** (prev best +3.1M)
-**Otter** — **+3.8M** (prev best +2.6M)
+**PHBant** — **+15.4M** (prev best +12.6M)
 
 ───
 
@@ -43,20 +38,21 @@ _Jul 16 update_
 
 **Yesterday's Calls**
 
-• ✅ **Moekofi** overtook **ZT** for #23
-• ❌ **Birb** fell short of **Yuki** for #8
+• ❌ **Syluar** fell short of **Otter** for #13
+• ✅ **Otter** overtook **Luprin** for #12
+• ✅ **fatcat** overtook **Moekofi** for #21
 
 **🚨 Urgent Overtakes**
 
-• **Yuki** is projected to overtake **PHBant** for **#6** — TODAY (closing 26.3K gap at +2.5M/day)
-• **Mysty** is projected to overtake **Birb** for **#9** — TODAY (closing 408.7K gap at +4.2M/day)
-• **Droll** is projected to overtake **ZT** for **#24** — TODAY (closing 24.7K gap at +905.3K/day)
+• **Birb** is projected to overtake **Drycoolguy** for **#5** — TODAY (closing 620.3K gap at +6.2M/day)
+• **Syluar** is projected to overtake **Azuvector** for **#12** — TODAY (closing 2.2M gap at +5.5M/day)
+• **blukip** is projected to overtake **Moekofi** for **#22** — TODAY (closing 807.9K gap at +1.9M/day)
 
 **Monthly Rivalries**
 
-**Lea** (#4) vs **Yuki** (#7) — **Lea** leads by 5.3M (8 swaps)
-**Luprin** (#11) vs **Andrewkin** (#12) — **Luprin** leads by 3.6M (6 swaps)
-**Yuki** (#7) vs **Azuvector** (#8) — **Yuki** leads by 688.3K (6 swaps)
+**Yuki** (#9) vs **Azuvector** (#12) — **Yuki** leads by 3.8M (8 swaps)
+**Droll** (#27) vs **Nazuna** (#28) — **Droll** leads by 673.9K (6 swaps)
+**Luprin** (#14) vs **Andrewkin** (#16) — **Luprin** leads by 5.9M (6 swaps)
 
 ───
 
@@ -64,9 +60,9 @@ _Jul 16 update_
 
 ## MILESTONE TRACKER
 
-🎯 **Dragon** — [▰▰▰▰▰▰▰▰▰▱] 155,448 remaining — expected **today**!
+🎯 **Andrewkin** — [▰▰▰▰▰▰▰▰▰▱] 139,470 remaining — expected **today**!
 
-🎯 **Willow** — [▰▰▰▰▰▰▰▰▰▱] 443,348 remaining — expected **today**!
+🎯 **Runic** — [▰▰▰▰▰▰▰▰▰▱] 979,583 remaining — expected **today**!
 
 ───
 
@@ -74,15 +70,15 @@ _Jul 16 update_
 
 ## TOP MOVERS
 
-📈 **GlorpFanfiction** #6→#5 · 📈 **Yuki** #8→#7 · 📈 **Xzel** #14→#13
+📈 **Jun** #11→#8 · 📈 **PHBant** #6→#4 · 📈 **Otter** #13→#11
 
 ---
 
 ## CLUB ACTIVITY
 
-**Total fans gained today**: +56.0M
-**Active members**: 24/30
-**Average gain**: +1.9M
+**Total fans gained today**: +176.9M
+**Active members**: 30/30
+**Average gain**: +5.9M
 
 ───
 
@@ -90,8 +86,8 @@ _Jul 16 update_
 
 ## 📊 MONTHLY RECORDS
 
-📊 **Biggest Day**: **Secretariat** — +8,352,680 fans
-⬆️ **Biggest Climber**: **GlorpFanfiction** — up 1 spots
+📊 **Biggest Day**: **Mariartis** — +38,621,934 fans
+⬆️ **Biggest Climber**: **Jun** — up 3 spots
 
 ───
 
@@ -99,10 +95,10 @@ _Jul 16 update_
 
 ## 📈 CLUB GOAL
 
-**Progress**: [▰▰▱▱▱▱▱▱▱▱] 28.5%
+**Progress**: [▰▰▰▰▰▱▱▱▱▱] 54.6%
 
 ---
 
-*Generated at: 2026-07-17 21:06:26.282179+00:00*
+*Generated at: 2026-07-25 18:45:36.494876+00:00*
 
 *Footer: Paragon · Powering Through July*

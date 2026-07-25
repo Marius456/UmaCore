@@ -81,29 +81,31 @@ async def dump_rankings(club_id, year, month, days: int = 5) -> str:
 
 async def generate_report(club_id, club_name, year, month) -> str:
     """Run the full report pipeline and return markdown string."""
-    embed = await LeaderboardReportService.generate_leaderboard_report(
+    embeds = await LeaderboardReportService.generate_leaderboard_report(
         club_id, club_name, year, month
     )
+    main_embed = embeds[0]
 
     lines = []
     lines.append(f"# 📰 Leaderboard News — {club_name}")
     lines.append("")
-    lines.append(embed.description)
+    lines.append(main_embed.description)
     lines.append("")
     lines.append("---")
     lines.append("")
 
-    for field in embed.fields:
-        lines.append(f"## {field.name}")
-        lines.append("")
-        lines.append(field.value)
-        lines.append("")
-        lines.append("---")
-        lines.append("")
+    for embed in embeds:
+        for field in embed.fields:
+            lines.append(f"## {field.name}")
+            lines.append("")
+            lines.append(field.value)
+            lines.append("")
+            lines.append("---")
+            lines.append("")
 
-    lines.append(f"*Generated at: {embed.timestamp}*")
+    lines.append(f"*Generated at: {main_embed.timestamp}*")
     lines.append("")
-    lines.append(f"*Footer: {embed.footer.text}*")
+    lines.append(f"*Footer: {main_embed.footer.text}*")
 
     return "\n".join(lines)
 
