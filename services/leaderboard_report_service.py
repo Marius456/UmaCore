@@ -1465,13 +1465,12 @@ class LeaderboardReportService:
             gap_fmt = cls._fmt_fans(tank.gap_to_next)
 
             # --- Fragile lead detection ---
-            # Even if the leader is out-gaining #2, the gap may be tiny
-            # relative to the raw firepower both sides are putting up.
-            # A gap < ~1.5x the larger daily gain is dangerously thin.
-            max_daily_gain = max(tank.daily_gain, tank.daily_gain_2nd)
+            # A lead is fragile only if #2 is gaining faster AND could
+            # realistically overtake within 5 days at the current net rate.
             is_fragile_lead = (
-                max_daily_gain > 0
-                and tank.gap_to_next < max_daily_gain * 1.5
+                net_chase_rate > 0
+                and tank.eta_days is not None
+                and tank.eta_days <= 5
             )
 
             # --- Leader change: distinguish first-time conqueror from back-and-forth slugfest ---
