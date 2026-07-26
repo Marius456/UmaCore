@@ -23,9 +23,9 @@ _Jul 24 update_
 
 **🏅 Best Week** — **Mariartis** (avg +10.1M/day over the last 7 days)
 
-**🏃 THE VANGUARD**
+**🛡️ THE TANK**
 
-**Mariartis** holds a slim **18.7M** edge at **#1** — vulnerable territory when both sides are pulling **+12.6M** and **+11.4M** per day. **Secretariat** is right on their heels.
+**Mariartis** is unmovable at **#1** with a **18.7M** buffer. No one can challenge them today.
 
 **🏆 New PBs**
 **PHBant** — **+15.4M** (prev best +12.6M)
@@ -99,6 +99,6 @@ _Jul 24 update_
 
 ---
 
-*Generated at: 2026-07-25 18:45:36.494876+00:00*
+*Generated at: 2026-07-26 06:51:29.516255+00:00*
 
 *Footer: Paragon · Powering Through July*

@@ -1346,16 +1346,20 @@ class LeaderboardReportService:
                         description=f"🏅 **{name}** cracked **5 million fans** in a single day for the first time!",
                     ))
 
-        # 3 PBs in one week (check if any member has 3+ PB entries in last 7 days)
+        # 3 personal bests in one week.  Establish the all-time baseline
+        # before the window so a strong earlier day cannot be counted again
+        # as a new personal best.
         from datetime import timedelta
         week_ago = latest_date - timedelta(days=7)
         for name, deltas in daily_deltas.items():
             if name not in today_map:
                 continue
-            # Sort by date to find PBs
             by_date = sorted(deltas, key=lambda d: d["date"])
             pb_count = 0
-            prev_best = 0
+            prev_best = max(
+                (d["delta"] for d in by_date if d["date"] < week_ago),
+                default=0,
+            )
             for d in by_date:
                 if d["date"] < week_ago:
                     continue
@@ -2036,22 +2040,26 @@ class LeaderboardReportService:
         for name, deltas in daily_deltas.items():
             if not deltas:
                 continue
-            # deltas are sorted desc, so index 0 is their best
-            best = deltas[0]
-            if best["date"] == latest_date:
-                # prev_best is the next best (index 1) if it exists
-                prev_best = deltas[1]["delta"] if len(deltas) > 1 else None
-                # Skip if no genuine previous best to beat
-                if prev_best is None or prev_best <= 0:
-                    continue
-                # Check if this is a tie (matched PB, not a new record)
-                is_tie = (best["delta"] == prev_best)
-                today_bests.append({
-                    "name": name,
-                    "delta": best["delta"],
-                    "prev_best_delta": prev_best,
-                    "is_tie": is_tie,
-                })
+            today = next((d for d in deltas if d["date"] == latest_date), None)
+            if today is None:
+                continue
+
+            previous_deltas = [
+                d["delta"] for d in deltas if d["date"] < latest_date
+            ]
+            if not previous_deltas:
+                continue
+
+            previous_best = max(previous_deltas)
+            if previous_best <= 0 or today["delta"] < previous_best:
+                continue
+
+            today_bests.append({
+                "name": name,
+                "delta": today["delta"],
+                "prev_best_delta": previous_best,
+                "is_tie": today["delta"] == previous_best,
+            })
 
         today_bests.sort(key=lambda r: r["delta"], reverse=True)
         return {
