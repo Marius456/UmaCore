@@ -20,6 +20,14 @@ class TriviaQuestion:
     correct_answer: str
 
     @classmethod
+    def _parse_row(cls, row) -> dict:
+        """Convert a database row to a dict, deserializing options if needed"""
+        data = dict(row)
+        if isinstance(data.get('options'), str):
+            data['options'] = json.loads(data['options'])
+        return data
+
+    @classmethod
     async def get_random(cls) -> Optional['TriviaQuestion']:
         """Fetch a random question from the database"""
         query = """
@@ -30,7 +38,7 @@ class TriviaQuestion:
         """
         row = await db.fetchrow(query)
         if row:
-            return cls(**dict(row))
+            return cls(**cls._parse_row(row))
         return None
 
     @classmethod
@@ -43,7 +51,7 @@ class TriviaQuestion:
         """
         row = await db.fetchrow(query, question_id)
         if row:
-            return cls(**dict(row))
+            return cls(**cls._parse_row(row))
         return None
 
     @classmethod
@@ -54,7 +62,7 @@ class TriviaQuestion:
             VALUES ($1, $2, $3)
             RETURNING id, question_text, options, correct_answer
         """
-        row = await db.fetchrow(query, question_text, json.dumps(options), correct_answer)
+        row = await db.fetchrow(query, question_text, options, correct_answer)
         logger.info(f"Created trivia question #{row['id']}")
         return cls(**dict(row))
 

@@ -1,6 +1,7 @@
 """
 PostgreSQL database connection management
 """
+import json
 import asyncpg
 from typing import Optional, List, Dict, Any
 import logging
@@ -22,12 +23,23 @@ class Database:
                 self.url,
                 min_size=1,
                 max_size=5,
-                command_timeout=60
+                command_timeout=60,
+                init=self._init_connection
             )
             logger.info("Database connection pool established")
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
             raise
+
+    @staticmethod
+    async def _init_connection(conn):
+        """Initialize a new connection: register JSONB codec so Python lists/dicts work natively"""
+        await conn.set_type_codec(
+            'jsonb',
+            encoder=json.dumps,
+            decoder=json.loads,
+            schema='pg_catalog'
+        )
     
     async def disconnect(self):
         """Close connection pool"""
