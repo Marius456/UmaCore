@@ -11,12 +11,12 @@ import logging
 import pytz
 import asyncio
 
-from models import Club, Member, ClubRankHistory, QuotaRequirement, BotSettings
+from models import Club, ClubRankHistory, QuotaRequirement, BotSettings
 from scrapers import (
     UmaMoeAPIScraper, DataNotAvailableError,
     scrape_official_events, check_and_save as check_and_save_official_events,
 )
-from services import QuotaCalculator, BombManager, ReportGenerator, NotificationService, ScrapeLockManager, ScrapeContext
+from services import QuotaCalculator, ReportGenerator, NotificationService, ScrapeLockManager, ScrapeContext
 from services.leaderboard_report_service import LeaderboardReportService
 from config.settings import EVENTS_JSON_PATH
 
@@ -29,7 +29,6 @@ class BotTasks:
     def __init__(self, bot):
         self.bot = bot
         self.quota_calculator = QuotaCalculator()
-        self.bomb_manager = BombManager()
         self.report_generator = ReportGenerator()
         self.notification_service = NotificationService(bot)
 
@@ -104,15 +103,10 @@ class BotTasks:
         try:
             async with ScrapeContext(club.club_id, f"tasks_{club.club_name}"):
                 report_channel = self.bot.get_channel(club.report_channel_id)
-                alert_channel = self.bot.get_channel(club.alert_channel_id or club.report_channel_id)
 
                 if not report_channel:
                     logger.error(f"Report channel {club.report_channel_id} not found for {club.club_name}")
                     return
-
-                if not alert_channel:
-                    logger.warning(f"Alert channel not found for {club.club_name}, using report channel")
-                    alert_channel = report_channel
 
                 club_tz = pytz.timezone(club.timezone)
                 current_datetime = datetime.now(club_tz)
@@ -294,52 +288,8 @@ class BotTasks:
                     await report_channel.send(embed=error_embed)
                     return
 
-                # STEP 5: Bomb management
-                newly_activated_bombs = []
-                deactivated_bombs = []
-                members_to_kick = []
-
-                if club.bombs_enabled:
-                    try:
-                        logger.info(f"💣 Checking for bomb activations in {club.club_name}...")
-                        newly_activated_bombs = await self.bomb_manager.check_and_activate_bombs(club, current_date)
-
-                        logger.info(f"⏳ Updating bomb countdowns for {club.club_name}...")
-                        await self.bomb_manager.update_bomb_countdowns(club.club_id, current_date)
-
-                        logger.info(f"✅ Checking for bomb deactivations in {club.club_name}...")
-                        deactivated_bombs = await self.bomb_manager.check_and_deactivate_bombs(club.club_id, current_date)
-
-                        logger.info(f"🚨 Checking for expired bombs in {club.club_name}...")
-                        members_to_kick = await self.bomb_manager.check_expired_bombs(club.club_id)
-
-                        logger.info(
-                            f"Bomb management complete for {club.club_name}: "
-                            f"{len(newly_activated_bombs)} activated, "
-                            f"{len(deactivated_bombs)} deactivated, "
-                            f"{len(members_to_kick)} to kick"
-                        )
-
-                    except Exception as e:
-                        logger.error(f"❌ Error during bomb management for {club.club_name}: {e}", exc_info=True)
-                        newly_activated_bombs = []
-                        deactivated_bombs = []
-                        members_to_kick = []
-                else:
-                    logger.info(f"⏭️ Skipping bomb management for {club.club_name} (bombs disabled)")
-
-                # STEP 6: Send DM notifications to linked users
+                # STEP 5: Send DM notifications to linked users
                 try:
-                    if newly_activated_bombs:
-                        logger.info(f"📨 Sending bomb activation DMs for {club.club_name}...")
-                        await self.notification_service.send_bomb_notifications(club.club_name, newly_activated_bombs)
-
-                    if deactivated_bombs:
-                        logger.info(f"📨 Sending bomb deactivation DMs for {club.club_name}...")
-                        for item in deactivated_bombs:
-                            member = item['member']
-                            await self.notification_service.send_bomb_deactivation_notification(club.club_name, member)
-
                     # Send deficit notifications
                     status_summary = await self.quota_calculator.get_member_status_summary(
                         club.club_id, current_date, quota_period=club.quota_period
@@ -358,15 +308,9 @@ class BotTasks:
                         club.club_id, current_date, quota_period=club.quota_period
                     )
 
-                    # Only fetch bomb data if bombs are enabled
-                    if club.bombs_enabled:
-                        bombs_data = await self.bomb_manager.get_active_bombs_with_members(club.club_id)
-                    else:
-                        bombs_data = []
-
                     effective_quota = await QuotaRequirement.get_quota_for_date(club.club_id, current_date)
                     daily_reports = await self.report_generator.create_daily_report(
-                        club.club_name, effective_quota, status_summary, bombs_data, current_date,
+                        club.club_name, effective_quota, status_summary, current_date,
                         rank_data=rank_data, quota_period=club.quota_period
                     )
 
@@ -375,14 +319,6 @@ class BotTasks:
 
                     logger.info(f"✅ Daily report sent for {club.club_name} ({len(daily_reports)} embed(s))")
 
-                    if deactivated_bombs:
-                        deactivation_embeds = self.report_generator.create_bomb_deactivation_report(
-                            club.club_name, deactivated_bombs
-                        )
-                        for embed in deactivation_embeds:
-                            await report_channel.send(embed=embed)
-                        logger.info(f"✅ Bomb deactivation report sent for {club.club_name} ({len(deactivated_bombs)} member(s))")
-
                 except Exception as e:
                     logger.error(f"❌ Error generating/sending daily report for {club.club_name}: {e}", exc_info=True)
                     error_embed = self.report_generator.create_error_report(
@@ -390,26 +326,6 @@ class BotTasks:
                         f"Failed to generate daily report: {str(e)}"
                     )
                     await report_channel.send(embed=error_embed)
-
-                # STEP 8: Send alerts to alert channel
-                try:
-                    if newly_activated_bombs:
-                        bomb_data = []
-                        for bomb in newly_activated_bombs:
-                            member = await Member.get_by_id(bomb.member_id)
-                            bomb_data.append({'bomb': bomb, 'member': member})
-
-                        for embed in self.report_generator.create_bomb_activation_alert(club.club_name, bomb_data):
-                            await alert_channel.send(embed=embed)
-                        logger.info(f"💣 Sent bomb activation alert for {club.club_name} ({len(bomb_data)} member(s))")
-
-                    if members_to_kick:
-                        for embed in self.report_generator.create_kick_alert(club.club_name, members_to_kick):
-                            await alert_channel.send(embed=embed)
-                        logger.info(f"🚨 Sent kick alert for {club.club_name} ({len(members_to_kick)} member(s))")
-
-                except Exception as e:
-                    logger.error(f"❌ Error sending alerts for {club.club_name}: {e}", exc_info=True)
 
                 # STEP 8.5: Generate and send leaderboard news report (after daily scrape)
                 try:
@@ -454,9 +370,6 @@ class BotTasks:
                 logger.info(f"✅ Daily check complete for {club.club_name}!")
                 logger.info(f"   • Members updated: {updated_members}")
                 logger.info(f"   • New members: {new_members}")
-                logger.info(f"   • Bombs activated: {len(newly_activated_bombs)}")
-                logger.info(f"   • Bombs deactivated: {len(deactivated_bombs)}")
-                logger.info(f"   • Members to kick: {len(members_to_kick)}")
                 logger.info("=" * 80)
 
         except Exception as e:

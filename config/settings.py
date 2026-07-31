@@ -33,8 +33,6 @@ DAILY_REPORT_TIME = "16:00"
 
 # Quota Rules
 DAILY_QUOTA = 1_000_000
-BOMB_TRIGGER_DAYS = 3
-BOMB_COUNTDOWN_DAYS = 7
 
 # Internal API server (web UI integration)
 BOT_API_PORT = int(os.getenv("BOT_API_PORT", "7890"))
@@ -46,5 +44,4 @@ LOG_FILE = "bot.log"
 # Discord Embed Colors
 COLOR_ON_TRACK = 0x00FF00  # Green
 COLOR_BEHIND = 0xFFA500     # Orange
-COLOR_BOMB = 0xFF0000       # Red
 COLOR_INFO = 0x3498db       # Blue

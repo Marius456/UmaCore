@@ -10,7 +10,7 @@ import pytz
 import asyncio
 
 from scrapers import UmaMoeAPIScraper
-from services import QuotaCalculator, BombManager, ReportGenerator, MonthlyInfoService
+from services import QuotaCalculator, ReportGenerator, MonthlyInfoService
 from models import Member, QuotaRequirement, BotSettings, Club, ClubRankHistory
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,6 @@ class AdminCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.quota_calculator = QuotaCalculator()
-        self.bomb_manager = BombManager()
         self.report_generator = ReportGenerator()
         self.monthly_info_service = MonthlyInfoService()
 
@@ -454,71 +453,26 @@ class AdminCommands(commands.Cog):
                 quota_period=club_obj.quota_period
             )
 
-            # Bomb management
-            newly_activated = []
-            deactivated = []
-            members_to_kick = []
-
-            if club_obj.bombs_enabled:
-                newly_activated = await self.bomb_manager.check_and_activate_bombs(club_obj, current_date)
-                await self.bomb_manager.update_bomb_countdowns(club_obj.club_id, current_date)
-                deactivated = await self.bomb_manager.check_and_deactivate_bombs(club_obj.club_id, current_date)
-                members_to_kick = await self.bomb_manager.check_expired_bombs(club_obj.club_id)
-                logger.info(f"Bomb checks complete for {club_obj.club_name}")
-            else:
-                logger.info(f"Skipping bomb management for {club_obj.club_name} (bombs disabled)")
-
             # Generate and send daily reports
             status_summary = await self.quota_calculator.get_member_status_summary(
                 club_obj.club_id, current_date, quota_period=club_obj.quota_period
             )
 
-            # Only fetch bomb data if bombs are enabled
-            if club_obj.bombs_enabled:
-                bombs_data = await self.bomb_manager.get_active_bombs_with_members(club_obj.club_id)
-            else:
-                bombs_data = []
-
             effective_quota = await QuotaRequirement.get_quota_for_date(club_obj.club_id, current_date)
             daily_reports = await self.report_generator.create_daily_report(
-                club_obj.club_name, effective_quota, status_summary, bombs_data, current_date,
+                club_obj.club_name, effective_quota, status_summary, current_date,
                 rank_data=rank_data, quota_period=club_obj.quota_period
             )
 
             for embed, files in daily_reports:
                 await report_channel.send(embed=embed, files=files if files else None)
 
-            if deactivated:
-                deactivation_embeds = self.report_generator.create_bomb_deactivation_report(
-                    club_obj.club_name, deactivated
-                )
-                for embed in deactivation_embeds:
-                    await report_channel.send(embed=embed)
-                logger.info(f"✅ Bomb deactivation report sent ({len(deactivated)} member(s))")
-
-            if newly_activated:
-                bomb_data = []
-                for bomb in newly_activated:
-                    member = await Member.get_by_id(bomb.member_id)
-                    bomb_data.append({'bomb': bomb, 'member': member})
-                for embed in self.report_generator.create_bomb_activation_alert(club_obj.club_name, bomb_data):
-                    await alert_channel.send(embed=embed)
-
-            if members_to_kick:
-                for embed in self.report_generator.create_kick_alert(club_obj.club_name, members_to_kick):
-                    await alert_channel.send(embed=embed)
-
             # Auto-update monthly info board
             await self._update_monthly_info_board(club_obj, current_date)
 
-            if deactivated:
-                await interaction.followup.send(
-                    f"✅ Check complete for {club}: {updated_members} members updated, {new_members} new members, {len(deactivated)} bombs defused"
-                )
-            else:
-                await interaction.followup.send(
-                    f"✅ Check complete for {club}: {updated_members} members updated, {new_members} new members"
-                )
+            await interaction.followup.send(
+                f"✅ Check complete for {club}: {updated_members} members updated, {new_members} new members"
+            )
 
         except Exception as e:
             logger.error(f"Error in force_check: {e}", exc_info=True)
@@ -654,60 +608,10 @@ class AdminCommands(commands.Cog):
             logger.error(f"Error in activate_member: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)}")
 
-    @app_commands.command(name="bomb_status", description="View all active bombs")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def bomb_status(self, interaction: discord.Interaction, club: str):
-        """View all active bombs for a club"""
-        await interaction.response.defer()
-
-        try:
-            club_obj = await Club.get_by_name(club)
-            if not club_obj:
-                await interaction.followup.send(f"❌ Club '{club}' not found")
-                return
-
-            if not club_obj.belongs_to_guild(interaction.guild_id):
-                await interaction.followup.send(f"❌ Club '{club}' is not registered in this server.")
-                return
-
-            bombs_data = await self.bomb_manager.get_active_bombs_with_members(club_obj.club_id)
-
-            if not bombs_data:
-                await interaction.followup.send(f"✅ No active bombs in {club}!")
-                return
-
-            embed = discord.Embed(
-                title=f"💣 Active Bombs - {club}",
-                description=f"Total: {len(bombs_data)}",
-                color=discord.Color.red(),
-                timestamp=discord.utils.utcnow()
-            )
-
-            for item in bombs_data[:25]:
-                member = item['member']
-                bomb = item['bomb']
-                history = item['history']
-
-                deficit = abs(history.deficit_surplus)
-
-                embed.add_field(
-                    name=f"{member.trainer_name}",
-                    value=f"**Days Remaining:** {bomb.days_remaining}\n"
-                          f"**Behind by:** {deficit:,} fans\n"
-                          f"**Activated:** {bomb.activation_date.strftime('%Y-%m-%d')}",
-                    inline=True
-                )
-
-            await interaction.followup.send(embed=embed)
-
-        except Exception as e:
-            logger.error(f"Error in bomb_status: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
-
-    @app_commands.command(name="recalculate", description="Recalculate days-behind counts and bomb statuses from current history without clearing data")
+    @app_commands.command(name="recalculate", description="Recalculate days-behind counts from current history")
     @app_commands.checks.has_permissions(administrator=True)
     async def recalculate(self, interaction: discord.Interaction, club: str):
-        """Recalculate days_behind and bombs based on existing quota history"""
+        """Recalculate days_behind based on existing quota history"""
         await interaction.response.defer()
 
         try:
@@ -727,7 +631,7 @@ class AdminCommands(commands.Cog):
 
             await interaction.followup.send(f"🔄 Recalculating for {club}...")
 
-            # Step 1: Recalculate days_behind for all members in the current month.
+            # Recalculate days_behind for all members in the current month.
             # Walk each member's history in date order and track consecutive deficit days.
             members = await Member.get_all_active(club_obj.club_id)
             updated_entries = 0
@@ -757,46 +661,26 @@ class AdminCommands(commands.Cog):
                     )
                     updated_entries += 1
 
-            # Step 2: Deactivate all current bombs and re-evaluate from scratch.
-            await _db.execute(
-                "UPDATE bombs SET is_active = FALSE, deactivation_date = $1 WHERE club_id = $2 AND is_active = TRUE",
-                current_date, club_obj.club_id
-            )
-            newly_activated = await self.bomb_manager.check_and_activate_bombs(club_obj, current_date)
-
             embed = discord.Embed(
                 title=f"✅ Recalculation Complete - {club}",
                 description=(
-                    f"**History entries updated:** {updated_entries}\n"
-                    f"**Bombs cleared and re-evaluated**\n"
-                    f"**Bombs re-activated:** {len(newly_activated)}\n\n"
-                    "Days-behind counts and bomb statuses now reflect current data.\n"
+                    f"**History entries updated:** {updated_entries}\n\n"
+                    "Days-behind counts now reflect current data.\n"
                     "Run `/force_check` to generate a fresh report."
                 ),
                 color=discord.Color.green(),
                 timestamp=discord.utils.utcnow()
             )
-            if newly_activated:
-                reactivated_names = []
-                for bomb in newly_activated:
-                    member = await Member.get_by_id(bomb.member_id)
-                    if member:
-                        reactivated_names.append(member.trainer_name)
-                embed.add_field(
-                    name="💣 Re-activated Bombs",
-                    value="\n".join(reactivated_names) or "None",
-                    inline=False
-                )
             embed.set_footer(text=f"Recalculated by {interaction.user}")
             await interaction.followup.send(embed=embed)
             logger.info(f"Recalculation performed for {club} by {interaction.user}: "
-                        f"{updated_entries} entries updated, {len(newly_activated)} bombs re-activated")
+                        f"{updated_entries} entries updated")
 
         except Exception as e:
             logger.error(f"Error in recalculate: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)}")
 
-    @app_commands.command(name="reset_month", description="Manually trigger monthly reset: clears all history, bombs, and quota requirements")
+    @app_commands.command(name="reset_month", description="Manually trigger monthly reset: clears all history and quota requirements")
     @app_commands.checks.has_permissions(administrator=True)
     async def reset_month(self, interaction: discord.Interaction, club: str):
         """Manually reset all monthly data for a club (for use when auto-reset fails)"""
@@ -815,7 +699,6 @@ class AdminCommands(commands.Cog):
             from config.database import db as _db
 
             await _db.execute("DELETE FROM quota_history WHERE club_id = $1", club_obj.club_id)
-            await _db.execute("DELETE FROM bombs WHERE club_id = $1", club_obj.club_id)
             await _db.execute("DELETE FROM quota_requirements WHERE club_id = $1", club_obj.club_id)
             await _db.execute(
                 "UPDATE members SET manually_deactivated = FALSE WHERE club_id = $1 AND manually_deactivated = TRUE",
@@ -828,7 +711,6 @@ class AdminCommands(commands.Cog):
                     "All monthly data has been cleared.\n\n"
                     "**Cleared:**\n"
                     "• All quota history\n"
-                    "• All active bombs\n"
                     "• All quota requirements\n"
                     "• Manual deactivation flags\n\n"
                     f"Run `/force_check club:{club}` to populate fresh data."
@@ -853,7 +735,6 @@ class AdminCommands(commands.Cog):
     add_member.autocomplete('club')(club_autocomplete)
     deactivate_member.autocomplete('club')(club_autocomplete)
     activate_member.autocomplete('club')(club_autocomplete)
-    bomb_status.autocomplete('club')(club_autocomplete)
     recalculate.autocomplete('club')(club_autocomplete)
     reset_month.autocomplete('club')(club_autocomplete)
 

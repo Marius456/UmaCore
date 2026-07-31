@@ -71,9 +71,6 @@ class Database:
             quota_period VARCHAR(10) NOT NULL DEFAULT 'daily',
             timezone VARCHAR(100) NOT NULL DEFAULT 'Europe/Amsterdam',
             scrape_time TIME NOT NULL DEFAULT '16:00',
-            bomb_trigger_days INTEGER NOT NULL DEFAULT 3,
-            bomb_countdown_days INTEGER NOT NULL DEFAULT 7,
-            bombs_enabled BOOLEAN DEFAULT TRUE,
             is_active BOOLEAN DEFAULT TRUE,
             report_channel_id BIGINT,
             alert_channel_id BIGINT,
@@ -117,18 +114,6 @@ class Database:
             ) THEN
                 ALTER TABLE clubs ADD COLUMN guild_id BIGINT;
                 RAISE NOTICE 'Added guild_id column to clubs';
-            END IF;
-        END $$;
-
-        -- Migration: Add bombs_enabled column if it doesn't exist
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name='clubs' AND column_name='bombs_enabled'
-            ) THEN
-                ALTER TABLE clubs ADD COLUMN bombs_enabled BOOLEAN DEFAULT TRUE;
-                RAISE NOTICE 'Added bombs_enabled column to clubs';
             END IF;
         END $$;
 
@@ -298,44 +283,6 @@ class Database:
             END IF;
         END $$;
         
-        -- Bombs table
-        CREATE TABLE IF NOT EXISTS bombs (
-            bomb_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            member_id UUID NOT NULL REFERENCES members(member_id) ON DELETE CASCADE,
-            club_id UUID NOT NULL REFERENCES clubs(club_id) ON DELETE CASCADE,
-            activation_date DATE NOT NULL,
-            days_remaining INTEGER NOT NULL,
-            is_active BOOLEAN DEFAULT TRUE,
-            deactivation_date DATE,
-            last_countdown_update DATE,
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        );
-        
-        -- Migration: Add last_countdown_update column to bombs if it doesn't exist
-        DO $$ 
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM information_schema.columns 
-                WHERE table_name='bombs' AND column_name='last_countdown_update'
-            ) THEN
-                ALTER TABLE bombs ADD COLUMN last_countdown_update DATE;
-                UPDATE bombs SET last_countdown_update = activation_date WHERE last_countdown_update IS NULL;
-                RAISE NOTICE 'Added last_countdown_update column to bombs table';
-            END IF;
-        END $$;
-        
-        -- Migration: Add club_id to bombs if it doesn't exist
-        DO $$ 
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM information_schema.columns 
-                WHERE table_name='bombs' AND column_name='club_id'
-            ) THEN
-                ALTER TABLE bombs ADD COLUMN club_id UUID REFERENCES clubs(club_id) ON DELETE CASCADE;
-                RAISE NOTICE 'Added club_id column to bombs';
-            END IF;
-        END $$;
-        
         -- Quota requirements table
         CREATE TABLE IF NOT EXISTS quota_requirements (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -393,7 +340,6 @@ class Database:
         CREATE TABLE IF NOT EXISTS user_links (
             discord_user_id BIGINT PRIMARY KEY,
             member_id UUID NOT NULL REFERENCES members(member_id) ON DELETE CASCADE,
-            notify_on_bombs BOOLEAN DEFAULT TRUE,
             notify_on_deficit BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -424,12 +370,9 @@ class Database:
         -- Indexes for performance
         CREATE INDEX IF NOT EXISTS idx_members_club_id ON members(club_id);
         CREATE INDEX IF NOT EXISTS idx_quota_history_club_id ON quota_history(club_id);
-        CREATE INDEX IF NOT EXISTS idx_bombs_club_id ON bombs(club_id);
         CREATE INDEX IF NOT EXISTS idx_quota_requirements_club_id ON quota_requirements(club_id);
         CREATE INDEX IF NOT EXISTS idx_quota_history_member_date 
             ON quota_history(member_id, date DESC);
-        CREATE INDEX IF NOT EXISTS idx_bombs_active 
-            ON bombs(member_id) WHERE is_active = TRUE;
         CREATE INDEX IF NOT EXISTS idx_members_active 
             ON members(is_active) WHERE is_active = TRUE;
         CREATE INDEX IF NOT EXISTS idx_members_trainer_id

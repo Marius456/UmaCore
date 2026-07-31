@@ -8,7 +8,7 @@ import logging
 import calendar
 import math
 
-from models import Member, QuotaHistory, QuotaRequirement, Bomb, Club
+from models import Member, QuotaHistory, QuotaRequirement, Club
 from config.database import db
 
 logger = logging.getLogger(__name__)
@@ -176,7 +176,6 @@ class QuotaCalculator:
             
             # Clear club-specific data
             await db.execute("DELETE FROM quota_history WHERE club_id = $1", club_id)
-            await db.execute("DELETE FROM bombs WHERE club_id = $1", club_id)
             await db.execute("DELETE FROM quota_requirements WHERE club_id = $1", club_id)
             
             # Clear manual deactivation flags for this club

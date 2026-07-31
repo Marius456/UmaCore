@@ -50,20 +50,13 @@ class AuthorCommands(commands.Cog):
                 FROM members
             """)
 
-            bomb_count = await db.fetchval(
-                "SELECT COUNT(*) FROM bombs WHERE is_active = TRUE"
-            )
-
             # Per-club breakdown
             club_breakdown = await db.fetch("""
                 SELECT
                     c.club_name,
                     c.is_active as club_active,
                     (SELECT COUNT(*) FROM members m WHERE m.club_id = c.club_id) as total_members,
-                    (SELECT COUNT(*) FROM members m WHERE m.club_id = c.club_id AND m.is_active) as active_members,
-                    (SELECT COUNT(*) FROM bombs b
-                     JOIN members m ON b.member_id = m.member_id
-                     WHERE m.club_id = c.club_id AND b.is_active) as active_bombs
+                    (SELECT COUNT(*) FROM members m WHERE m.club_id = c.club_id AND m.is_active) as active_members
                 FROM clubs c
                 ORDER BY c.club_name
             """)
@@ -84,7 +77,6 @@ class AuthorCommands(commands.Cog):
                 value=f"**Servers:** {len(self.bot.guilds)}\n"
                       f"**Clubs:** {club_stats['active']} active / {club_stats['total']} total\n"
                       f"**Members:** {member_stats['active']} active / {member_stats['total']} total\n"
-                      f"**Active Bombs:** {bomb_count or 0}\n"
                       f"**Uptime:** {uptime_str}",
                 inline=False
             )
@@ -98,8 +90,6 @@ class AuthorCommands(commands.Cog):
                         f"{status} **{club['club_name']}**: "
                         f"{club['active_members']} active / {club['total_members']} total"
                     )
-                    if club['active_bombs']:
-                        line += f" · 💣 {club['active_bombs']}"
                     lines.append(line)
 
                 chunk_size = 15
