@@ -404,6 +404,22 @@ class Database:
             ON audit_logs(club_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_audit_logs_created
             ON audit_logs(created_at DESC);
+
+        -- Trivia questions table
+        CREATE TABLE IF NOT EXISTS trivia_questions (
+            id SERIAL PRIMARY KEY,
+            question_text TEXT NOT NULL,
+            options JSONB NOT NULL,
+            correct_answer TEXT NOT NULL
+        );
+
+        -- Trivia leaderboard table
+        CREATE TABLE IF NOT EXISTS trivia_leaderboard (
+            user_id BIGINT PRIMARY KEY,
+            highest_streak INTEGER NOT NULL DEFAULT 0,
+            total_correct INTEGER NOT NULL DEFAULT 0,
+            last_played TIMESTAMPTZ DEFAULT NOW()
+        );
         """
         
         try:
