@@ -355,6 +355,67 @@ class TriviaCommands(commands.Cog):
                 )
 
 
+    @trivia.command(name="list", description="List all trivia questions (Admin only)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def list_questions(self, interaction: discord.Interaction):
+        """List every trivia question, including its answer options (Admin only)."""
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            questions = await TriviaQuestion.get_all()
+            if not questions:
+                await interaction.followup.send("No trivia questions found.", ephemeral=True)
+                return
+
+            for start in range(0, len(questions), 10):
+                batch = questions[start:start + 10]
+                embed = discord.Embed(
+                    title="Trivia Questions",
+                    description=f"Showing questions {start + 1}-{start + len(batch)} of {len(questions)}.",
+                    color=discord.Color.blue()
+                )
+                for question in batch:
+                    options = "\n".join(
+                        f"{'✅' if option == question.correct_answer else '▫️'} {option}"
+                        for option in question.options
+                    )
+                    embed.add_field(
+                        name=f"#{question.id} — {question.question_text[:240]}",
+                        value=f"{options}\n**Correct:** {question.correct_answer}",
+                        inline=False
+                    )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error listing trivia questions: {e}", exc_info=True)
+            await interaction.followup.send(
+                f"❌ Failed to fetch questions: {str(e)}", ephemeral=True
+            )
+
+    @trivia.command(name="delete", description="Delete a trivia question (Admin only)")
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.describe(question_id="The ID of the question to delete")
+    async def delete_question(self, interaction: discord.Interaction, question_id: int):
+        """Delete one trivia question by ID (Admin only)."""
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            deleted = await TriviaQuestion.delete(question_id)
+            if deleted:
+                await interaction.followup.send(
+                    f"✅ Trivia question #{question_id} deleted.", ephemeral=True
+                )
+                logger.info(f"Admin {interaction.user.id} deleted trivia question #{question_id}")
+            else:
+                await interaction.followup.send(
+                    f"❌ No trivia question found with ID #{question_id}.", ephemeral=True
+                )
+        except Exception as e:
+            logger.error(f"Error deleting trivia question #{question_id}: {e}", exc_info=True)
+            await interaction.followup.send(
+                f"❌ Failed to delete question: {str(e)}", ephemeral=True
+            )
+
+
 async def setup(bot):
     """Setup function for loading the cog"""
     await bot.add_cog(TriviaCommands(bot))

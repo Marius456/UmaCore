@@ -55,6 +55,31 @@ class TriviaQuestion:
         return None
 
     @classmethod
+    async def get_all(cls) -> List['TriviaQuestion']:
+        """Fetch all trivia questions ordered by ID."""
+        query = """
+            SELECT id, question_text, options, correct_answer
+            FROM trivia_questions
+            ORDER BY id
+        """
+        rows = await db.fetch(query)
+        return [cls(**cls._parse_row(row)) for row in rows]
+
+    @classmethod
+    async def delete(cls, question_id: int) -> bool:
+        """Delete a trivia question and return whether it existed."""
+        query = """
+            DELETE FROM trivia_questions
+            WHERE id = $1
+            RETURNING id
+        """
+        row = await db.fetchrow(query, question_id)
+        if row:
+            logger.info(f"Deleted trivia question #{question_id}")
+            return True
+        return False
+
+    @classmethod
     async def create(cls, question_text: str, options: List[str], correct_answer: str) -> 'TriviaQuestion':
         """Insert a new question into the database"""
         query = """

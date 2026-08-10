@@ -45,3 +45,13 @@ All commands are Discord slash commands (`/`).
 | `/progress_chart` | Anyone | Fan progression chart this month |
 | `/previous_month` | Anyone | Last month's final fan stats |
 | `/stats` | Author | Bot-wide statistics |
+
+### Trivia Commands
+
+| Command | Who | Description |
+|---|---|---|
+| `/trivia play` | Anyone | Start a survival trivia game |
+| `/trivia leaderboard` | Anyone | View the trivia leaderboard |
+| `/trivia add` | Admin | Add a trivia question |
+| `/trivia list` | Admin | View all trivia questions and answers |
+| `/trivia delete` | Admin | Delete a trivia question by ID |
