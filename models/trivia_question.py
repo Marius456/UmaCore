@@ -3,7 +3,7 @@ Trivia question data model
 """
 import json
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Collection, Optional, List
 import logging
 
 from config.database import db
@@ -28,15 +28,25 @@ class TriviaQuestion:
         return data
 
     @classmethod
-    async def get_random(cls) -> Optional['TriviaQuestion']:
-        """Fetch a random question from the database"""
-        query = """
+    async def get_random(
+        cls, excluded_ids: Optional[Collection[int]] = None
+    ) -> Optional['TriviaQuestion']:
+        """Fetch a random question, optionally excluding question IDs."""
+        excluded_ids = sorted(excluded_ids or [])
+        exclusion_clause = ""
+        params = []
+        if excluded_ids:
+            exclusion_clause = "WHERE NOT (id = ANY($1::int[]))"
+            params.append(excluded_ids)
+
+        query = f"""
             SELECT id, question_text, options, correct_answer
             FROM trivia_questions
+            {exclusion_clause}
             ORDER BY RANDOM()
             LIMIT 1
         """
-        row = await db.fetchrow(query)
+        row = await db.fetchrow(query, *params)
         if row:
             return cls(**cls._parse_row(row))
         return None

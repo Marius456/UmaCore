@@ -91,7 +91,7 @@ class TriviaCommands(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.active_sessions: dict[int, asyncio.Event] = {}
+        self.active_sessions: dict[int, set[int]] = {}
         self._seed_loaded = False
 
     trivia = app_commands.Group(name="trivia", description="Survival trivia game commands")
@@ -199,6 +199,17 @@ class TriviaCommands(commands.Cog):
     #  Core game loop
     # ──────────────────────────────────────────────
 
+    async def _get_next_question(self, used_question_ids: set[int]) -> Optional[TriviaQuestion]:
+        """Get an unused question, beginning a new cycle when the bank is exhausted."""
+        question = await TriviaQuestion.get_random(excluded_ids=used_question_ids)
+        if question is None and used_question_ids:
+            used_question_ids.clear()
+            question = await TriviaQuestion.get_random()
+
+        if question is not None:
+            used_question_ids.add(question.id)
+        return question
+
     async def _start_game(self, interaction: discord.Interaction):
         """Core game loop: fetches questions, handles answers, manages streaks"""
         user_id = interaction.user.id
@@ -211,8 +222,8 @@ class TriviaCommands(commands.Cog):
             )
             return
 
-        session_event = asyncio.Event()
-        self.active_sessions[user_id] = session_event
+        used_question_ids: set[int] = set()
+        self.active_sessions[user_id] = used_question_ids
 
         try:
             current_streak = 0
@@ -221,8 +232,8 @@ class TriviaCommands(commands.Cog):
             message = None
 
             while True:
-                # Fetch a random question
-                question = await TriviaQuestion.get_random()
+                # Fetch a random question that has not appeared in this cycle.
+                question = await self._get_next_question(used_question_ids)
                 if not question:
                     await interaction.followup.send(
                         "❌ No trivia questions available! Ask an admin to add some with `/trivia add`."
