@@ -236,7 +236,8 @@ class TriviaCommands(commands.Cog):
                 question = await self._get_next_question(used_question_ids)
                 if not question:
                     await interaction.followup.send(
-                        "❌ No trivia questions available! Ask an admin to add some with `/trivia add`."
+                        "❌ No trivia questions available! Ask an admin to add some with `/trivia add`.",
+                        ephemeral=True
                     )
                     return
 
@@ -245,7 +246,7 @@ class TriviaCommands(commands.Cog):
 
                 if is_first:
                     is_first = False
-                    await interaction.followup.send(embed=embed, view=view)
+                    await interaction.edit_original_response(embed=embed, view=view)
                     message = await interaction.original_response()
                 else:
                     # Brief pause before showing the next question
@@ -284,7 +285,7 @@ class TriviaCommands(commands.Cog):
     @trivia.command(name="play", description="Start a survival trivia game")
     async def play(self, interaction: discord.Interaction):
         """Start a new survival trivia game"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         await self._start_game(interaction)
 
     @trivia.command(name="leaderboard", description="View the trivia leaderboard")
