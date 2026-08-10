@@ -261,3 +261,7 @@ VPS_SETUP.md
 
 # Playwright cookie storage (Cloudflare clearance cookies)
 .umamoe_cookies/
+
+.runtime-deps
+qna.json
+trivia-sources.md
