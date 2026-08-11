@@ -6,6 +6,7 @@ from discord.ext import tasks
 import json as json_mod
 import os
 import re
+import tempfile
 from datetime import datetime, date, timedelta
 from typing import Optional
 import logging
@@ -504,8 +505,26 @@ class BotTasks:
         try:
             if not hasattr(self, '_events_data') or not self._events_data:
                 return
-            with open(EVENTS_JSON_PATH, "w", encoding="utf-8") as f:
-                json_mod.dump(self._events_data, f, ensure_ascii=False, indent=2)
+            directory = os.path.dirname(EVENTS_JSON_PATH) or "."
+            temp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=directory,
+                    prefix=".events-",
+                    suffix=".tmp",
+                    delete=False,
+                ) as f:
+                    temp_path = f.name
+                    json_mod.dump(self._events_data, f, ensure_ascii=False, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(temp_path, EVENTS_JSON_PATH)
+                temp_path = None
+            finally:
+                if temp_path and os.path.exists(temp_path):
+                    os.unlink(temp_path)
         except Exception as e:
             logger.error(f"Failed to save events JSON: {e}")
 

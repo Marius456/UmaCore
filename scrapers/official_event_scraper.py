@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from enum import Enum
@@ -206,6 +207,21 @@ def _classify_event(title: str) -> EventType:
     if any(kw in t for kw in ("Spotlight Scout", "Spotlight Pretty Derby", "Spotlight Support Card")):
         return EventType.SPOTLIGHT
     return EventType.UNKNOWN
+
+
+def _canonical_event_key(title: str, event_type: EventType) -> str:
+    """Return a stable identity shared by announcement-status variants."""
+    key = title.strip().lower()
+    key = re.sub(r"^the\s+(?:story|race)\s+event\s+", "", key)
+    key = re.sub(
+        r"\s+(?:is coming soon|is here|has ended|out now)!?$",
+        "",
+        key,
+        flags=re.IGNORECASE,
+    )
+    key = re.sub(r"[^\w\s]+", " ", key)
+    key = re.sub(r"\s+", " ", key).strip()
+    return f"{event_type.value}:{key}"
 
 
 # ── Title Cleaning ───────────────────────────────────────────────────────────
@@ -497,11 +513,6 @@ async def scrape_official_events(known_titles: Optional[Set[str]] = None) -> Lis
                     logger.debug(f"Skipping non-event: '{title[:50]}'")
                     continue
 
-                if title in known_titles:
-                    logger.debug(f"Skipping already-known event: '{title[:50]}'")
-                    events.append(Event(title=title, type=event_type, start_time=None, end_time=None, url=url))
-                    continue
-
                 logger.info(f"Processing new event: '{title[:50]}' ({event_type.value})")
 
                 # Navigate directly to the article URL
@@ -606,8 +617,26 @@ def _save_events(events: List[Event], path: str, merged_notified: Optional[dict[
         ],
         "scraped_at": datetime.now(timezone.utc).isoformat(),
     }
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
+    directory = os.path.dirname(path) or "."
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=directory,
+            prefix=".events-",
+            suffix=".tmp",
+            delete=False,
+        ) as f:
+            temp_path = f.name
+            json.dump(output, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+        temp_path = None
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
     logger.info(f"Saved {len(events)} events to {path}")
 
 
@@ -620,26 +649,27 @@ def _dedup_events(events: List[Event]) -> List[Event]:
       2. For events with null times, prefer the title that is more informative
          (e.g. "out now" over "coming soon", longer title over shorter).
     """
-    seen: Set[Tuple] = set()
-    result: List[Event] = []
+    grouped: dict[str, Event] = {}
 
     for e in events:
-        if e.start_time and e.end_time:
-            key = (e.type.value, e.start_time.isoformat(), e.end_time.isoformat())
-        else:
-            # For null-time events, use a fuzzy key: type + normalized title prefix
-            # Normalize: lowercase, remove common boilerplate
-            norm = e.title.lower().replace("!", "").replace("?", "").strip()
-            # Take first 40 chars as a fingerprint
-            key = (e.type.value, "null", norm[:40])
-
-        if key in seen:
-            logger.debug(f"Dedup: skipping '{e.title[:50]}' (duplicate of existing event)")
+        key = _canonical_event_key(e.title, e.type)
+        existing = grouped.get(key)
+        if existing is None:
+            grouped[key] = e
             continue
-        seen.add(key)
-        result.append(e)
 
-    return result
+        # Prefer the variant with a parsed schedule, while filling any missing
+        # fields from the other article variant.
+        if e.start_time and e.end_time and not (existing.start_time and existing.end_time):
+            e.banner_image = e.banner_image or existing.banner_image
+            grouped[key] = e
+        else:
+            existing.start_time = existing.start_time or e.start_time
+            existing.end_time = existing.end_time or e.end_time
+            existing.banner_image = existing.banner_image or e.banner_image
+        logger.debug(f"Merged article variant '{e.title[:50]}' into event '{key}'")
+
+    return list(grouped.values())
 
 
 async def check_and_save(json_path: str) -> bool:
@@ -654,16 +684,30 @@ async def check_and_save(json_path: str) -> bool:
     known_titles = _load_known_titles(json_path)
     existing = _load_existing_events(json_path)
 
-    # Pass known titles so the scraper skips detail navigation for them
+    # Pass known titles for logging/compatibility. Known articles are still
+    # re-parsed so schedule corrections and parser fixes take effect.
     raw_events = await scrape_official_events(known_titles=known_titles)
     events = _dedup_events(raw_events)
     logger.info(f"Dedup: {len(raw_events)} raw -> {len(events)} unique event(s)")
 
-    # Merge existing detail data back into placeholder events (known titles
-    # were returned with null start/end/banner from the skip logic)
+    # Merge existing detail data back into events whose current article lacks
+    # dates. Use canonical identity so renamed status variants retain the
+    # schedule even when the original announcement disappears from the list.
+    existing_by_key = {}
+    for title, existing_data in existing.items():
+        try:
+            event_type = EventType(existing_data.get("type", EventType.UNKNOWN.value))
+        except ValueError:
+            event_type = EventType.UNKNOWN
+        existing_by_key[_canonical_event_key(title, event_type)] = existing_data
+
     for e in events:
-        if e.title in existing and e.start_time is None and e.end_time is None:
-            existing_data = existing[e.title]
+        if e.start_time is None and e.end_time is None:
+            existing_data = existing.get(e.title) or existing_by_key.get(
+                _canonical_event_key(e.title, e.type)
+            )
+            if not existing_data:
+                continue
             # Parse stored ISO strings back into datetime objects
             start_str = existing_data.get("start_time")
             end_str = existing_data.get("end_time")
@@ -681,17 +725,40 @@ async def check_and_save(json_path: str) -> bool:
                 e.banner_image = existing_data.get("banner_image")
             logger.debug(f"Merged existing detail data for '{e.title[:50]}'")
 
-    # Collect existing notified_clubs data keyed by title
-    merged_notified = {}
+    # Collect existing notified_clubs data by canonical event identity so
+    # announcement-status variants share notification history.
+    notified_by_key = {}
     for title, existing_data in existing.items():
         clubs = existing_data.get("notified_clubs", [])
         if clubs:
-            merged_notified[title] = clubs
+            try:
+                event_type = EventType(existing_data.get("type", EventType.UNKNOWN.value))
+            except ValueError:
+                event_type = EventType.UNKNOWN
+            key = _canonical_event_key(title, event_type)
+            notified_by_key.setdefault(key, [])
+            for club_key in clubs:
+                if club_key not in notified_by_key[key]:
+                    notified_by_key[key].append(club_key)
 
-    current = {e.title for e in events}
-    new_titles = current - known_titles
-    if new_titles:
-        logger.info(f"New event(s): {', '.join(new_titles)}")
+    merged_notified = {
+        e.title: notified_by_key.get(_canonical_event_key(e.title, e.type), [])
+        for e in events
+    }
+
+    known_event_keys = set()
+    for title in known_titles:
+        existing_data = existing.get(title, {})
+        try:
+            event_type = EventType(existing_data.get("type", EventType.UNKNOWN.value))
+        except ValueError:
+            event_type = EventType.UNKNOWN
+        known_event_keys.add(_canonical_event_key(title, event_type))
+
+    current_keys = {_canonical_event_key(e.title, e.type) for e in events}
+    new_keys = current_keys - known_event_keys
+    if new_keys:
+        logger.info(f"New event(s): {', '.join(e.title for e in events if _canonical_event_key(e.title, e.type) in new_keys)}")
         _save_events(events, json_path, merged_notified=merged_notified)
         return True
     else:
