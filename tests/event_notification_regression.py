@@ -85,6 +85,14 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
         saved = json.loads(self.events_path.read_text(encoding="utf-8"))
         self.assertEqual(saved["events"][0]["notified_clubs"], [])
 
+    def test_event_display_name_removes_announcement_status(self):
+        self.assertEqual(
+            self.tasks._event_display_name(
+                'The story event "Wings of Steam and Steel" is coming soon!'
+            ),
+            '"Wings of Steam and Steel"',
+        )
+
     async def test_daily_scraper_waits_for_the_same_event_lock(self):
         scrape = AsyncMock(return_value=False)
 

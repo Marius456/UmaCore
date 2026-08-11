@@ -5,6 +5,7 @@ import discord
 from discord.ext import tasks
 import json as json_mod
 import os
+import re
 from datetime import datetime, date, timedelta
 from typing import Optional
 import logging
@@ -401,6 +402,17 @@ class BotTasks:
 
     # ── Event Notification Helpers ─────────────────────────────────────
 
+    @staticmethod
+    def _event_display_name(title: str) -> str:
+        """Remove announcement status text from an event title used in alerts."""
+        title = re.sub(
+            r"\s+(?:is coming soon|is here|has ended|out now)!?$",
+            "",
+            title.strip(),
+            flags=re.IGNORECASE,
+        )
+        return re.sub(r"^The (?:story|race) event\s+", "", title, flags=re.IGNORECASE)
+
     async def _notify_events_for_club(self, club: Club, event: dict, notif_type: str) -> bool:
         """
         Send an event notification embed to a club's events channel.
@@ -425,6 +437,7 @@ class BotTasks:
             return False
 
         title = event.get("title", "Unknown event")
+        display_name = self._event_display_name(title)
         event_url = event.get("url", "")
         banner_image = event.get("banner_image")
 
@@ -441,7 +454,7 @@ class BotTasks:
                 color=discord.Color.blue(),
                 timestamp=discord.utils.utcnow()
             )
-            embed.add_field(name="📰 Event", value=title, inline=False)
+            embed.add_field(name="📰 Event", value=display_name, inline=False)
             embed.add_field(
                 name="📅 Starts",
                 value=f"<t:{int(start_dt.timestamp())}:F> (<t:{int(start_dt.timestamp())}:R>)",
@@ -460,7 +473,7 @@ class BotTasks:
                 color=discord.Color.red(),
                 timestamp=discord.utils.utcnow()
             )
-            embed.add_field(name="📰 Event", value=title, inline=False)
+            embed.add_field(name="📰 Event", value=display_name, inline=False)
             embed.add_field(
                 name="📅 Ends",
                 value=f"<t:{int(end_dt.timestamp())}:F> (<t:{int(end_dt.timestamp())}:R>)",
