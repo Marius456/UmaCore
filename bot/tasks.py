@@ -38,6 +38,9 @@ class BotTasks:
         self.last_runs = {}
         # Serializes event scraping with notification reads/writes of events.json.
         self._events_lock = asyncio.Lock()
+        # Prevents duplicate Discord posts if a successful send is followed by
+        # a transient failure while persisting the deduplication state.
+        self._sent_event_notifications = set()
 
         logger.info("Multi-club tasks configured - will check all clubs hourly")
 
@@ -441,6 +444,11 @@ class BotTasks:
         display_name = self._event_display_name(title)
         event_url = event.get("url", "")
         banner_image = event.get("banner_image")
+        event_key = event.get("event_key") or display_name.lower()
+        notification_key = f"{event_key}:{club.club_id}:{notif_type}"
+        if notification_key in self._sent_event_notifications:
+            logger.debug(f"Notification already sent in this run for '{event_key}' ({notif_type})")
+            return False
 
         if notif_type == "starting":
             try:
@@ -493,18 +501,23 @@ class BotTasks:
             # Uses "{club_id}_{notif_type}" format to distinguish starting vs ending notifications
             notified_clubs.append(dedup_key)
             event["notified_clubs"] = notified_clubs
-            self._save_events_json()
+            self._sent_event_notifications.add(notification_key)
+            if not self._save_events_json():
+                logger.warning(
+                    f"Sent {notif_type} notification for '{title[:60]}', "
+                    "but failed to persist its deduplication state"
+                )
             logger.info(f"Sent {notif_type} notification to {club.club_name}: '{title[:60]}'")
             return True
         except Exception as e:
             logger.error(f"Error sending {notif_type} notification to {club.club_name}: {e}", exc_info=True)
             return False
 
-    def _save_events_json(self) -> None:
+    def _save_events_json(self) -> bool:
         """Save the current in-memory events data back to the JSON file."""
         try:
             if not hasattr(self, '_events_data') or not self._events_data:
-                return
+                return False
             directory = os.path.dirname(EVENTS_JSON_PATH) or "."
             temp_path = None
             try:
@@ -525,8 +538,10 @@ class BotTasks:
             finally:
                 if temp_path and os.path.exists(temp_path):
                     os.unlink(temp_path)
+            return True
         except Exception as e:
             logger.error(f"Failed to save events JSON: {e}")
+            return False
 
     # ── Event Notifications ────────────────────────────────────────────
 

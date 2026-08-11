@@ -606,6 +606,7 @@ def _save_events(events: List[Event], path: str, merged_notified: Optional[dict[
         "events": [
             {
                 "title": e.title,
+                "event_key": _canonical_event_key(e.title, e.type),
                 "type": e.type.value,
                 "start_time": e.start_time.isoformat() if e.start_time else None,
                 "end_time": e.end_time.isoformat() if e.end_time else None,

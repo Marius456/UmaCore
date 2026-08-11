@@ -93,6 +93,20 @@ class OfficialEventTimeParsingTests(unittest.TestCase):
             self.assertEqual(saved["events"][0]["end_time"], "2026-08-10T21:59:00+00:00")
             self.assertEqual(saved["events"][0]["notified_clubs"], ["club-1_starting"])
 
+    def test_saved_event_has_a_stable_canonical_key(self):
+        event = Event(
+            title='The story event "Wings of Steam and Steel" is coming soon!',
+            type=EventType.STORY_EVENT,
+            start_time=None,
+            end_time=None,
+            url="https://umamusume.com/news/914",
+        )
+
+        self.assertEqual(
+            _canonical_event_key(event.title, event.type),
+            "story_event:wings of steam and steel",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

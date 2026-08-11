@@ -89,6 +89,19 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
             await self.tasks.event_notifications()
             self.channel.send.assert_not_awaited()
 
+    async def test_successful_send_is_not_repeated_when_state_persistence_fails(self):
+        self.write_events([self.event(start_hours=1, end_hours=72)])
+
+        with (
+            patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)),
+            patch("bot.tasks.Club.get_all_active", new=AsyncMock(return_value=[self.club])),
+            patch.object(self.tasks, "_save_events_json", return_value=False),
+        ):
+            await self.tasks.event_notifications()
+            await self.tasks.event_notifications()
+
+        self.channel.send.assert_awaited_once()
+
     async def test_ended_event_does_not_send_or_record_an_ending_notification(self):
         self.write_events([self.event(start_hours=-48, end_hours=-1)])
 
