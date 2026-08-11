@@ -118,7 +118,7 @@ class AuthorCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in stats command: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.", ephemeral=True)
 
     @staticmethod
     def _format_uptime(uptime) -> str:

@@ -116,7 +116,7 @@ class UmamusumeBot(commands.Bot):
             await ctx.send(f"❌ Missing required argument: {error.param}")
         else:
             logger.error(f"Command error: {error}", exc_info=error)
-            await ctx.send(f"❌ An error occurred: {str(error)}")
+            await ctx.send("❌ An unexpected error occurred. Please try again later.")
     
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         """Global error handler for slash commands"""
@@ -134,7 +134,7 @@ class UmamusumeBot(commands.Bot):
             logger.warning(f"User {interaction.user} (ID: {interaction.user.id}) failed check for /{interaction.command.name}: {error}")
         else:
             logger.error(f"Slash command error in /{interaction.command.name}: {error}", exc_info=error)
-            msg = f"❌ An error occurred: {str(error)}"
+            msg = "❌ An unexpected error occurred. Please try again later."
 
         try:
             if interaction.response.is_done():

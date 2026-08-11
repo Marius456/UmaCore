@@ -46,7 +46,7 @@ class QuotaCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in set_report_channel: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="set_alert_channel", description="Set the channel for alerts (kicks, warnings)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -69,7 +69,7 @@ class QuotaCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in set_alert_channel: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="channel_settings", description="View current channel configuration")
     @app_commands.checks.has_permissions(administrator=True)
@@ -146,7 +146,7 @@ class QuotaCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in channel_settings: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="quota", description="Set the daily quota requirement (from today onwards)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -227,7 +227,7 @@ class QuotaCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in set_quota: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="quota_history", description="View quota history for current month")
     @app_commands.checks.has_permissions(administrator=True)
@@ -281,7 +281,7 @@ class QuotaCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in quota_history: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="force_check", description="Manually trigger a quota check and report")
     @app_commands.checks.has_permissions(administrator=True)
@@ -382,7 +382,7 @@ class QuotaCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in force_check: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="member_status", description="View status of a specific member")
     @app_commands.default_permissions(send_messages=True)
@@ -440,7 +440,7 @@ class QuotaCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in member_status: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="add_member", description="Manually add a new member")
     @app_commands.checks.has_permissions(administrator=True)
@@ -474,7 +474,7 @@ class QuotaCommands(commands.Cog):
             await interaction.followup.send("❌ Invalid date format. Use YYYY-MM-DD")
         except Exception as e:
             logger.error(f"Error in add_member: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="deactivate_member", description="Manually deactivate a member (won't auto-reactivate)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -514,7 +514,7 @@ class QuotaCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in deactivate_member: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="activate_member", description="Manually reactivate a deactivated member")
     @app_commands.checks.has_permissions(administrator=True)
@@ -547,7 +547,7 @@ class QuotaCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in activate_member: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
 
 async def setup(bot):

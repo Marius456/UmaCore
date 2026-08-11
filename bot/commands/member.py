@@ -104,7 +104,7 @@ class MemberCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in link_trainer: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.", ephemeral=True)
     
     @app_commands.command(name="unlink", description="Unlink your Discord account from your trainer")
     async def unlink(self, interaction: discord.Interaction):
@@ -142,7 +142,7 @@ class MemberCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in unlink: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.", ephemeral=True)
     
     @app_commands.command(name="notification_settings", description="Manage your notification preferences")
     async def notification_settings(self, interaction: discord.Interaction, 
@@ -215,7 +215,7 @@ class MemberCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in notification_settings: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.", ephemeral=True)
     
     @app_commands.command(name="my_status", description="View your own quota status")
     async def my_status(self, interaction: discord.Interaction):
@@ -236,7 +236,7 @@ class MemberCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in my_status: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="member_status", description="View status of a specific member")
     async def member_status(self, interaction: discord.Interaction, trainer_name: str, club: str):
@@ -259,7 +259,7 @@ class MemberCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in member_status: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     async def _send_member_status(self, interaction: discord.Interaction, member: Member):
         """Send a detailed status embed for a member"""

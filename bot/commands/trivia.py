@@ -299,7 +299,7 @@ class TriviaCommands(commands.Cog):
             await interaction.followup.send(embed=embed)
         except Exception as e:
             logger.error(f"Error in leaderboard command: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error fetching leaderboard: {str(e)}")
+            await interaction.followup.send("❌ Unable to fetch the leaderboard right now. Please try again later.")
 
     @trivia.command(name="add", description="Add a trivia question (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -346,7 +346,7 @@ class TriviaCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error adding trivia question: {e}", exc_info=True)
             await interaction.followup.send(
-                f"❌ Failed to add question: {str(e)}",
+                "❌ Failed to add the question. Please try again later.",
                 ephemeral=True
             )
 
@@ -362,7 +362,7 @@ class TriviaCommands(commands.Cog):
             logger.error(f"Unexpected error in add_question: {error}", exc_info=True)
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    f"❌ An unexpected error occurred: {str(error)}",
+                "❌ An unexpected error occurred. Please try again later.",
                     ephemeral=True
                 )
 
@@ -400,7 +400,7 @@ class TriviaCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error listing trivia questions: {e}", exc_info=True)
             await interaction.followup.send(
-                f"❌ Failed to fetch questions: {str(e)}", ephemeral=True
+                "❌ Failed to fetch questions. Please try again later.", ephemeral=True
             )
 
     @trivia.command(name="delete", description="Delete a trivia question (Admin only)")
@@ -424,7 +424,7 @@ class TriviaCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error deleting trivia question #{question_id}: {e}", exc_info=True)
             await interaction.followup.send(
-                f"❌ Failed to delete question: {str(e)}", ephemeral=True
+                "❌ Failed to delete the question. Please try again later.", ephemeral=True
             )
 
 

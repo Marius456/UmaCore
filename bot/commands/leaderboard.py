@@ -103,13 +103,13 @@ class LeaderboardCommands(commands.Cog):
 
         except ValueError as e:
             logger.warning(f"leaderboard_report data error: {e}")
-            await interaction.followup.send(f"❌ {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
         except Exception as e:
             logger.error(
                 f"Error in leaderboard_report for {club}: {e}", exc_info=True
             )
             await interaction.followup.send(
-                f"❌ An error occurred while generating the report: {str(e)}"
+                "❌ An unexpected error occurred while generating the report. Please try again later."
             )
 
     @app_commands.command(
@@ -168,13 +168,13 @@ class LeaderboardCommands(commands.Cog):
 
         except ValueError as e:
             logger.warning(f"club_highscores data error: {e}")
-            await interaction.followup.send(f"❌ {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
         except Exception as e:
             logger.error(
                 f"Error in club_highscores for {club}: {e}", exc_info=True
             )
             await interaction.followup.send(
-                f"❌ An error occurred while generating highscores: {str(e)}"
+                "❌ An unexpected error occurred while generating highscores. Please try again later."
             )
 
     club_highscores.autocomplete("club")(club_autocomplete)

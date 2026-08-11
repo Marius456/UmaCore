@@ -243,7 +243,7 @@ class ClubManagementCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in add_club: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="remove_club", description="Permanently delete a club (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -301,7 +301,7 @@ class ClubManagementCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in remove_club: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="activate_club", description="Reactivate a club (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -346,7 +346,7 @@ class ClubManagementCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in activate_club: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="list_clubs", description="View all registered clubs")
     async def list_clubs(self, interaction: discord.Interaction):
@@ -404,7 +404,7 @@ class ClubManagementCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in list_clubs: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="edit_club", description="Edit club settings (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -529,7 +529,7 @@ class ClubManagementCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in edit_club: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     # Autocomplete for club parameter
     remove_club.autocomplete('club')(club_autocomplete)

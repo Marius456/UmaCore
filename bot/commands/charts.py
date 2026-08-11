@@ -275,7 +275,7 @@ class ChartCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in progress_chart: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     progress_chart.autocomplete("club")(club_autocomplete)
 
@@ -420,7 +420,7 @@ class ChartCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in previous_month: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     previous_month.autocomplete("club")(club_autocomplete)
 

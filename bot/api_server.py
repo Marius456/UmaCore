@@ -199,7 +199,7 @@ async def handle_sync(request: web.Request) -> web.StreamResponse:
 
     except Exception as e:
         logger.error(f"Web sync failed for {club.club_name}: {e}", exc_info=True)
-        error = str(e)
+        error = "Sync failed. Please try again later."
 
     if error:
         return await _send_json(request, {'error': error}, status=500)

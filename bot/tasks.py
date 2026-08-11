@@ -295,7 +295,7 @@ class BotTasks:
                     logger.error(f"❌ Error processing scraped data for {club.club_name}: {e}", exc_info=True)
                     error_embed = self.report_generator.create_error_report(
                         club.club_name,
-                        f"Data processing failed: {str(e)}"
+                        "Data processing failed. Please try again later."
                     )
                     await report_channel.send(embed=error_embed)
                     return
@@ -335,7 +335,7 @@ class BotTasks:
                     logger.error(f"❌ Error generating/sending daily report for {club.club_name}: {e}", exc_info=True)
                     error_embed = self.report_generator.create_error_report(
                         club.club_name,
-                        f"Failed to generate daily report: {str(e)}"
+                        "Failed to generate the daily report. Please try again later."
                     )
                     await report_channel.send(embed=error_embed)
 
@@ -392,7 +392,7 @@ class BotTasks:
                 if report_channel:
                     error_embed = self.report_generator.create_error_report(
                         club.club_name,
-                        f"Fatal error during daily check: {str(e)}"
+                        "The daily check failed unexpectedly. Please try again later."
                     )
                     await report_channel.send(embed=error_embed)
             except Exception:

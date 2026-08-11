@@ -64,7 +64,7 @@ class SettingsCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in set_report_channel: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="set_alert_channel", description="Set the channel for alerts (kicks, warnings)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -96,7 +96,7 @@ class SettingsCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in set_alert_channel: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="channel_settings", description="View current channel configuration")
     @app_commands.checks.has_permissions(administrator=True)
@@ -237,7 +237,7 @@ class SettingsCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in channel_settings: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="post_monthly_info", description="Post the monthly info board (auto-updates)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -294,7 +294,7 @@ class SettingsCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in post_monthly_info: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="set_leaderboard_channel", description="Set the channel for daily leaderboard news reports")
     @app_commands.checks.has_permissions(administrator=True)
@@ -326,7 +326,7 @@ class SettingsCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in set_leaderboard_channel: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="set_events_channel", description="Set the channel for event starting/ending-soon notifications")
     @app_commands.checks.has_permissions(administrator=True)
@@ -358,7 +358,7 @@ class SettingsCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in set_events_channel: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     # Apply autocomplete
     set_report_channel.autocomplete('club')(club_autocomplete)

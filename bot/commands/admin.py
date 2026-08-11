@@ -153,7 +153,7 @@ class AdminCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in set_quota: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="update_monthly_info", description="Update the monthly info board")
     @app_commands.checks.has_permissions(administrator=True)
@@ -206,7 +206,7 @@ class AdminCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in update_monthly_info: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="quota_history", description="View quota changes this month")
     @app_commands.checks.has_permissions(administrator=True)
@@ -272,7 +272,7 @@ class AdminCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in quota_history: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="delete_quota", description="Delete a specific quota requirement entry by date and amount")
     @app_commands.checks.has_permissions(administrator=True)
@@ -335,7 +335,7 @@ class AdminCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in delete_quota: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="force_check", description="Manually trigger a quota check and report")
     @app_commands.checks.has_permissions(administrator=True)
@@ -476,7 +476,7 @@ class AdminCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in force_check: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="add_member", description="Manually add a new member")
     @app_commands.checks.has_permissions(administrator=True)
@@ -516,7 +516,7 @@ class AdminCommands(commands.Cog):
             await interaction.followup.send("❌ Invalid date format. Use YYYY-MM-DD")
         except Exception as e:
             logger.error(f"Error in add_member: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="deactivate_member", description="Manually deactivate a member")
     @app_commands.checks.has_permissions(administrator=True)
@@ -564,7 +564,7 @@ class AdminCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in deactivate_member: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="activate_member", description="Reactivate a member")
     @app_commands.checks.has_permissions(administrator=True)
@@ -606,7 +606,7 @@ class AdminCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in activate_member: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="recalculate", description="Recalculate days-behind counts from current history")
     @app_commands.checks.has_permissions(administrator=True)
@@ -678,7 +678,7 @@ class AdminCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in recalculate: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     # Register autocomplete for all club arguments
     set_quota.autocomplete('club')(club_autocomplete)
