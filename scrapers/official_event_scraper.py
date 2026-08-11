@@ -367,8 +367,11 @@ async def _collect_article_cards(page: Page) -> List[Tuple[str, str]]:
     """
     cards = []
 
-    # Try several selectors for article cards
+    # The current site links directly to numeric article paths such as
+    # ``/news/914``. Keep the older selectors as fallbacks because the site
+    # has changed its card markup more than once.
     for selector in [
+        "a[href^='/news/']",
         "a[class*='newsList_cardLink']",
         "a[class*='card']",
         "article a",
@@ -392,6 +395,18 @@ async def _collect_article_cards(page: Page) -> List[Tuple[str, str]]:
                 href = await link.get_attribute("href") or ""
                 if href and not href.startswith("http"):
                     href = f"https://umamusume.com{href}"
+
+                # Exclude the news index, pagination links, and unrelated
+                # navigation cards. Article pages currently use /news/<id>.
+                if not re.search(
+                    r"^https://umamusume\.com/news/(?:article/)?\d+/?(?:[?#].*)?$",
+                    href,
+                    re.IGNORECASE,
+                ):
+                    continue
+
+                if any(existing_url == href for _, existing_url in cards):
+                    continue
                 cards.append((title, href))
             except Exception:
                 continue
