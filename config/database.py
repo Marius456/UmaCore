@@ -228,6 +228,7 @@ class Database:
             join_date DATE NOT NULL,
             is_active BOOLEAN DEFAULT TRUE,
             manually_deactivated BOOLEAN DEFAULT FALSE,
+            missing_scrapes INTEGER NOT NULL DEFAULT 0,
             last_seen DATE NOT NULL,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -266,6 +267,18 @@ class Database:
             ) THEN
                 ALTER TABLE members ADD COLUMN manually_deactivated BOOLEAN DEFAULT FALSE;
                 RAISE NOTICE 'Added manually_deactivated column';
+            END IF;
+        END $$;
+
+        -- Migration: Add missing scrape tracking for safe auto-deactivation
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name='members' AND column_name='missing_scrapes'
+            ) THEN
+                ALTER TABLE members ADD COLUMN missing_scrapes INTEGER NOT NULL DEFAULT 0;
+                RAISE NOTICE 'Added missing_scrapes column';
             END IF;
         END $$;
         

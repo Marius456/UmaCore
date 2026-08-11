@@ -133,17 +133,40 @@ class QuotaCalculator:
         return False
     
     async def _auto_deactivate_missing_members(self, club_id: UUID, scraped_trainer_ids: Set[str]):
-        """Auto-deactivate members who are no longer in the scraped data"""
+        """Safely deactivate members absent from several complete scrapes."""
         active_members = await Member.get_all_active(club_id)
+
+        if not active_members:
+            return
+
+        # A partial response must never be treated as a roster update. Allowing
+        # a small amount of roster churn still lets legitimate departures be
+        # detected, while protecting against truncated API responses.
+        minimum_expected = max(1, math.ceil(len(active_members) * 0.8))
+        if len(scraped_trainer_ids) < minimum_expected:
+            logger.warning(
+                "Skipping auto-deactivation for club %s: scrape returned %d members, "
+                "but at least %d of %d active members were expected",
+                club_id, len(scraped_trainer_ids), minimum_expected, len(active_members),
+            )
+            return
         
         deactivated_count = 0
         for member in active_members:
             member_key = member.trainer_id if member.trainer_id else member.trainer_name
             
             if member_key not in scraped_trainer_ids:
+                missing_count = await member.record_missing_scrape()
+                if missing_count < 3:
+                    logger.info(
+                        "Member %s missing from validated scrape (%d/3); retaining active status",
+                        member.trainer_name, missing_count,
+                    )
+                    continue
+
                 await member.deactivate(manual=False)
                 deactivated_count += 1
-                logger.info(f"Auto-deactivated member (no longer in club): {member.trainer_name}")
+                logger.info(f"Auto-deactivated member (missing from 3 validated scrapes): {member.trainer_name}")
         
         if deactivated_count > 0:
             logger.info(f"Auto-deactivated {deactivated_count} member(s) who left the club")
