@@ -541,7 +541,8 @@ class BotTasks:
         and send notifications to each club's events channel before those events occur.
 
         Uses 'notified_clubs' per-event list (persisted in JSON) for dedup.
-        Checks upcoming events within the next 36 hours.
+        Checks upcoming events within the next 36 hours for starts and the next
+        24 hours for ending alerts.
         """
         logger.info("=" * 80)
         logger.info("Event notifications - checking events.json...")
@@ -589,8 +590,8 @@ class BotTasks:
                         if end_dt.tzinfo is None:
                             end_dt = end_dt.replace(tzinfo=pytz.UTC)
                         remaining = (end_dt - now).total_seconds()
-                        # Within 36 hours in the future; never alert after an event ends.
-                        if 0 <= remaining <= 129600:
+                        # Within 24 hours in the future; never alert after an event ends.
+                        if 0 <= remaining <= 86400:
                             for club in clubs:
                                 await self._notify_events_for_club(club, event, "ending")
                     except (ValueError, TypeError):

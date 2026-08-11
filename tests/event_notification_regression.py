@@ -72,6 +72,23 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
             ["club-1_starting", "club-1_ending"],
         )
 
+    async def test_ending_notification_uses_a_true_24_hour_threshold(self):
+        within_24_hours = self.event(start_hours=48, end_hours=23)
+        outside_24_hours = self.event(start_hours=48, end_hours=25)
+
+        with (
+            patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)),
+            patch("bot.tasks.Club.get_all_active", new=AsyncMock(return_value=[self.club])),
+        ):
+            self.write_events([within_24_hours])
+            await self.tasks.event_notifications()
+            self.assertEqual(self.channel.send.await_count, 1)
+
+            self.channel.send.reset_mock()
+            self.write_events([outside_24_hours])
+            await self.tasks.event_notifications()
+            self.channel.send.assert_not_awaited()
+
     async def test_ended_event_does_not_send_or_record_an_ending_notification(self):
         self.write_events([self.event(start_hours=-48, end_hours=-1)])
 
