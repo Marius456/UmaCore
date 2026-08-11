@@ -119,7 +119,7 @@ def _parse_date_jst(text: str) -> Optional[datetime]:
 
     # English format with am/pm -> UTC (already UTC)
     en_match = re.match(
-        r'(\d{1,2}[:]\d{2})\s*[ap]\.?m\.,\s*'
+        r'(\d{1,2}[:]\d{2}\s*[ap]\.?m\.),\s*'
         r'([A-Z][a-z]+)\s+(\d{1,2}),\s*(\d{4})',
         text, re.IGNORECASE
     )
