@@ -34,18 +34,25 @@ class BotTasks:
 
         # Track last run per club per day (club_id_YYYY-MM-DD -> True)
         self.last_runs = {}
+        # Serializes event scraping with notification reads/writes of events.json.
+        self._events_lock = asyncio.Lock()
 
         logger.info("Multi-club tasks configured - will check all clubs hourly")
 
     def start_tasks(self):
         """Start all scheduled tasks"""
         self.hourly_check.start()
+        self.hourly_event_notifications.start()
         self.daily_official_events_check.start()
-        logger.info("Scheduled tasks started (hourly check, daily official events)")
+        logger.info(
+            "Scheduled tasks started (hourly reports, hourly event notifications, "
+            "daily official event scraping)"
+        )
 
     def stop_tasks(self):
         """Stop all scheduled tasks"""
         self.hourly_check.cancel()
+        self.hourly_event_notifications.cancel()
         self.daily_official_events_check.cancel()
         logger.info("Scheduled tasks stopped")
 
@@ -492,9 +499,14 @@ class BotTasks:
     # ── Event Notifications ────────────────────────────────────────────
 
     async def event_notifications(self):
+        """Serialize event notification checks with official-event scraping."""
+        async with self._events_lock:
+            await self._event_notifications_locked()
+
+    async def _event_notifications_locked(self):
         """
         Check events.json for events starting or ending within 1.5 days
-        and send notifications to each club's events channel.
+        and send notifications to each club's events channel before those events occur.
 
         Uses 'notified_clubs' per-event list (persisted in JSON) for dedup.
         Checks upcoming events within the next 36 hours.
@@ -545,8 +557,8 @@ class BotTasks:
                         if end_dt.tzinfo is None:
                             end_dt = end_dt.replace(tzinfo=pytz.UTC)
                         remaining = (end_dt - now).total_seconds()
-                        # Within 36 hours in the future OR already ended within last 36h
-                        if -129600 <= remaining <= 129600:
+                        # Within 36 hours in the future; never alert after an event ends.
+                        if 0 <= remaining <= 129600:
                             for club in clubs:
                                 await self._notify_events_for_club(club, event, "ending")
                     except (ValueError, TypeError):
@@ -557,6 +569,17 @@ class BotTasks:
 
     # ── Daily Official Events Scraper Task ─────────────────────────────
 
+    @tasks.loop(hours=1)
+    async def hourly_event_notifications(self):
+        """Check saved events hourly and post due notifications."""
+        await self.event_notifications()
+
+    @hourly_event_notifications.before_loop
+    async def before_hourly_event_notifications(self):
+        """Wait for Discord readiness before checking event notifications."""
+        await self.bot.wait_until_ready()
+        logger.info("Bot ready, hourly event notification loop starting")
+
     @tasks.loop(hours=24)
     async def daily_official_events_check(self):
         """
@@ -566,8 +589,7 @@ class BotTasks:
         Runs once per day, checks for new event articles by comparing
         event titles against the previously-saved JSON file.
         
-        If new events are found, immediately notify all clubs so they
-        don't miss events that started before the scraped_at time.
+        Event notifications run independently every hour against the saved data.
         """
         logger.info("=" * 80)
         logger.info("Daily official events check - scraping news page...")
@@ -575,7 +597,8 @@ class BotTasks:
 
         try:
             logger.info(f"Checking for new official events → {EVENTS_JSON_PATH}")
-            changed = await check_and_save_official_events(EVENTS_JSON_PATH)
+            async with self._events_lock:
+                changed = await check_and_save_official_events(EVENTS_JSON_PATH)
 
             if changed:
                 logger.info("✅ New official events detected and saved to JSON")
@@ -584,9 +607,6 @@ class BotTasks:
         except Exception as e:
             logger.error(f"Error in daily_official_events_check: {e}", exc_info=True)
             return
-
-        # Notify clubs about events that are starting/ending within 1.5 days
-        await self.event_notifications()
 
     @daily_official_events_check.before_loop
     async def before_daily_official_events_check(self):
