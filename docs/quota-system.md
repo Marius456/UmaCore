@@ -65,7 +65,7 @@ At the start of each month, the bot automatically detects when fan counts drop s
 - Clears tracking data
 - Starts fresh for the new month
 
-You can also trigger it manually with `/reset_month` if something went wrong.
+If the automatic detection reports an incorrect reset, review the scrape data and correct the underlying configuration before running another check.
 
 ---
 
@@ -154,7 +154,7 @@ If `/quota` is run multiple times in a single day, the most recently set value t
 
 #### Automatic Reset Detection
 
-The bot detects a reset when a member's fan count drops to less than 50% of their previous recorded total. This handles the in-game monthly reset without any manual intervention. If a reset is incorrectly triggered, use `/reset_month` to force a clean state.
+The bot detects a reset when a member's fan count drops to less than 50% of their previous recorded total. This handles the in-game monthly reset without manual intervention.
 
 #### No Previous Data (First Ever Scrape)
 

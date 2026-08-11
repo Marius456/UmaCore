@@ -337,7 +337,7 @@ class ChartCommands(commands.Cog):
                 monthly_target = quota
                 quota_source = f"provided ({quota:,})"
             else:
-                # Try DB — may fall back to club default if reset_month wiped the history
+                # Try DB, falling back to the club default when no requirement exists
                 last_day = date(prev_year, prev_month, days_in_month)
                 daily_quota = await QuotaRequirement.get_quota_for_date(club_obj.club_id, last_day)
                 monthly_target = daily_quota * days_in_month

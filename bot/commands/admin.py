@@ -680,52 +680,6 @@ class AdminCommands(commands.Cog):
             logger.error(f"Error in recalculate: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)}")
 
-    @app_commands.command(name="reset_month", description="Manually trigger monthly reset: clears all history and quota requirements")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def reset_month(self, interaction: discord.Interaction, club: str):
-        """Manually reset all monthly data for a club (for use when auto-reset fails)"""
-        await interaction.response.defer()
-
-        try:
-            club_obj = await Club.get_by_name(club)
-            if not club_obj:
-                await interaction.followup.send(f"❌ Club '{club}' not found")
-                return
-
-            if not club_obj.belongs_to_guild(interaction.guild_id):
-                await interaction.followup.send(f"❌ Club '{club}' is not registered in this server.")
-                return
-
-            from config.database import db as _db
-
-            await _db.execute("DELETE FROM quota_history WHERE club_id = $1", club_obj.club_id)
-            await _db.execute("DELETE FROM quota_requirements WHERE club_id = $1", club_obj.club_id)
-            await _db.execute(
-                "UPDATE members SET manually_deactivated = FALSE WHERE club_id = $1 AND manually_deactivated = TRUE",
-                club_obj.club_id
-            )
-
-            embed = discord.Embed(
-                title=f"🔄 Monthly Reset Complete - {club}",
-                description=(
-                    "All monthly data has been cleared.\n\n"
-                    "**Cleared:**\n"
-                    "• All quota history\n"
-                    "• All quota requirements\n"
-                    "• Manual deactivation flags\n\n"
-                    f"Run `/force_check club:{club}` to populate fresh data."
-                ),
-                color=discord.Color.orange(),
-                timestamp=discord.utils.utcnow()
-            )
-            embed.set_footer(text=f"Reset by {interaction.user}")
-            await interaction.followup.send(embed=embed)
-            logger.warning(f"Manual monthly reset performed for {club} by {interaction.user}")
-
-        except Exception as e:
-            logger.error(f"Error in reset_month: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
-
     # Register autocomplete for all club arguments
     set_quota.autocomplete('club')(club_autocomplete)
     update_monthly_info.autocomplete('club')(club_autocomplete)
@@ -736,7 +690,6 @@ class AdminCommands(commands.Cog):
     deactivate_member.autocomplete('club')(club_autocomplete)
     activate_member.autocomplete('club')(club_autocomplete)
     recalculate.autocomplete('club')(club_autocomplete)
-    reset_month.autocomplete('club')(club_autocomplete)
 
 
 async def setup(bot):

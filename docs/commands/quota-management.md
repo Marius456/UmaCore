@@ -60,15 +60,3 @@ Recalculate days-behind counts and bomb statuses based on existing data, without
 |---|---|---|
 | `club` | Yes | Club to recalculate |
 
----
-
-## /reset_month
-
-Manually trigger a monthly reset. Clears quota history, bombs, and tracking data for the new month.
-
-| Parameter | Required | Description |
-|---|---|---|
-| `club` | No | Specific club to reset (omit to reset all) |
-| `skip_confirmation` | No | Skip the confirmation prompt |
-
-> The bot normally handles monthly resets automatically when it detects fan counts have dropped significantly. Only use this if something went wrong.

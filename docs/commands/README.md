@@ -27,7 +27,6 @@ All commands are Discord slash commands (`/`).
 | `/delete_quota` | Admin | Remove a specific quota entry |
 | `/force_check` | Admin | Manually trigger daily check |
 | `/recalculate` | Admin | Recalculate bombs without clearing data |
-| `/reset_month` | Admin | Manually trigger monthly reset |
 | `/set_report_channel` | Admin | Set daily report channel |
 | `/set_alert_channel` | Admin | Set alert channel |
 | `/channel_settings` | Admin | View channel config |
