@@ -23,6 +23,7 @@ from config.database import db
 from config.settings import DATABASE_URL
 from models.club import Club
 from models.quota_history import QuotaHistory
+from scrapers import UmaMoeAPIScraper
 from services.leaderboard_report_service import LeaderboardReportService
 
 
@@ -79,10 +80,10 @@ async def dump_rankings(club_id, year, month, days: int = 5) -> str:
     return "\n".join(lines)
 
 
-async def generate_report(club_id, club_name, year, month) -> str:
+async def generate_report(club_id, club_name, year, month, tier_progress=None) -> str:
     """Run the full report pipeline and return markdown string."""
     embeds = await LeaderboardReportService.generate_leaderboard_report(
-        club_id, club_name, year, month
+        club_id, club_name, year, month, **(tier_progress or {})
     )
     main_embed = embeds[0]
 
@@ -152,7 +153,22 @@ async def main():
 
     try:
         print(f"📊 Generating report for {club_name} ({args.year}-{args.month:02d})...")
-        markdown = await generate_report(club_id, club_name, args.year, args.month)
+        tier_progress = None
+        if club and club.circle_id:
+            scraper = UmaMoeAPIScraper(club.circle_id)
+            tier_progress = await scraper.fetch_tier_progress(args.year, args.month)
+            if tier_progress is None:
+                logger.warning(
+                    "Live uma.moe tier progress unavailable; omitting Club Goal"
+                )
+
+        markdown = await generate_report(
+            club_id,
+            club_name,
+            args.year,
+            args.month,
+            tier_progress=tier_progress,
+        )
 
         if args.verbose:
             rankings_md = await dump_rankings(club_id, args.year, args.month, days=5)

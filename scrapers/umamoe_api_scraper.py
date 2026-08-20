@@ -283,6 +283,62 @@ class UmaMoeAPIScraper(BaseScraper):
             logger.warning(f"Direct API unexpected error for {year}-{month:02d}: {e}")
             return None
 
+    @staticmethod
+    def _extract_tier_progress(data: Optional[dict]) -> Optional[Dict[str, int]]:
+        """Return validated live tier distances from an uma.moe response."""
+        if not isinstance(data, dict):
+            return None
+        # Unlike rank metadata, uma.moe returns tier distances at the response
+        # root rather than inside the nested ``circle`` object.
+        fans_to_next_tier = data.get("fans_to_next_tier")
+        fans_to_lower_tier = data.get("fans_to_lower_tier")
+        values = (fans_to_next_tier, fans_to_lower_tier)
+
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in values
+        ):
+            return None
+        if fans_to_next_tier + fans_to_lower_tier <= 0:
+            return None
+
+        return {
+            "fans_to_next_tier": fans_to_next_tier,
+            "fans_to_lower_tier": fans_to_lower_tier,
+        }
+
+    async def fetch_tier_progress(
+        self, year: int, month: int
+    ) -> Optional[Dict[str, int]]:
+        """
+        Fetch the authoritative live tier distances from uma.moe.
+
+        The direct API is preferred. If both it and the existing Playwright
+        fallback fail, return None so callers can omit tier progress without
+        substituting an estimate.
+        """
+        data = await self._fetch_via_direct_api(year, month)
+        if data is None:
+            try:
+                data = await self._fetch_via_playwright(year, month)
+            except Exception as e:
+                logger.warning(
+                    "Unable to fetch uma.moe tier progress for %s-%02d: %s",
+                    year,
+                    month,
+                    e,
+                )
+                return None
+
+        tier_progress = self._extract_tier_progress(data)
+        if tier_progress is None:
+            logger.warning(
+                "Uma.moe returned missing or invalid tier progress for %s-%02d",
+                year,
+                month,
+            )
+        return tier_progress
+
     async def _fetch_via_playwright(self, year: int, month: int) -> dict:
         """
         Fetch API data using a persistent headless browser context (Playwright).
@@ -489,8 +545,13 @@ class UmaMoeAPIScraper(BaseScraper):
             self._monthly_rank = circle_data.get("monthly_rank")
             self._last_month_rank = circle_data.get("last_month_rank")
             self._yesterday_rank = circle_data.get("yesterday_rank")
-            self._fans_to_next_tier = circle_data.get("fans_to_next_tier")
-            self._fans_to_lower_tier = circle_data.get("fans_to_lower_tier")
+            tier_progress = self._extract_tier_progress(rank_source)
+            self._fans_to_next_tier = (
+                tier_progress["fans_to_next_tier"] if tier_progress else None
+            )
+            self._fans_to_lower_tier = (
+                tier_progress["fans_to_lower_tier"] if tier_progress else None
+            )
             logger.info(
                 f"Club ranks: monthly_rank={self._monthly_rank}, "
                 f"last_month_rank={self._last_month_rank}, "
@@ -517,6 +578,8 @@ class UmaMoeAPIScraper(BaseScraper):
                 self._monthly_rank = None
                 self._last_month_rank = None
                 self._yesterday_rank = None
+                self._fans_to_next_tier = None
+                self._fans_to_lower_tier = None
 
             if not primary_data or "members" not in primary_data:
                 logger.error("API response missing 'members' field")

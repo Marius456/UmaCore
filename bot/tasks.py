@@ -250,19 +250,17 @@ class BotTasks:
                     logger.info(f"Using scraper's data date: {current_date} (previous-month fallback)")
 
                 # Extract and persist club rank data
-                rank_data = None
                 monthly_rank = scraper.get_monthly_rank()
                 last_month_rank = scraper.get_last_month_rank()
                 yesterday_rank = scraper.get_yesterday_rank()
                 fans_to_next_tier = scraper.get_fans_to_next_tier()
                 fans_to_lower_tier = scraper.get_fans_to_lower_tier()
 
-                if monthly_rank is not None:
-                    try:
-                        await ClubRankHistory.save(club.club_id, current_date, monthly_rank, monthly_rank)
-                    except Exception as e:
-                        logger.error(f"Failed to save rank data for {club.club_name}: {e}", exc_info=True)
-
+                rank_data = None
+                if monthly_rank is not None or (
+                    fans_to_next_tier is not None
+                    and fans_to_lower_tier is not None
+                ):
                     rank_data = {
                         'monthly_rank': monthly_rank,
                         'last_month_rank': last_month_rank,
@@ -270,17 +268,24 @@ class BotTasks:
                         'fans_to_next_tier': fans_to_next_tier,
                         'fans_to_lower_tier': fans_to_lower_tier,
                     }
+
+                if monthly_rank is not None:
+                    try:
+                        await ClubRankHistory.save(club.club_id, current_date, monthly_rank, monthly_rank)
+                    except Exception as e:
+                        logger.error(f"Failed to save rank data for {club.club_name}: {e}", exc_info=True)
+
                     logger.info(
                         f"Rank data for {club.club_name}: "
                         f"monthly={monthly_rank}, yesterday={yesterday_rank}, "
                         f"last_month={last_month_rank}"
                     )
-                    if fans_to_next_tier is not None:
-                        logger.info(
-                            f"Tier progress for {club.club_name}: "
-                            f"fans_to_next_tier={fans_to_next_tier:,}, "
-                            f"fans_to_lower_tier={fans_to_lower_tier:,}"
-                        )
+                if fans_to_next_tier is not None:
+                    logger.info(
+                        f"Tier progress for {club.club_name}: "
+                        f"fans_to_next_tier={fans_to_next_tier:,}, "
+                        f"fans_to_lower_tier={fans_to_lower_tier:,}"
+                    )
 
                 # STEP 4: Process the scraped data
                 try:

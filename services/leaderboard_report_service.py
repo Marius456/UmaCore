@@ -302,7 +302,8 @@ class LeaderboardReportService:
                 arrow = "↑" if delta > 0 else "↓"
                 rank_str = f"\nRank: #{club_goal['monthly_rank']} {arrow}{abs(delta)} vs last month"
             goal_text = (
-                f"**Progress**: [{club_goal['bar']}] {club_goal['progress_pct']:.1f}%"
+                f"**Next tier**: [{club_goal['bar']}] {club_goal['progress_pct']:.1f}%"
+                f" · {cls._fmt_fans(club_goal['fans_to_next_tier'])} remaining"
                 f"{rank_str}"
             )
             add_field(name="📈 CLUB GOAL", value=goal_text)
@@ -1128,22 +1129,21 @@ class LeaderboardReportService:
         if not today_entries:
             return None
 
-        total_fans = sum(e["fans"] for e in today_entries)
+        tier_values = (fans_to_next_tier, fans_to_lower_tier)
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in tier_values
+        ):
+            return None
 
-        # Use real API tier data if available, otherwise fall back to estimate
-        if fans_to_next_tier is not None and fans_to_lower_tier is not None:
-            # Progress toward next tier: how far along we are between lower and next tier
-            # At the start of a tier, fans_to_lower_tier = 0, fans_to_next_tier = full gap
-            # As we progress, fans_to_lower_tier grows and fans_to_next_tier shrinks
-            total_tier_range = fans_to_next_tier + fans_to_lower_tier
-            if total_tier_range > 0:
-                progress_pct = min(100, round((fans_to_lower_tier / total_tier_range) * 100, 1))
-            else:
-                progress_pct = 0.0
-        else:
-            # Fallback: estimate S-rank target at roughly 3B for a 30-member club
-            s_rank_target = 3_000_000_000
-            progress_pct = min(100, round((total_fans / s_rank_target) * 100, 1))
+        # Uma.moe exposes the distances from the current total to both tier
+        # boundaries. Their sum is the complete range of the current tier.
+        total_tier_range = fans_to_next_tier + fans_to_lower_tier
+        if total_tier_range <= 0:
+            return None
+
+        total_fans = sum(e["fans"] for e in today_entries)
+        progress_pct = round((fans_to_lower_tier / total_tier_range) * 100, 1)
 
         filled = max(0, min(10, int((progress_pct / 100) * 10)))
         bar = "▰" * filled + "▱" * (10 - filled)

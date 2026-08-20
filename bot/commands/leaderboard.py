@@ -11,6 +11,7 @@ from discord.ext import commands
 import pytz
 
 from models import Club
+from scrapers import UmaMoeAPIScraper
 from services.leaderboard_report_service import LeaderboardReportService
 from services.highscore_service import HighscoreService
 
@@ -68,12 +69,26 @@ class LeaderboardCommands(commands.Cog):
             now = datetime.now(club_tz)
             year, month = now.year, now.month
 
+            tier_kwargs = {}
+            if club_obj.circle_id:
+                scraper = UmaMoeAPIScraper(club_obj.circle_id)
+                tier_progress = await scraper.fetch_tier_progress(year, month)
+                if tier_progress:
+                    tier_kwargs.update(tier_progress)
+                else:
+                    logger.warning(
+                        "Live uma.moe tier progress unavailable for %s; "
+                        "omitting Club Goal",
+                        club_obj.club_name,
+                    )
+
             # Generate the report embeds (overflow fields split into followup embeds)
             embeds = await LeaderboardReportService.generate_leaderboard_report(
                 club_obj.club_id,
                 club_obj.club_name,
                 year,
                 month,
+                **tier_kwargs,
             )
 
             # Send to the interaction channel
