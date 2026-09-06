@@ -16,7 +16,10 @@ import discord
 
 from config.settings import COLOR_INFO
 from models import QuotaHistory
-from services.prediction_store import save_predictions, load_predictions
+from services.prediction_store import (
+    load_prediction_snapshot,
+    save_prediction_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +163,9 @@ class LeaderboardReportService:
         club_activity = cls._compute_club_activity(daily_rankings, latest_date, member_count)
         mvp = cls._compute_club_mvp(king, tank, daily_leader, consistency, latest_date, today_records)
         funny_awards = cls._compute_funny_awards(daily_rankings, daily_deltas, latest_date)
-        yesterday_results = cls._compute_yesterday_results(daily_rankings, latest_date, club_name)
+        yesterday_results = cls._compute_yesterday_results(
+            daily_rankings, latest_date, club_id
+        )
         # Export predictions for tomorrow's "Yesterday's Calls" section
         predictions_for_export = [
             {
@@ -187,17 +192,10 @@ class LeaderboardReportService:
             if eta is not None:
                 milestone_etas[m.name] = eta
 
-        # Phase 3: Mood, rare achievements
+        # Phase 3: Mood
         mood = cls._determine_mood(movers, leader_change, len(overtakes))
-        rare_achievements = cls._compute_rare_achievements(daily_rankings, daily_deltas, club_record, latest_date)
-        all_awards = (funny_awards or []) + (rare_achievements or [])
         total_movers_count = len(movers.get("climbers", [])) + len(movers.get("fallers", []))
 
-        # Phase 4: Newsworthiness scoring
-        news_events = cls._compute_newsworthiness(
-            leader_change, overtakes, tank, king, today_records, club_record,
-            movers, milestones, rare_achievements,
-        )
         # Club goal tracker
         club_goal = cls._compute_club_goal_tracker(
             daily_rankings, latest_date,
@@ -209,7 +207,9 @@ class LeaderboardReportService:
 
         # Save today's predictions for tomorrow's "Yesterday's Calls" section
         if predictions_for_export:
-            save_predictions(club_name, latest_date, predictions_for_export)
+            save_prediction_snapshot(
+                club_id, club_name, latest_date, predictions_for_export
+            )
 
         # 3. Assemble Embeds
         main_embed = discord.Embed(
@@ -411,8 +411,6 @@ class LeaderboardReportService:
         if yesterday_date is not None:
             y_entries = daily_rankings.get(yesterday_date, [])
             if len(y_entries) >= 2:
-                y_top1 = y_entries[0]
-                y_top2 = y_entries[1]
                 # Find today's #1 and #2 in yesterday's data
                 y_fans_1 = next((e["fans"] for e in y_entries if e["name"] == name), None)
                 y_fans_2 = next((e["fans"] for e in y_entries if e["name"] == name_2nd), None)
@@ -831,9 +829,6 @@ class LeaderboardReportService:
             over = consistency.top_overperformer
             candidates.append(("overperformer", over["name"], f"**{over['name']}** — overperformed by +{over['pct_diff']}% today"))
 
-        # Candidate 4: Best climber
-        today_entries = []  # We don't have it here directly, skip for now
-
         if not candidates:
             return None
 
@@ -914,7 +909,7 @@ class LeaderboardReportService:
         cls,
         daily_rankings: Dict[date, List[Dict]],
         latest_date: date,
-        club_name: str,
+        club_id: UUID,
     ) -> List[Dict[str, Any]]:
         """
         Check if yesterday's predicted overtakes happened (OK / MISS).
@@ -930,7 +925,7 @@ class LeaderboardReportService:
             return []
 
         # Load yesterday's saved predictions
-        saved_predictions = load_predictions(club_name, yesterday_date)
+        saved_predictions = load_prediction_snapshot(club_id, yesterday_date)
         if saved_predictions is None:
             # No saved predictions — skip the "Yesterday's Calls" section entirely
             return []
@@ -1284,7 +1279,7 @@ class LeaderboardReportService:
         # Priority 5: Chaos (many overtakes)
         if len(overtakes) >= 2 and movers_count >= 3:
             return (
-                f"🌪️ Four positions changed today — the most movement we've seen this week!"
+                "🌪️ Four positions changed today — the most movement we've seen this week!"
             )
 
         # Priority 6: Comeback (leader losing ground)
@@ -1660,7 +1655,7 @@ class LeaderboardReportService:
             matched_pbs = [m for m in records["members"] if m["is_tie"]]
 
             if true_pbs:
-                pb_lines = [f"**🏆 New PBs**"]
+                pb_lines = ["**🏆 New PBs**"]
                 for m in true_pbs:
                     prev = cls._fmt_fans(m["prev_best_delta"]) if m["prev_best_delta"] is not None else "N/A"
                     pb_lines.append(
@@ -1670,7 +1665,7 @@ class LeaderboardReportService:
                 parts.append("\n".join(pb_lines))
 
             if matched_pbs:
-                matched_lines = [f"**⚖️ Matched PBs**"]
+                matched_lines = ["**⚖️ Matched PBs**"]
                 for m in matched_pbs:
                     matched_lines.append(
                         f"**{m['name']}** — matched their PB of **+{cls._fmt_fans(m['delta'])}**"

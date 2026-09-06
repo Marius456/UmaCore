@@ -4,14 +4,14 @@ Administrative commands for quota management
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import datetime, time
+from datetime import datetime
 import logging
 import pytz
 import asyncio
 
 from scrapers import UmaMoeAPIScraper
 from services import QuotaCalculator, ReportGenerator, MonthlyInfoService
-from models import Member, QuotaRequirement, BotSettings, Club, ClubRankHistory
+from models import Member, QuotaRequirement, Club, ClubRankHistory
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -79,7 +79,7 @@ class AdminCommands(commands.Cog):
                 await interaction.followup.send(f"❌ Club '{club}' is not registered in this server.")
                 return
 
-            if amount < 0:
+            if amount <= 0:
                 await interaction.followup.send("❌ Quota amount must be positive")
                 return
 
@@ -95,7 +95,7 @@ class AdminCommands(commands.Cog):
             current_date = current_datetime.date()
 
             set_by = f"{interaction.user.name}#{interaction.user.discriminator}"
-            quota_req = await QuotaRequirement.create(
+            await QuotaRequirement.create(
                 club_id=club_obj.club_id,
                 effective_date=current_date,
                 daily_quota=amount,
@@ -162,7 +162,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -181,13 +181,13 @@ class AdminCommands(commands.Cog):
 
             channel = self.bot.get_channel(channel_id)
             if not channel:
-                await interaction.followup.send(f"❌ Channel not found. The board may have been deleted.")
+                await interaction.followup.send("❌ Channel not found. The board may have been deleted.")
                 return
 
             try:
                 message = await channel.fetch_message(message_id)
             except discord.NotFound:
-                await interaction.followup.send(f"❌ Message not found. Use `/post_monthly_info` to create a new one.")
+                await interaction.followup.send("❌ Message not found. Use `/post_monthly_info` to create a new one.")
                 return
 
             club_tz = pytz.timezone(club_obj.timezone)
@@ -215,7 +215,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -281,7 +281,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -344,7 +344,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -406,7 +406,7 @@ class AdminCommands(commands.Cog):
 
                     if scraped_data:
                         break
-                except Exception as e:
+                except Exception:
                     if attempt == max_retries:
                         raise
                     await interaction.followup.send(f"⚠️ Attempt {attempt} failed, retrying in {retry_delay}s...")
@@ -486,7 +486,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -506,7 +506,7 @@ class AdminCommands(commands.Cog):
                 await interaction.followup.send(f"❌ Member '{trainer_name}' already exists in {club}")
                 return
 
-            member = await Member.create(club_obj.club_id, trainer_name, join_date_obj, trainer_id)
+            await Member.create(club_obj.club_id, trainer_name, join_date_obj, trainer_id)
 
             await interaction.followup.send(
                 f"✅ Added member to {club}: {trainer_name} (joined {join_date}, ID: {trainer_id or 'N/A'})"
@@ -525,7 +525,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -573,7 +573,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -615,7 +615,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return

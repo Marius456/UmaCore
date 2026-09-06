@@ -2,7 +2,6 @@
 Discord report generation service
 """
 import io
-import asyncio
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 import discord

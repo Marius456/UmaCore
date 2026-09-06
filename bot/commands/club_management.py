@@ -4,7 +4,7 @@ Club management commands (add, remove, edit, list)
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import datetime, time
+from datetime import time
 import logging
 import pytz
 
@@ -130,7 +130,7 @@ class ClubManagementCommands(commands.Cog):
         
         try:
             # Check for duplicate
-            existing = await Club.get_by_name(club_name)
+            existing = await Club.get_by_name(club_name, interaction.guild_id)
             if existing:
                 await interaction.followup.send(f"❌ Club '{club_name}' already exists")
                 return
@@ -170,7 +170,7 @@ class ClubManagementCommands(commands.Cog):
             
             resolved_quota_period = quota_period.value if quota_period else 'daily'
 
-            club = await Club.create(
+            await Club.create(
                 club_name=club_name,
                 scrape_url=scrape_url,
                 circle_id=resolved_circle_id,
@@ -252,7 +252,7 @@ class ClubManagementCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
 
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
@@ -291,7 +291,7 @@ class ClubManagementCommands(commands.Cog):
             warning_embed.add_field(
                 name="⚠️ This action is irreversible",
                 value="**This cannot be undone.** All data will be permanently lost.\n\n"
-                      f"Click **Delete** and type the club name to confirm.",
+                      "Click **Delete** and type the club name to confirm.",
                 inline=False
             )
             warning_embed.set_footer(text=f"Requested by {interaction.user}")
@@ -310,7 +310,7 @@ class ClubManagementCommands(commands.Cog):
         await interaction.response.defer()
         
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
@@ -425,7 +425,7 @@ class ClubManagementCommands(commands.Cog):
         await interaction.response.defer()
         
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
@@ -500,7 +500,7 @@ class ClubManagementCommands(commands.Cog):
                     if value:
                         changes_text.append(f"**Circle ID:** {value} (Uma.moe API enabled 🚀)")
                     else:
-                        changes_text.append(f"**Circle ID:** Removed (will use ChronoGenesis)")
+                        changes_text.append("**Circle ID:** Removed (will use ChronoGenesis)")
                 elif key == 'daily_quota':
                     if value >= 1_000_000:
                         formatted = f"{value / 1_000_000:.1f}M"

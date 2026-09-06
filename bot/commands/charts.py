@@ -208,7 +208,7 @@ class ChartCommands(commands.Cog):
             return
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found.")
                 return
@@ -292,7 +292,7 @@ class ChartCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found.")
                 return
@@ -395,7 +395,7 @@ class ChartCommands(commands.Cog):
             # Split into chunks that fit within Discord's 1024-char field limit
             chunk, chunks = [], []
             for line in lines:
-                if sum(len(l) + 1 for l in chunk) + len(line) > 980:
+                if sum(len(item) + 1 for item in chunk) + len(line) > 980:
                     chunks.append("\n".join(chunk))
                     chunk = []
                 chunk.append(line)

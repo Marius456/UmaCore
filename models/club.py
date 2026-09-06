@@ -6,15 +6,10 @@ from datetime import time
 from typing import Optional, List
 from uuid import UUID
 import logging
-import re
 
 from config.database import db
 
 logger = logging.getLogger(__name__)
-
-
-def _make_slug(name: str) -> str:
-    return re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
 
 
 @dataclass
@@ -47,22 +42,60 @@ class Club:
                      timezone: str = 'Europe/Amsterdam',
                      scrape_time: time = None) -> 'Club':
         """Create a new club"""
+        club_name = club_name.strip()
+        if not club_name:
+            raise ValueError("club_name must not be empty")
+        if daily_quota <= 0:
+            raise ValueError("daily_quota must be greater than zero")
+        if quota_period not in {"daily", "weekly", "biweekly"}:
+            raise ValueError("invalid quota_period")
         if scrape_time is None:
             scrape_time = time(16, 0)
 
         query = """
+            WITH slug_candidate AS (
+                SELECT CASE
+                    WHEN $3::text IS NULL OR $3::text = '' THEN NULL
+                    ELSE (
+                        SELECT CASE
+                            WHEN suffix = 1 THEN $3::text
+                            ELSE $3::text || '-' || suffix::text
+                        END
+                        FROM generate_series(1, 10000) AS suffix
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM clubs
+                            WHERE public_slug = CASE
+                                WHEN suffix = 1 THEN $3::text
+                                ELSE $3::text || '-' || suffix::text
+                            END
+                        )
+                        ORDER BY suffix
+                        LIMIT 1
+                    )
+                END AS public_slug
+            )
             INSERT INTO clubs (club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
                              timezone, scrape_time, public_slug)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            SELECT $1, $2, $3, $4, $5, $6, $7, $8, public_slug
+            FROM slug_candidate
             RETURNING club_id, club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
                      timezone, scrape_time,
                      is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
                      monthly_info_message_id, leaderboard_channel_id, events_channel_id,
                      created_at, updated_at, public_slug
         """
-        row = await db.fetchrow(query, club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
-                                timezone, scrape_time,
-                                _make_slug(club_name))
+        row = await db.fetchrow(
+            query,
+            club_name,
+            scrape_url,
+            circle_id,
+            guild_id,
+            daily_quota,
+            quota_period,
+            timezone,
+            scrape_time,
+        )
         logger.info(f"Created new club: {club_name} (circle_id: {circle_id}, guild_id: {guild_id})")
         return cls(**dict(row))
     
@@ -84,8 +117,10 @@ class Club:
         return None
     
     @classmethod
-    async def get_by_name(cls, club_name: str) -> Optional['Club']:
-        """Get club by name"""
+    async def get_by_name(
+        cls, club_name: str, guild_id: Optional[int] = None
+    ) -> Optional['Club']:
+        """Get a club by name, optionally scoped to a Discord guild."""
         query = """
             SELECT club_id, club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
                    timezone, scrape_time,
@@ -93,9 +128,11 @@ class Club:
                    monthly_info_message_id, leaderboard_channel_id, events_channel_id,
                    created_at, updated_at, public_slug
             FROM clubs
-            WHERE club_name = $1
+            WHERE club_name = $1 AND ($2::bigint IS NULL OR guild_id = $2)
+            ORDER BY guild_id NULLS LAST
+            LIMIT 1
         """
-        row = await db.fetchrow(query, club_name)
+        row = await db.fetchrow(query, club_name, guild_id)
         if row:
             return cls(**dict(row))
         return None
@@ -133,7 +170,7 @@ class Club:
     
     @classmethod
     async def get_all_for_guild(cls, guild_id: int) -> List['Club']:
-        """Get clubs registered to a specific guild, plus any pre-migration clubs (guild_id IS NULL)"""
+        """Get clubs registered to a specific guild."""
         query = """
             SELECT club_id, club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
                    timezone, scrape_time,
@@ -141,7 +178,7 @@ class Club:
                    monthly_info_message_id, leaderboard_channel_id, events_channel_id,
                    created_at, updated_at, public_slug
             FROM clubs
-            WHERE guild_id = $1 OR guild_id IS NULL
+            WHERE guild_id = $1
             ORDER BY club_name
         """
         rows = await db.fetch(query, guild_id)
@@ -165,7 +202,7 @@ class Club:
         query = """
             SELECT club_name
             FROM clubs
-            WHERE is_active = TRUE AND (guild_id = $1 OR guild_id IS NULL)
+            WHERE is_active = TRUE AND guild_id = $1
             ORDER BY club_name
         """
         rows = await db.fetch(query, guild_id)
@@ -181,6 +218,14 @@ class Club:
         updates = {k: v for k, v in kwargs.items() if k in valid_fields}
         if not updates:
             return
+
+        if 'daily_quota' in updates and updates['daily_quota'] <= 0:
+            raise ValueError("daily_quota must be greater than zero")
+        if (
+            'quota_period' in updates
+            and updates['quota_period'] not in {"daily", "weekly", "biweekly"}
+        ):
+            raise ValueError("invalid quota_period")
         
         # Convert scrape_time string to time object if needed
         if 'scrape_time' in updates and isinstance(updates['scrape_time'], str):
@@ -292,12 +337,11 @@ class Club:
     def belongs_to_guild(self, guild_id: int) -> bool:
         """
         Check whether this club is accessible from a given guild.
-        Clubs without guild_id (created before the column existed) are
-        treated as accessible until the backfill populates their value.
+        Unassigned pre-migration clubs are deliberately inaccessible until
+        startup backfill associates them with a guild. Treating NULL as a
+        wildcard would expose them to administrators in every server.
         """
-        if self.guild_id is None:
-            return True
-        return self.guild_id == guild_id
+        return self.guild_id is not None and self.guild_id == guild_id
     
     def get_scrape_time_str(self) -> str:
         """Get scrape time as HH:MM string"""

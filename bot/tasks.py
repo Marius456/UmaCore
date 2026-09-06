@@ -7,18 +7,17 @@ import json as json_mod
 import os
 import re
 import tempfile
-from datetime import datetime, date, timedelta
-from typing import Optional
+from datetime import datetime
 import logging
 import pytz
 import asyncio
 
-from models import Club, ClubRankHistory, QuotaRequirement, BotSettings
+from models import Club, ClubRankHistory, QuotaRequirement
 from scrapers import (
     UmaMoeAPIScraper, DataNotAvailableError,
-    scrape_official_events, check_and_save as check_and_save_official_events,
+    check_and_save as check_and_save_official_events,
 )
-from services import QuotaCalculator, ReportGenerator, NotificationService, ScrapeLockManager, ScrapeContext
+from services import QuotaCalculator, ReportGenerator, NotificationService, ScrapeContext
 from services.leaderboard_report_service import LeaderboardReportService
 from config.settings import EVENTS_JSON_PATH
 
@@ -36,6 +35,7 @@ class BotTasks:
 
         # Track last run per club per day (club_id_YYYY-MM-DD -> True)
         self.last_runs = {}
+        self._running_club_ids = set()
         # Serializes event scraping with notification reads/writes of events.json.
         self._events_lock = asyncio.Lock()
         # Prevents duplicate Discord posts if a successful send is followed by
@@ -72,6 +72,16 @@ class BotTasks:
             clubs = await Club.get_all_active()
             logger.info(f"Found {len(clubs)} active club(s)")
 
+            active_run_keys = {
+                f"{club.club_id}_{datetime.now(pytz.timezone(club.timezone)).date()}"
+                for club in clubs
+            }
+            self.last_runs = {
+                key: value
+                for key, value in self.last_runs.items()
+                if key in active_run_keys
+            }
+
             for club in clubs:
                 try:
                     club_tz = pytz.timezone(club.timezone)
@@ -89,9 +99,14 @@ class BotTasks:
                             logger.debug(f"{club.club_name}: Already ran today ({current_date})")
                             continue
 
+                        if club.club_id in self._running_club_ids:
+                            logger.debug(f"{club.club_name}: Daily check already running")
+                            continue
+
                         logger.info(f"⏰ Time to check {club.club_name} ({now_in_club_tz.strftime('%H:%M')} {club.timezone})")
 
-                        asyncio.create_task(self.daily_check_for_club(club))
+                        self._running_club_ids.add(club.club_id)
+                        asyncio.create_task(self._run_scheduled_daily_check(club))
                     else:
                         logger.debug(
                             f"{club.club_name}: Not time yet "
@@ -105,6 +120,19 @@ class BotTasks:
 
         except Exception as e:
             logger.error(f"Error in hourly_check: {e}", exc_info=True)
+
+    async def _run_scheduled_daily_check(self, club: Club):
+        """Run one scheduled check and always clear its in-process guard."""
+        try:
+            await self.daily_check_for_club(club)
+        finally:
+            self._running_club_ids.discard(club.club_id)
+
+    @staticmethod
+    async def _send_embeds(channel, embeds):
+        """Send each embed returned by a report service in order."""
+        for embed in embeds:
+            await channel.send(embed=embed)
 
     async def daily_check_for_club(self, club: Club):
         """Daily quota check and report generation for a specific club"""
@@ -349,9 +377,7 @@ class BotTasks:
                     if club.leaderboard_channel_id:
                         leaderboard_channel = self.bot.get_channel(club.leaderboard_channel_id)
                         if leaderboard_channel:
-                            club_tz = pytz.timezone(club.timezone)
-                            now = datetime.now(club_tz)
-                            year, month = now.year, now.month
+                            year, month = current_date.year, current_date.month
 
                             # Pass tier progress data from the scraper if available
                             tier_kwargs = {}
@@ -359,12 +385,15 @@ class BotTasks:
                                 tier_kwargs['fans_to_next_tier'] = rank_data.get('fans_to_next_tier')
                                 tier_kwargs['fans_to_lower_tier'] = rank_data.get('fans_to_lower_tier')
 
-                            embed = await LeaderboardReportService.generate_leaderboard_report(
+                            embeds = await LeaderboardReportService.generate_leaderboard_report(
                                 club.club_id, club.club_name, year, month,
                                 **tier_kwargs,
                             )
-                            await leaderboard_channel.send(embed=embed)
-                            logger.info(f"Leaderboard report sent for {club.club_name}")
+                            await self._send_embeds(leaderboard_channel, embeds)
+                            logger.info(
+                                f"Leaderboard report sent for {club.club_name} "
+                                f"({len(embeds)} embed(s))"
+                            )
                         else:
                             logger.error(f"Leaderboard channel {club.leaderboard_channel_id} not found for {club.club_name}")
                     else:

@@ -201,7 +201,10 @@ class TriviaCommands(commands.Cog):
 
     async def _get_next_question(self, used_question_ids: set[int]) -> Optional[TriviaQuestion]:
         """Get an unused question, beginning a new cycle when the bank is exhausted."""
-        question = await TriviaQuestion.get_random(excluded_ids=used_question_ids)
+        # Pass a snapshot because this set is mutated after the query.
+        question = await TriviaQuestion.get_random(
+            excluded_ids=set(used_question_ids)
+        )
         if question is None and used_question_ids:
             used_question_ids.clear()
             question = await TriviaQuestion.get_random()

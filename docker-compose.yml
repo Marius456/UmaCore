@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   umacore-bot:
     build:
@@ -12,8 +10,6 @@ services:
     volumes:
       - ./logs:/app/logs
     shm_size: 2gb
-    environment:
-      - DISPLAY=:99
     logging:
       driver: "json-file"
       options:

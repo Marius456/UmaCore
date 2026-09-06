@@ -1,0 +1,17 @@
+.git
+.github
+.env
+.env.*
+.runtime-deps
+.umamoe_cookies
+.umamusume_cookies
+__pycache__
+*.py[cod]
+*.log
+.pytest_cache
+.ruff_cache
+debug_*
+research
+site
+tests
+tools

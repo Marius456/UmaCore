@@ -5,7 +5,7 @@ import discord
 from typing import List, Dict
 import logging
 
-from models import UserLink, Member, QuotaHistory
+from models import UserLink
 from config.settings import COLOR_BEHIND
 
 logger = logging.getLogger(__name__)

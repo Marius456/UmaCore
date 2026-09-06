@@ -37,11 +37,18 @@ class MemberCommands(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(
                     f"❌ Club '{club}' not found.",
                     ephemeral=True
+                )
+                return
+
+            if not club_obj.belongs_to_guild(interaction.guild_id):
+                await interaction.followup.send(
+                    f"❌ Club '{club}' is not registered in this server.",
+                    ephemeral=True,
                 )
                 return
             
@@ -58,7 +65,7 @@ class MemberCommands(commands.Cog):
             existing_link = await UserLink.get_by_discord_id(interaction.user.id)
             if existing_link:
                 existing_member = await Member.get_by_id(existing_link.member_id)
-                if existing_member.member_id == member.member_id:
+                if existing_member and existing_member.member_id == member.member_id:
                     await interaction.followup.send(
                         f"ℹ️ You're already linked to **{trainer_name}** in **{club}**",
                         ephemeral=True
@@ -67,10 +74,11 @@ class MemberCommands(commands.Cog):
                 else:
                     # Unlink from old trainer
                     await UserLink.delete(interaction.user.id)
-                    logger.info(f"Unlinked user {interaction.user.id} from {existing_member.trainer_name}")
+                    old_name = existing_member.trainer_name if existing_member else "a deleted member"
+                    logger.info(f"Unlinked user {interaction.user.id} from {old_name}")
             
             # Create link
-            user_link = await UserLink.create(
+            await UserLink.create(
                 discord_user_id=interaction.user.id,
                 member_id=member.member_id,
                 notify_on_deficit=False
@@ -244,9 +252,15 @@ class MemberCommands(commands.Cog):
         await interaction.response.defer()
         
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
+                return
+
+            if not club_obj.belongs_to_guild(interaction.guild_id):
+                await interaction.followup.send(
+                    f"❌ Club '{club}' is not registered in this server."
+                )
                 return
             
             member = await Member.get_by_name(club_obj.club_id, trainer_name)
@@ -386,8 +400,6 @@ class MemberCommands(commands.Cog):
             )
         
         # Statistics
-        current_date = date_class.today()
-        
         # Calculate streak and get history
         history_records = await QuotaHistory.get_last_n_days(member.member_id, 100)
         

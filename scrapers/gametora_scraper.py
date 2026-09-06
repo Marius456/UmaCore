@@ -4,12 +4,11 @@ GameTora Gacha Scraper using Playwright (headless browser)
 Scrapes https://gametora.com/umamusume/gacha for current gacha banner information
 including rate-up characters/supports, their rates, and availability windows.
 """
-from typing import Dict, List, Optional
+from typing import List, Optional
 import logging
 import re
 
-from playwright.async_api import async_playwright, Error as PlaywrightError
-from playwright.async_api import Page
+from playwright.async_api import async_playwright
 
 from scrapers.umamoe_api_scraper import _setup_stealth_patches
 

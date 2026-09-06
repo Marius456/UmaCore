@@ -2,7 +2,7 @@
 Quota calculation service with multi-club support
 """
 from datetime import date, timedelta
-from typing import Dict, List, Optional, Tuple, Set
+from typing import Dict, Optional, Tuple, Set
 from uuid import UUID
 import logging
 import calendar
@@ -35,7 +35,37 @@ class QuotaCalculator:
         Returns:
             Expected cumulative fan count for this month only
         """
-        # Determine the effective start date for this month
+        quota_schedule = await db.fetch(
+            """
+            SELECT effective_date, daily_quota
+            FROM quota_requirements
+            WHERE club_id = $1
+              AND effective_date >= date_trunc('month', $2::date)::date
+              AND effective_date <= $2
+            ORDER BY effective_date ASC
+            """,
+            club_id,
+            current_date,
+        )
+        club = await Club.get_by_id(club_id)
+        default_quota = club.daily_quota if club else 1_000_000
+        return QuotaCalculator.calculate_expected_fans_from_schedule(
+            member_join_date,
+            current_date,
+            quota_period,
+            default_quota,
+            quota_schedule,
+        )
+
+    @staticmethod
+    def calculate_expected_fans_from_schedule(
+        member_join_date: date,
+        current_date: date,
+        quota_period: str,
+        default_quota: int,
+        quota_schedule,
+    ) -> int:
+        """Calculate expected fans from an already-fetched quota schedule."""
         if member_join_date.year == current_date.year and member_join_date.month == current_date.month:
             start_date = member_join_date
         else:
@@ -44,12 +74,27 @@ class QuotaCalculator:
         period_days = {'daily': 1, 'weekly': 7, 'biweekly': 14}.get(quota_period, 1)
 
         total_expected = 0.0
+        schedule = [
+            (row['effective_date'], row['daily_quota'])
+            for row in quota_schedule
+        ]
+        schedule_index = 0
+        effective_quota = default_quota
+
+        while schedule_index < len(schedule) and schedule[schedule_index][0] < start_date:
+            effective_quota = schedule[schedule_index][1]
+            schedule_index += 1
 
         day_count = (current_date - start_date).days + 1
         current_day = start_date
         for _ in range(day_count):
-            period_quota = await QuotaRequirement.get_quota_for_date(club_id, current_day)
-            total_expected += period_quota / period_days
+            while (
+                schedule_index < len(schedule)
+                and schedule[schedule_index][0] <= current_day
+            ):
+                effective_quota = schedule[schedule_index][1]
+                schedule_index += 1
+            total_expected += effective_quota / period_days
             current_day += timedelta(days=1)
 
         result = round(total_expected)
@@ -195,18 +240,16 @@ class QuotaCalculator:
         previous_totals = await self._get_previous_cumulative_totals(club_id)
         
         if self._detect_monthly_reset_from_scraped(scraped_data, previous_totals):
-            logger.warning(f"Monthly reset detected for club {club_id}! Clearing all history...")
-            
-            # Clear club-specific data
-            await db.execute("DELETE FROM quota_history WHERE club_id = $1", club_id)
-            await db.execute("DELETE FROM quota_requirements WHERE club_id = $1", club_id)
-            
+            logger.info(
+                "Monthly reset detected for club %s; preserving historical data",
+                club_id,
+            )
             # Clear manual deactivation flags for this club
             await db.execute(
                 "UPDATE members SET manually_deactivated = FALSE WHERE club_id = $1 AND manually_deactivated = TRUE",
                 club_id
             )
-            logger.info(f"Monthly reset complete for club {club_id}")
+            logger.info(f"Monthly member-state reset complete for club {club_id}")
         
         # Auto-deactivate members who are no longer in the scraped data
         scraped_trainer_ids = set(scraped_data.keys())
@@ -215,6 +258,21 @@ class QuotaCalculator:
         # Process each member
         new_members = 0
         updated_members = 0
+
+        quota_schedule = await db.fetch(
+            """
+            SELECT effective_date, daily_quota
+            FROM quota_requirements
+            WHERE club_id = $1
+              AND effective_date >= date_trunc('month', $2::date)::date
+              AND effective_date <= $2
+            ORDER BY effective_date ASC
+            """,
+            club_id,
+            data_date,
+        )
+        club = await Club.get_by_id(club_id)
+        default_quota = club.daily_quota if club else 1_000_000
         
         for key, member_data in scraped_data.items():
             trainer_id = member_data.get("trainer_id")
@@ -275,8 +333,12 @@ class QuotaCalculator:
             # All quota calculations use data_date
             days_active = self.calculate_days_active_in_month(member.join_date, data_date)
             
-            expected_fans = await self.calculate_expected_fans(
-                club_id, member.join_date, data_date, quota_period
+            expected_fans = self.calculate_expected_fans_from_schedule(
+                member.join_date,
+                data_date,
+                quota_period,
+                default_quota,
+                quota_schedule,
             )
             
             deficit_surplus = self.calculate_deficit_surplus(cumulative_fans, expected_fans)

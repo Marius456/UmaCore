@@ -3,7 +3,6 @@ Monthly Info Board service for generating persistent information embed
 """
 import discord
 from datetime import date
-from typing import Optional
 from uuid import UUID
 import logging
 import calendar

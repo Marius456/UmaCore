@@ -234,13 +234,13 @@ def _clean_title(raw: str) -> str:
       "Game\\n2026/06/25 22:00 (UTC)\\nNew Spotlight Scouts out now!...\\n\\nDetails"
     We take the longest meaningful line that isn't boilerplate.
     """
-    lines = [l.strip() for l in raw.split('\n') if l.strip()]
+    lines = [line.strip() for line in raw.split('\n') if line.strip()]
     # Prefer the longest line that isn't a known keyword
     candidates = [
-        l for l in lines
-        if l not in ("Game", "Details", "Top", "News")
-        and not re.match(r'^\d{4}[/-]\d{2}[/-]\d{2}', l)
-        and not re.match(r'^\d{1,2}[:]\d{2}', l)
+        line for line in lines
+        if line not in ("Game", "Details", "Top", "News")
+        and not re.match(r'^\d{4}[/-]\d{2}[/-]\d{2}', line)
+        and not re.match(r'^\d{1,2}[:]\d{2}', line)
     ]
     if candidates:
         return max(candidates, key=len)

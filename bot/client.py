@@ -6,7 +6,6 @@ from discord import app_commands
 from discord.ext import commands
 import logging
 
-from config.settings import DISCORD_TOKEN
 from config.database import db
 from .tasks import BotTasks
 from services.report_generator import _close_playwright_browser_async
@@ -24,7 +23,8 @@ class UmamusumeBot(commands.Bot):
         super().__init__(
             command_prefix=commands.when_mentioned,
             intents=intents,
-            help_command=None
+            help_command=None,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
         
         self.tasks_manager = None

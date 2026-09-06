@@ -14,7 +14,6 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import date
 
 # Add project root to path so we can import project modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -132,7 +131,7 @@ async def main():
 
     args = parser.parse_args()
 
-    print(f"🔌 Connecting to database...")
+    print("🔌 Connecting to database...")
     db.url = DATABASE_URL
     await db.connect()
 

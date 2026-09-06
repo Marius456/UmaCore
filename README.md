@@ -103,7 +103,6 @@ After inviting, use `/add_club` to register your club and `/set_report_channel` 
    DISCORD_TOKEN=your_bot_token_here
    DATABASE_URL=postgresql://user:password@host:5432/database_name
    LOG_LEVEL=INFO
-   USE_UMAMOE_API=true
    ```
 
 3. Run the bot:
@@ -131,6 +130,19 @@ pm2 start python --name umacore -- main.py
 ```
 
 Cloud platforms (Railway, Render, Fly.io) also work — use a `Procfile` with `worker: python main.py`.
+
+### Development checks
+
+Install the development dependencies, then run the same checks as CI:
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+pytest -q
+```
+
+See the [development guide](docs/development.md) for test conventions and
+security notes.
 
 ---
 

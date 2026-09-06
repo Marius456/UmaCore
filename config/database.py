@@ -3,7 +3,7 @@ PostgreSQL database connection management
 """
 import json
 import asyncpg
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ class Database:
         -- Clubs table
         CREATE TABLE IF NOT EXISTS clubs (
             club_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            club_name VARCHAR(100) UNIQUE NOT NULL,
+            club_name VARCHAR(100) NOT NULL,
             scrape_url TEXT NOT NULL,
             circle_id VARCHAR(100),
             daily_quota BIGINT NOT NULL DEFAULT 1000000,
@@ -128,6 +128,13 @@ class Database:
                 RAISE NOTICE 'Added guild_id column to clubs';
             END IF;
         END $$;
+
+        -- Club names only need to be unique within a Discord guild. The old
+        -- global constraint prevented two unrelated servers from using the
+        -- same real-world club name.
+        ALTER TABLE clubs DROP CONSTRAINT IF EXISTS clubs_club_name_key;
+        CREATE UNIQUE INDEX IF NOT EXISTS clubs_guild_name_unique
+            ON clubs(guild_id, club_name) WHERE guild_id IS NOT NULL;
 
         -- Migration: Add quota_period column if it doesn't exist
         DO $$
@@ -189,11 +196,10 @@ class Database:
             END IF;
         END $$;
 
-        -- Migration: Set public_slug from circle_id (authoritative source)
+        -- Migration: Fill missing public_slug values from circle_id.
         -- Clubs sharing a circle_id get suffixes: 481227375, 481227375-2, 481227375-3, ...
         DO $$
         BEGIN
-            UPDATE clubs SET public_slug = NULL;
             UPDATE clubs c
             SET public_slug = CASE WHEN ranked.rn = 1 THEN ranked.circle_id
                                    ELSE ranked.circle_id || '-' || ranked.rn::text END
@@ -203,8 +209,9 @@ class Database:
                 FROM clubs
                 WHERE circle_id IS NOT NULL AND circle_id != ''
             ) ranked
-            WHERE c.club_id = ranked.club_id;
-            RAISE NOTICE 'Synced public_slug from circle_id';
+            WHERE c.club_id = ranked.club_id
+              AND c.public_slug IS NULL;
+            RAISE NOTICE 'Filled missing public_slug values from circle_id';
         END $$;
 
         -- Migration: Create partial unique index on public_slug if it doesn't exist

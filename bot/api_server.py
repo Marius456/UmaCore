@@ -42,11 +42,13 @@ async def _backfill_month(club: Club, scraped_data: dict, fetched_year: int, fet
     """
     period_days = {'daily': 1, 'weekly': 7, 'biweekly': 14}.get(club.quota_period, 1)
     default_quota = club.daily_quota
+    month_start = date(fetched_year, fetched_month, 1)
 
     quota_reqs = await db.fetch(
         "SELECT effective_date, daily_quota FROM quota_requirements "
-        "WHERE club_id = $1 ORDER BY effective_date ASC",
-        club.club_id
+        "WHERE club_id = $1 AND effective_date >= $2 "
+        "ORDER BY effective_date ASC",
+        club.club_id, month_start
     )
 
     def quota_for(d: date) -> int:
@@ -68,7 +70,6 @@ async def _backfill_month(club: Club, scraped_data: dict, fetched_year: int, fet
             cur += timedelta(days=1)
         return round(total)
 
-    month_start = date(fetched_year, fetched_month, 1)
     backfilled = 0
 
     for trainer_id, member_data in scraped_data.items():
@@ -228,10 +229,14 @@ async def handle_recalculate(request: web.Request) -> web.StreamResponse:
     period_days = {'daily': 1, 'weekly': 7, 'biweekly': 14}.get(club.quota_period, 1)
     default_quota = club.daily_quota
 
+    today = datetime.now(pytz.timezone(club.timezone)).date()
+    month_start = date(today.year, today.month, 1)
+
     quota_reqs = await db.fetch(
         "SELECT effective_date, daily_quota FROM quota_requirements "
-        "WHERE club_id = $1 ORDER BY effective_date ASC",
-        club_id
+        "WHERE club_id = $1 AND effective_date >= $2 "
+        "ORDER BY effective_date ASC",
+        club_id, month_start
     )
 
     def quota_for(d: date) -> int:
@@ -252,9 +257,6 @@ async def handle_recalculate(request: web.Request) -> web.StreamResponse:
             total += quota_for(cur) / period_days
             cur += timedelta(days=1)
         return round(total)
-
-    today = date.today()
-    month_start = date(today.year, today.month, 1)
 
     members = await db.fetch(
         """

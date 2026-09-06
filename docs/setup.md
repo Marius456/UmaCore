@@ -5,7 +5,7 @@
 - Python 3.10+
 - PostgreSQL database (Neon, Supabase, or local)
 - Discord bot token
-- Chrome/Chromium — only needed if using ChronoGenesis scraper
+- Chromium installed through Playwright
 
 ## Installation
 
@@ -35,9 +35,8 @@ postgresql://user:password@host:5432/database_name
 
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
 2. Create a new application and add a bot
-3. Under **Bot settings**, enable:
-   - Server Members Intent
-   - Message Content Intent
+3. The bot uses Discord's standard guild intent; no privileged intents are
+   required by the current code.
 4. Copy the bot token
 5. Invite the bot to your server with permissions: Send Messages, Embed Links, Read Messages/History
 
@@ -47,10 +46,7 @@ postgresql://user:password@host:5432/database_name
 DISCORD_TOKEN=your_bot_token_here
 DATABASE_URL=postgresql://user:password@host:5432/database_name
 LOG_LEVEL=INFO
-USE_UMAMOE_API=true
 ```
-
-Set `USE_UMAMOE_API=false` to use ChronoGenesis scraping instead of Uma.moe API.
 
 ### 6. Run the bot
 
@@ -135,7 +131,11 @@ All tables are created automatically on first run:
 | `members` | Club member data |
 | `quota_history` | Daily quota tracking per member |
 | `quota_requirements` | Quota change history |
-| `bombs` | Active bomb warnings |
+| `scrape_history` | Scrape outcomes and diagnostics |
+| `scrape_locks` | Per-club concurrency guards |
 | `user_links` | Discord ID to trainer mappings |
 | `bot_settings` | Monthly info board locations |
 | `club_rank_history` | Club ranking over time |
+| `trivia_questions` | Trivia question bank |
+| `trivia_leaderboard` | Trivia scores |
+| `audit_logs` | Dashboard action history |
