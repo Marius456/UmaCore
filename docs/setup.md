@@ -64,7 +64,7 @@ Once the bot is running, do this to get started:
 
 **1. Add your club**
 ```
-/add_club club_name:YourClub scrape_url:... circle_id:860280110
+/add_club club_name:YourClub circle_id:860280110
 ```
 
 **2. Set up channels**
@@ -136,6 +136,7 @@ All tables are created automatically on first run:
 | `user_links` | Discord ID to trainer mappings |
 | `bot_settings` | Monthly info board locations |
 | `club_rank_history` | Club ranking over time |
+| `notification_deliveries` | Idempotency records for daily deficit DMs |
 | `trivia_questions` | Trivia question bank |
 | `trivia_leaderboard` | Trivia scores |
 | `audit_logs` | Dashboard action history |

@@ -61,6 +61,14 @@ class BotTasks:
             "daily official event scraping)"
         )
 
+    @staticmethod
+    def _is_daily_check_due(now_in_club_tz: datetime, scrape_time) -> bool:
+        """Return whether today's configured local run time has passed."""
+        return (now_in_club_tz.hour, now_in_club_tz.minute) >= (
+            scrape_time.hour,
+            scrape_time.minute,
+        )
+
     async def stop_tasks(self):
         """Cancel scheduled work and wait until it has finished unwinding."""
         loop_tasks = [
@@ -119,8 +127,7 @@ class BotTasks:
                     target_hour = club.scrape_time.hour
                     target_minute = club.scrape_time.minute
 
-                    if (now_in_club_tz.hour == target_hour and
-                            now_in_club_tz.minute >= target_minute):
+                    if self._is_daily_check_due(now_in_club_tz, club.scrape_time):
 
                         run_key = f"{club.club_id}_{current_date}"
                         if self.last_runs.get(run_key):
@@ -400,6 +407,7 @@ class BotTasks:
                     logger.error(f"❌ Error sending DM notifications for {club.club_name}: {e}", exc_info=True)
 
                 # STEP 7: Generate and send reports
+                daily_report_sent = False
                 try:
                     logger.info(f"📊 Generating daily report for {club.club_name}...")
                     status_summary = await self.quota_calculator.get_member_status_summary(
@@ -415,6 +423,7 @@ class BotTasks:
                     for embed, files in daily_reports:
                         await report_channel.send(embed=embed, files=files if files else None)
 
+                    daily_report_sent = True
                     logger.info(f"✅ Daily report sent for {club.club_name} ({len(daily_reports)} embed(s))")
 
                 except Exception as e:
@@ -458,14 +467,27 @@ class BotTasks:
                 except Exception as e:
                     logger.error(f"Error generating leaderboard report for {club.club_name}: {e}", exc_info=True)
 
-                # Mark this club as successfully completed for today
-                run_key = f"{club.club_id}_{run_date}"
-                self.last_runs[run_key] = True
-                logger.info(f"✅ Marked {club.club_name} as completed for {run_date}")
+                # Only suppress later hourly retries after the primary report
+                # was completely delivered. Data processing alone is not a
+                # successful scheduled report run.
+                if daily_report_sent:
+                    run_key = f"{club.club_id}_{run_date}"
+                    self.last_runs[run_key] = True
+                    logger.info(f"✅ Marked {club.club_name} as completed for {run_date}")
+                else:
+                    logger.warning(
+                        "Daily check for %s remains retryable because report delivery failed",
+                        club.club_name,
+                    )
 
                 # STEP 9: Final summary
                 logger.info("=" * 80)
-                logger.info(f"✅ Daily check complete for {club.club_name}!")
+                logger.info(
+                    "%s Daily check %s for %s!",
+                    "✅" if daily_report_sent else "⚠️",
+                    "complete" if daily_report_sent else "processed but not delivered",
+                    club.club_name,
+                )
                 logger.info(f"   • Members updated: {updated_members}")
                 logger.info(f"   • New members: {new_members}")
                 logger.info("=" * 80)

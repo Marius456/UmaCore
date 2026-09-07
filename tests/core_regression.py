@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date, time
+from datetime import date, datetime, time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -119,31 +119,6 @@ class ConsecutiveDayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 1)
 
 
-class MonthlyResetTests(unittest.IsolatedAsyncioTestCase):
-    async def test_reset_preserves_history_and_quota_audit_rows(self):
-        calculator = QuotaCalculator()
-        calculator._get_previous_cumulative_totals = AsyncMock(return_value={})
-        calculator._detect_monthly_reset_from_scraped = MagicMock(return_value=True)
-        calculator._auto_deactivate_missing_members = AsyncMock()
-
-        with (
-            patch("services.quota_calculator.db.execute", new=AsyncMock()) as execute,
-            patch("services.quota_calculator.db.fetch", new=AsyncMock(return_value=[])),
-            patch(
-                "services.quota_calculator.Club.get_by_id",
-                new=AsyncMock(return_value=make_club()),
-            ),
-        ):
-            await calculator.process_scraped_data(
-                CLUB_ID, {}, date(2026, 9, 1), 1
-            )
-
-        queries = [call.args[0] for call in execute.await_args_list]
-        self.assertTrue(any("UPDATE members" in query for query in queries))
-        self.assertFalse(any("DELETE FROM quota_history" in query for query in queries))
-        self.assertFalse(any("DELETE FROM quota_requirements" in query for query in queries))
-
-
 class ScrapeBatchingTests(unittest.IsolatedAsyncioTestCase):
     async def test_unchanged_roster_uses_bulk_reads_and_writes(self):
         member = SimpleNamespace(
@@ -167,7 +142,6 @@ class ScrapeBatchingTests(unittest.IsolatedAsyncioTestCase):
                 return False
 
         calculator = QuotaCalculator()
-        calculator._get_previous_cumulative_totals = AsyncMock(return_value={})
         calculator._auto_deactivate_missing_members = AsyncMock()
 
         with (
@@ -207,6 +181,26 @@ class ScrapeBatchingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class QuotaRequirementTests(unittest.IsolatedAsyncioTestCase):
+    async def test_same_day_quota_change_is_an_upsert(self):
+        row = {
+            "id": UUID("66666666-6666-6666-6666-666666666666"),
+            "club_id": CLUB_ID,
+            "effective_date": date(2026, 9, 7),
+            "daily_quota": 2_000_000,
+            "set_by": "admin",
+        }
+        with patch(
+            "models.quota_requirement.db.fetchrow",
+            new=AsyncMock(return_value=row),
+        ) as fetchrow:
+            requirement = await QuotaRequirement.create(
+                CLUB_ID, date(2026, 9, 7), 2_000_000, "admin"
+            )
+
+        query = fetchrow.await_args.args[0]
+        self.assertIn("ON CONFLICT (club_id, effective_date)", query)
+        self.assertEqual(requirement.daily_quota, 2_000_000)
+
     async def test_lookup_does_not_carry_prior_month_override_forward(self):
         with (
             patch(
@@ -320,6 +314,12 @@ class StatusSummaryQueryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
+    def test_daily_check_remains_due_after_configured_hour(self):
+        now = datetime(2026, 9, 7, 17, 10)
+
+        self.assertTrue(BotTasks._is_daily_check_due(now, time(16, 30)))
+        self.assertFalse(BotTasks._is_daily_check_due(now, time(18, 0)))
+
     async def test_report_embed_lists_are_sent_individually(self):
         channel = SimpleNamespace(send=AsyncMock())
         embeds = [object(), object()]

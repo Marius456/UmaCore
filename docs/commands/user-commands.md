@@ -25,7 +25,7 @@ No parameters.
 
 ## /my_status
 
-View your own current quota status, including fans today, deficit/surplus, and bomb status. Requires being linked via `/link_trainer`.
+View your own current quota status, including fans today, cumulative progress, deficit/surplus, and consecutive days behind. Requires being linked via `/link_trainer`.
 
 No parameters.
 
@@ -48,5 +48,4 @@ Manage which DM notifications you receive.
 
 | Parameter | Required | Description |
 |---|---|---|
-| `bomb_warnings` | No | Receive DMs when you get a bomb (`true`/`false`) |
 | `deficit_alerts` | No | Receive DMs when you fall behind quota (`true`/`false`) |

@@ -423,6 +423,24 @@ class Database:
             ON members(trainer_id);
         CREATE INDEX IF NOT EXISTS idx_quota_requirements_date
             ON quota_requirements(effective_date DESC);
+
+        -- Only one quota can be effective for a club on a given day. Older
+        -- versions allowed duplicates, which made the winning value depend on
+        -- PostgreSQL's unspecified ordering for equal effective dates.
+        WITH duplicate_quotas AS (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY club_id, effective_date
+                       ORDER BY created_at DESC NULLS LAST, id DESC
+                   ) AS duplicate_number
+            FROM quota_requirements
+        )
+        DELETE FROM quota_requirements
+        WHERE id IN (
+            SELECT id FROM duplicate_quotas WHERE duplicate_number > 1
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS quota_requirements_club_effective_unique
+            ON quota_requirements(club_id, effective_date);
         CREATE INDEX IF NOT EXISTS idx_user_links_member_id
             ON user_links(member_id);
 

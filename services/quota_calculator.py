@@ -93,63 +93,6 @@ class QuotaCalculator:
         """Calculate deficit or surplus (positive = surplus, negative = deficit)"""
         return actual_fans - expected_fans
     
-    async def _get_previous_cumulative_totals(self, club_id: UUID) -> Dict[str, int]:
-        """
-        Get the latest cumulative fan counts from database for monthly reset detection
-        
-        Args:
-            club_id: Club UUID
-        
-        Returns:
-            Dict mapping trainer_id/name -> cumulative_fans
-        """
-        query = """
-            SELECT m.trainer_id, m.trainer_name, qh.cumulative_fans
-            FROM members m
-            JOIN quota_history qh ON m.member_id = qh.member_id
-            WHERE m.club_id = $1 AND qh.date = (
-                SELECT MAX(date) FROM quota_history WHERE club_id = $1
-            )
-        """
-        rows = await db.fetch(query, club_id)
-        
-        result = {}
-        for row in rows:
-            key = row['trainer_id'] if row['trainer_id'] else row['trainer_name']
-            result[key] = row['cumulative_fans']
-        
-        return result
-    
-    def _detect_monthly_reset_from_scraped(self, scraped_data: Dict[str, Dict], 
-                                           previous_totals: Dict[str, int]) -> bool:
-        """
-        Detect if a monthly reset has occurred by comparing scraped data to previous totals
-        """
-        if not previous_totals:
-            logger.info("No previous data found, skipping reset detection")
-            return False
-        
-        if not scraped_data:
-            logger.warning("No scraped data, cannot detect reset")
-            return False
-        
-        # Check if any member has significantly lower fans than before
-        for key, member_data in scraped_data.items():
-            current_fans = member_data["fans"][-1] if member_data["fans"] else 0
-            
-            if key in previous_totals:
-                previous_fans = previous_totals[key]
-                
-                # If current count is less than 50% of previous, it's a reset
-                if current_fans > 0 and current_fans < previous_fans * 0.5:
-                    logger.warning(
-                        f"Monthly reset detected: {member_data['name']} went from "
-                        f"{previous_fans:,} to {current_fans:,} fans"
-                    )
-                    return True
-        
-        return False
-    
     async def _auto_deactivate_missing_members(
         self,
         club_id: UUID,
@@ -213,22 +156,6 @@ class QuotaCalculator:
         # Use the date already calculated by the scraper and tasks.py
         data_date = current_date
         logger.info(f"Processing scraped data for club {club_id}: data_date = {data_date}, current_day = {current_day}")
-        
-        # Check for monthly reset
-        logger.info(f"Checking for monthly reset for club {club_id}...")
-        previous_totals = await self._get_previous_cumulative_totals(club_id)
-        
-        if self._detect_monthly_reset_from_scraped(scraped_data, previous_totals):
-            logger.info(
-                "Monthly reset detected for club %s; preserving historical data",
-                club_id,
-            )
-            # Clear manual deactivation flags for this club
-            await db.execute(
-                "UPDATE members SET manually_deactivated = FALSE WHERE club_id = $1 AND manually_deactivated = TRUE",
-                club_id
-            )
-            logger.info(f"Monthly member-state reset complete for club {club_id}")
         
         # Load the roster once. This replaces one member lookup per scraped row
         # and is also reused by missing-member reconciliation.

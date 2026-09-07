@@ -10,7 +10,7 @@ import calendar
 import json
 import asyncio
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
@@ -194,6 +194,7 @@ class HighscoreService:
 
         year = now.year
         month = now.month
+        first_month = True
 
         timeout = aiohttp.ClientTimeout(total=30)
         headers = {"accept": "application/json", "X-API-Key": UMAMOE_API_KEY}
@@ -207,10 +208,16 @@ class HighscoreService:
                 if rows:
                     all_rows.extend(rows)
                 else:
-                    # No data for this month — club didn't exist yet, stop
-                    logger.info(f"No data for {year}-{month:02d}, club likely didn't exist yet.")
-                    break
+                    # The current month can legitimately be empty before the
+                    # upstream publishes its first snapshot. Older empty
+                    # months still mark the beginning of the club's history.
+                    if not first_month:
+                        logger.info(
+                            f"No data for {year}-{month:02d}, club likely didn't exist yet."
+                        )
+                        break
                 year, month = cls._prev_month(year, month)
+                first_month = False
 
         return all_rows, all_ranks
 
@@ -484,8 +491,14 @@ class HighscoreService:
         current_name: Optional[str] = None
         current_streak = 0
         current_start: Optional[date] = None
+        previous_streak_date: Optional[date] = None
 
         for d in sorted_dates:
+            if previous_streak_date is None or d != previous_streak_date + timedelta(days=1):
+                current_name = None
+                current_streak = 0
+                current_start = None
+            previous_streak_date = d
             leader = daily_leader[d]
             if leader is None:
                 # Tie or no data — reset
@@ -599,16 +612,14 @@ class HighscoreService:
         if len(all_dates) < 2:
             return None
 
-        cumulative_gains: Dict[str, int] = defaultdict(int)
         current_month = None
         daily_leader: Dict[date, Optional[str]] = {}
 
         for d in all_dates:
             month_key = (d.year, d.month)
 
-            # Reset cumulative gains at month boundary
+            # Track the month boundary for streak segmentation below.
             if month_key != current_month:
-                cumulative_gains.clear()
                 current_month = month_key
 
             # Compute gain for each member on this date:
@@ -625,15 +636,12 @@ class HighscoreService:
                 # Record even if 0 so we can break ties by absolute fans
                 today_gains[name] = gain
 
-            for name, gain in today_gains.items():
-                cumulative_gains[name] = gain
-
-            if not cumulative_gains:
+            if not today_gains:
                 daily_leader[d] = None
                 continue
 
-            max_cumulative = max(cumulative_gains.values())
-            leaders = [name for name, g in cumulative_gains.items() if g == max_cumulative]
+            max_cumulative = max(today_gains.values())
+            leaders = [name for name, gain in today_gains.items() if gain == max_cumulative]
             if len(leaders) == 1:
                 daily_leader[d] = leaders[0]
             else:
@@ -656,16 +664,22 @@ class HighscoreService:
         current_name: Optional[str] = None
         current_streak = 0
         current_start: Optional[date] = None
+        previous_streak_date: Optional[date] = None
 
         for d in all_dates:
             month_key = (d.year, d.month)
 
-            # Streaks cannot cross month boundaries
-            if month_key != current_month:
+            # Streaks cannot cross month boundaries or missing calendar days.
+            if (
+                month_key != current_month
+                or previous_streak_date is None
+                or d != previous_streak_date + timedelta(days=1)
+            ):
                 current_name = None
                 current_streak = 0
                 current_start = None
                 current_month = month_key
+            previous_streak_date = d
 
             leader = daily_leader.get(d)
             if leader is None:

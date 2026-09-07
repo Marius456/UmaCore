@@ -29,6 +29,11 @@ class QuotaRequirement:
         query = """
             INSERT INTO quota_requirements (club_id, effective_date, daily_quota, set_by)
             VALUES ($1, $2, $3, $4)
+            ON CONFLICT (club_id, effective_date)
+            DO UPDATE SET
+                daily_quota = EXCLUDED.daily_quota,
+                set_by = EXCLUDED.set_by,
+                created_at = NOW()
             RETURNING id, club_id, effective_date, daily_quota, set_by
         """
         row = await db.fetchrow(query, club_id, effective_date, daily_quota, set_by)

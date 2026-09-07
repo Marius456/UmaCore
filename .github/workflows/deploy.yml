@@ -13,12 +13,17 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Create .env file
+        env:
+          DEPLOY_DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          DEPLOY_CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          DEPLOY_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DEPLOY_LOG_LEVEL: ${{ secrets.LOG_LEVEL }}
         run: |
           printf '%s\n' \
-            'DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}' \
-            'CHANNEL_ID=${{ secrets.CHANNEL_ID }}' \
-            'DATABASE_URL=${{ secrets.DATABASE_URL }}' \
-            'LOG_LEVEL=${{ secrets.LOG_LEVEL }}' > .env
+            "DISCORD_TOKEN=$DEPLOY_DISCORD_TOKEN" \
+            "CHANNEL_ID=$DEPLOY_CHANNEL_ID" \
+            "DATABASE_URL=$DEPLOY_DATABASE_URL" \
+            "LOG_LEVEL=$DEPLOY_LOG_LEVEL" > .env
 
       - name: Stop existing containers
         run: docker compose down || true

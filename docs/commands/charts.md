@@ -12,11 +12,8 @@ Generate a cumulative fan progression chart for all members in a club this month
 
 The chart shows one line per active member with dates on the X-axis and cumulative fans on the Y-axis. Members who joined mid-month will only have data from their join date onward.
 
-**Data sources (in priority order):**
-1. Uma.moe API — full month history (requires `circle_id`)
-2. Database fallback for ChronoGenesis clubs
-
-> On day 1 of the month, the chart falls back to previous month data since the current month hasn't populated yet.
+The chart uses the current month's stored `quota_history` rows. It reports that
+no data is available until the first successful check of a new month.
 
 ---
 
@@ -34,7 +31,7 @@ Shows each member's total fans earned last month. Members who joined mid-month a
 
 ## /stats
 
-View bot-wide statistics including total clubs, members, active bombs, and uptime.
+View bot-wide statistics including total clubs, members, servers, and uptime.
 
 **Restricted to the bot author only.**
 

@@ -23,7 +23,7 @@ UmaCore is a Discord bot that automatically tracks fan quota progress for Uma Mu
 
 **[Invite the bot](https://discord.com/oauth2/authorize?client_id=1467295225184784488&permissions=83968&integration_type=0&scope=bot+applications.commands)**
 
-After inviting, use `/add_club` to register your club and `/set_report_channel` to configure where reports are posted. Need help getting set up? Join the **[support server](https://discord.gg/f4QZNag9Hv)** or check the full guide at **[umacore.app](https://umacore.app)**.
+After inviting, use `/add_club` with the club's Uma.moe circle ID, then `/set_report_channel` to configure where reports are posted. Need help getting set up? Join the **[support server](https://discord.gg/f4QZNag9Hv)** or check the full guide at **[umacore.app](https://umacore.app)**.
 
 ---
 
@@ -31,11 +31,11 @@ After inviting, use `/add_club` to register your club and `/set_report_channel` 
 
 - **Daily fan tracking** — pulls each member's fan count automatically on a configurable schedule
 - **Quota progress** — tracks cumulative progress against daily targets and shows surplus/deficit per member
-- **Bomb warning system** — 3-strike countdown that activates after 3 consecutive days behind quota, with a 7-day window to recover
+- **Consecutive-day tracking** — distinguishes sustained quota deficits from isolated missed days
 - **Discord notifications** — daily reports and at-risk member alerts posted to configured channels
-- **DM notifications** — members can link their Discord accounts to get personal bomb and deficit alerts
+- **DM notifications** — members can link their Discord accounts to get personal deficit alerts
 - **Mid-month quota changes** — supports changing the quota requirement partway through a month with automatic recalculation
-- **Monthly reset detection** — automatically handles Uma Musume's monthly game resets
+- **Month-bounded history** — starts quota expectations and streaks fresh each month while retaining prior records
 - **Multi-club support** — track multiple clubs independently with separate quotas, schedules, and channels
 - **Web dashboard** — pair with [UmaCore Web](https://github.com/oHaruki/UmaCore-web) for a visual management interface
 
@@ -47,7 +47,7 @@ After inviting, use `/add_club` to register your club and `/set_report_channel` 
 | Command | Description |
 |---|---|
 | `/add_club` | Register a new club to track |
-| `/remove_club` | Deactivate a club |
+| `/remove_club` | Permanently delete a club after confirmation |
 | `/activate_club` | Reactivate a deactivated club |
 | `/list_clubs` | View all registered clubs |
 | `/edit_club` | Edit club settings (quota, schedule, circle_id, etc.) |
@@ -66,7 +66,6 @@ After inviting, use `/add_club` to register your club and `/set_report_channel` 
 | `/quota` | Set daily quota requirement for a club |
 | `/quota_history` | View quota changes this month |
 | `/force_check` | Manually trigger a daily check and report |
-| `/bomb_status` | View all active bomb warnings |
 
 ### Member Commands
 | Command | Description |
@@ -76,6 +75,17 @@ After inviting, use `/add_club` to register your club and `/set_report_channel` 
 | `/my_status` | View your own quota status |
 | `/member_status` | View any member's quota status |
 | `/notification_settings` | Manage DM notification preferences |
+
+### Reports and Utilities
+
+| Command | Description |
+|---|---|
+| `/progress_chart` | Chart current-month member progress |
+| `/previous_month` | Show previous-month final fan totals |
+| `/leaderboard_report` | Generate current-month leaderboard analysis |
+| `/club_highscores` | Show all-time club records |
+| `/gacha` | Show current GameTora banners |
+| `/trivia play` | Start a survival trivia game |
 
 ---
 

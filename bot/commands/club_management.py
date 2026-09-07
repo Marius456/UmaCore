@@ -4,11 +4,13 @@ Club management commands (add, remove, edit, list)
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import time
+from datetime import datetime, time
 import logging
 import pytz
 
 from models import Club
+from services.quota_maintenance_service import QuotaMaintenanceService
+from services.scrape_lock_manager import ScrapeContext, ScrapeLockUnavailableError
 from .common import ClubAutocompleteMixin
 
 logger = logging.getLogger(__name__)
@@ -109,8 +111,8 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
     ])
     async def add_club(self, interaction: discord.Interaction,
                        club_name: str,
-                       scrape_url: str,
-                       circle_id: str = None,
+                       circle_id: str,
+                       scrape_url: str = None,
                        daily_quota: int = 1000000,
                        quota_period: app_commands.Choice[str] = None,
                        timezone: str = "Europe/Amsterdam",
@@ -125,8 +127,13 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
                 await interaction.followup.send(f"❌ Club '{club_name}' already exists")
                 return
             
-            # Validate circle_id format if provided
-            if circle_id is not None and circle_id != "" and not circle_id.isdigit():
+            # Uma.moe is the only member-data source in the current release.
+            if not circle_id:
+                await interaction.followup.send(
+                    "❌ A numeric Uma.moe `circle_id` is required."
+                )
+                return
+            if not circle_id.isdigit():
                 await interaction.followup.send(
                     f"❌ Invalid Circle ID format: `{circle_id}`\n\n"
                     f"The circle_id must be a **numeric ID** from Uma.moe.\n\n"
@@ -155,14 +162,16 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
                 await interaction.followup.send("❌ Invalid scrape time format. Use HH:MM (e.g., 16:00)")
                 return
             
-            # Normalise circle_id: treat empty string as None
-            resolved_circle_id = circle_id if circle_id and circle_id != "" else None
+            resolved_circle_id = circle_id
+            resolved_scrape_url = scrape_url or (
+                f"https://uma.moe/circles/{resolved_circle_id}"
+            )
             
             resolved_quota_period = quota_period.value if quota_period else 'daily'
 
             await Club.create(
                 club_name=club_name,
-                scrape_url=scrape_url,
+                scrape_url=resolved_scrape_url,
                 circle_id=resolved_circle_id,
                 guild_id=interaction.guild_id,
                 daily_quota=daily_quota,
@@ -192,7 +201,7 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
                 name="Club Details",
                 value=f"**Name:** {club_name}\n"
                       f"**Circle ID:** {resolved_circle_id or 'Not set'}\n"
-                      f"**URL:** {scrape_url}",
+                      f"**URL:** {resolved_scrape_url}",
                 inline=False
             )
             
@@ -203,20 +212,11 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
                 inline=False
             )
             
-            # Show scraper info based on whether circle_id was provided
-            if resolved_circle_id:
-                embed.add_field(
-                    name="🚀 Scraper",
-                    value="Using Uma.moe API (fast path)",
-                    inline=False
-                )
-            else:
-                embed.add_field(
-                    name="⚠️ Scraper",
-                    value="Using ChronoGenesis scraper.\n"
-                          "Add circle_id later with `/edit_club` for better performance.",
-                    inline=False
-                )
+            embed.add_field(
+                name="🚀 Scraper",
+                value="Using the Uma.moe API",
+                inline=False
+            )
             
             embed.add_field(
                 name="Next Steps",
@@ -380,7 +380,7 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
                     else:
                         scraper_info = "\n**Scraper:** ⚠️ Invalid circle_id"
                 else:
-                    scraper_info = "\n**Scraper:** ChronoGenesis"
+                    scraper_info = "\n**Scraper:** Not configured (daily checks will fail)"
 
                 embed.add_field(
                     name=f"{status} {club.club_name}",
@@ -426,7 +426,7 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
                 return
             
             # Validate circle_id if being updated
-            if circle_id is not None and circle_id != "" and not circle_id.isdigit():
+            if circle_id is not None and not circle_id.isdigit():
                 await interaction.followup.send(
                     f"❌ Invalid Circle ID format: `{circle_id}`\n\n"
                     f"The circle_id must be a **numeric ID** from Uma.moe.\n\n"
@@ -435,13 +435,13 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
                     f"2. Search for **{club}**\n"
                     f"3. Click on it and copy the **number** from the URL\n"
                     f"   Example: `https://uma.moe/circles/860280110` → use `860280110`\n\n"
-                    f"To remove circle_id (use ChronoGenesis), use an empty string."
+                    "A numeric circle ID is required for daily checks."
                 )
                 return
             
             updates = {}
             if circle_id is not None:
-                updates['circle_id'] = circle_id if circle_id != "" else None
+                updates['circle_id'] = circle_id
             if daily_quota is not None:
                 updates['daily_quota'] = daily_quota
             if quota_period is not None:
@@ -466,7 +466,22 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
                 await interaction.followup.send("❌ No changes specified")
                 return
 
-            await club_obj.update_settings(**updates)
+            previous_quota_period = club_obj.quota_period
+            quota_settings_changed = bool(
+                {"daily_quota", "quota_period"}.intersection(updates)
+            )
+            if quota_settings_changed:
+                club_tz = pytz.timezone(updates.get("timezone", club_obj.timezone))
+                current_date = datetime.now(club_tz).date()
+                async with ScrapeContext(
+                    club_obj.club_id, f"edit_club_{club_obj.club_name}"
+                ):
+                    await club_obj.update_settings(**updates)
+                    await QuotaMaintenanceService.recalculate_current_month(
+                        club_obj, today=current_date
+                    )
+            else:
+                await club_obj.update_settings(**updates)
             
             embed = discord.Embed(
                 title="✅ Club Settings Updated",
@@ -481,16 +496,19 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
 
             # Warn if changing quota_period mid-month
             period_warning = ""
-            if 'quota_period' in updates and updates['quota_period'] != club_obj.quota_period:
-                period_warning = "\n⚠️ Quota period changed mid-month — historical data may be inconsistent until the next monthly reset."
+            if (
+                'quota_period' in updates
+                and updates['quota_period'] != previous_quota_period
+            ):
+                period_warning = (
+                    "\n⚠️ Quota period changed mid-month — current-month "
+                    "history was recalculated using the new period."
+                )
 
             changes_text = []
             for key, value in updates.items():
                 if key == 'circle_id':
-                    if value:
-                        changes_text.append(f"**Circle ID:** {value} (Uma.moe API enabled 🚀)")
-                    else:
-                        changes_text.append("**Circle ID:** Removed (will use ChronoGenesis)")
+                    changes_text.append(f"**Circle ID:** {value} (Uma.moe API enabled 🚀)")
                 elif key == 'daily_quota':
                     if value >= 1_000_000:
                         formatted = f"{value / 1_000_000:.1f}M"
@@ -517,6 +535,10 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
             await interaction.followup.send(embed=embed)
             logger.info(f"Club '{club}' settings updated by {interaction.user}: {updates}")
             
+        except ScrapeLockUnavailableError:
+            await interaction.followup.send(
+                "⚠️ A sync or quota update is already running for this club."
+            )
         except Exception as e:
             logger.error(f"Error in edit_club: {e}", exc_info=True)
             await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")

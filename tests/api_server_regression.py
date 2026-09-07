@@ -4,11 +4,26 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
+from bot.api_server import _parse_club_id
 from services.quota_maintenance_service import QuotaMaintenanceService
 
 
 CLUB_ID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 MEMBER_ID = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+
+
+class ApiInputRegressionTests(unittest.TestCase):
+    def test_mutating_endpoints_reject_non_object_json(self):
+        club_id, error = _parse_club_id([])
+
+        self.assertIsNone(club_id)
+        self.assertEqual(error, "JSON body must be an object")
+
+    def test_mutating_endpoints_reject_non_string_club_id(self):
+        club_id, error = _parse_club_id({"club_id": 123})
+
+        self.assertIsNone(club_id)
+        self.assertEqual(error, "Invalid club_id")
 
 
 def make_club(**overrides):

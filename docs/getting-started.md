@@ -13,16 +13,15 @@ Alternatively, you can self-host it — the bot is open source.
 **1. Add your club**
 
 ```
-/add_club club_name:YourClub scrape_url:... circle_id:860280110
+/add_club club_name:YourClub circle_id:860280110
 ```
 
 See [Finding Your Circle ID](#finding-your-circle-id) below if you're not sure what to put there.
 
-**2. Set your report and alert channels**
+**2. Set your report channel**
 
 ```
 /set_report_channel club:YourClub channel:#daily-reports
-/set_alert_channel club:YourClub channel:#mod-alerts
 ```
 
 **3. Test it**
@@ -41,8 +40,6 @@ That's it — the bot will handle everything else automatically from here.
 
 **Uma.moe:** Go to [uma.moe/circles](https://uma.moe/circles/), search for your club, and copy the number from the URL.
 - Example: `https://uma.moe/circles/860280110` → use `860280110`
-
-**ChronoGenesis:** The circle ID is shown directly under your club name on the site. It looks something like `690001342`.
 
 ---
 

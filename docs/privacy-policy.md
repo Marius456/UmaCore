@@ -23,7 +23,7 @@ We do **not** collect message content, passwords, payment information, or any ot
 Collected data is used exclusively to provide UmaCore's features:
 
 - Tracking daily fan-earning quotas per club
-- Sending bomb warnings and quota reports to configured channels
+- Sending quota reports and deficit notifications
 - Delivering personal DM notifications to linked users
 - Generating progress charts
 

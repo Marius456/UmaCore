@@ -26,16 +26,17 @@ All commands are Discord slash commands (`/`).
 | `/quota_history` | Admin | View quota changes this month |
 | `/delete_quota` | Admin | Remove a specific quota entry |
 | `/force_check` | Admin | Manually trigger daily check |
-| `/recalculate` | Admin | Recalculate bombs without clearing data |
+| `/recalculate` | Admin | Recalculate days-behind streaks |
 | `/set_report_channel` | Admin | Set daily report channel |
 | `/set_alert_channel` | Admin | Set alert channel |
+| `/set_leaderboard_channel` | Admin | Set daily leaderboard channel |
+| `/set_events_channel` | Admin | Set official-event notification channel |
 | `/channel_settings` | Admin | View channel config |
 | `/post_monthly_info` | Admin | Post monthly info board |
 | `/update_monthly_info` | Admin | Refresh monthly info board |
 | `/add_member` | Admin | Manually add a member |
 | `/deactivate_member` | Admin | Deactivate a member |
 | `/activate_member` | Admin | Reactivate a member |
-| `/bomb_status` | Admin | View active bombs |
 | `/link_trainer` | Member | Link Discord to trainer name |
 | `/unlink` | Member | Remove trainer link |
 | `/my_status` | Member | View your own quota status |
@@ -43,7 +44,11 @@ All commands are Discord slash commands (`/`).
 | `/notification_settings` | Member | Manage DM preferences |
 | `/progress_chart` | Anyone | Fan progression chart this month |
 | `/previous_month` | Anyone | Last month's final fan stats |
-| `/stats` | Author | Bot-wide statistics |
+| `/leaderboard_report` | Anyone | Generate current-month leaderboard analysis |
+| `/club_highscores` | Anyone | Show all-time club records |
+| `/gacha` | Anyone | Show current GameTora banners |
+| `/privacy` | Anyone | View privacy and terms links |
+| `/stats` | Author | Bot-wide club/member statistics |
 
 ### Trivia Commands
 

@@ -19,6 +19,21 @@ from services.scrape_lock_manager import ScrapeContext, ScrapeLockUnavailableErr
 logger = logging.getLogger(__name__)
 
 
+def _parse_club_id(body) -> tuple[UUID | None, str | None]:
+    """Validate the small JSON envelope shared by mutating API endpoints."""
+    if not isinstance(body, dict):
+        return None, "JSON body must be an object"
+    value = body.get("club_id")
+    if value is None or value == "":
+        return None, "club_id required"
+    if not isinstance(value, str):
+        return None, "Invalid club_id"
+    try:
+        return UUID(value), None
+    except (ValueError, AttributeError, TypeError):
+        return None, "Invalid club_id"
+
+
 async def _send_json(request: web.Request, data: dict, status: int = 200) -> web.StreamResponse:
     """Send a JSON response, explicitly writing and flushing the body."""
     payload = json.dumps(data).encode('utf-8')
@@ -37,14 +52,9 @@ async def handle_sync(request: web.Request) -> web.StreamResponse:
     except Exception:
         return await _send_json(request, {'error': 'Invalid JSON body'}, status=400)
 
-    club_id_str = body.get('club_id')
-    if not club_id_str:
-        return await _send_json(request, {'error': 'club_id required'}, status=400)
-
-    try:
-        club_id = UUID(club_id_str)
-    except ValueError:
-        return await _send_json(request, {'error': 'Invalid club_id'}, status=400)
+    club_id, validation_error = _parse_club_id(body)
+    if validation_error:
+        return await _send_json(request, {'error': validation_error}, status=400)
 
     club = await Club.get_by_id(club_id)
     if not club:
@@ -122,14 +132,9 @@ async def handle_recalculate(request: web.Request) -> web.StreamResponse:
     except Exception:
         return await _send_json(request, {'error': 'Invalid JSON body'}, status=400)
 
-    club_id_str = body.get('club_id')
-    if not club_id_str:
-        return await _send_json(request, {'error': 'club_id required'}, status=400)
-
-    try:
-        club_id = UUID(club_id_str)
-    except ValueError:
-        return await _send_json(request, {'error': 'Invalid club_id'}, status=400)
+    club_id, validation_error = _parse_club_id(body)
+    if validation_error:
+        return await _send_json(request, {'error': validation_error}, status=400)
 
     club = await Club.get_by_id(club_id)
     if not club:

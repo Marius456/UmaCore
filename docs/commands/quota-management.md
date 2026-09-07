@@ -54,7 +54,7 @@ Manually trigger a daily check immediately. Scrapes current data and posts a rep
 
 ## /recalculate
 
-Recalculate days-behind counts and bomb statuses based on existing data, without clearing anything.
+Recalculate consecutive days-behind counts from existing current-month history, without clearing anything.
 
 | Parameter | Required | Description |
 |---|---|---|

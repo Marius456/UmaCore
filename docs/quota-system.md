@@ -30,41 +30,22 @@ You can change the quota at any time with `/quota`. The new quota applies from t
 
 ---
 
-## Bomb System
+## Consecutive Days Behind
 
-The bomb system warns members who consistently fall behind quota.
-
-### How It Works
-
-1. A member falls behind quota for `bomb_trigger_days` consecutive days (default: 3)
-2. A bomb is activated — the member is notified via DM (if linked)
-3. The member has `bomb_countdown_days` days (default: 7) to get back on track
-4. If they catch up within the countdown, the bomb is defused
-5. If they don't, an alert is posted in the alert channel
-
-### Configuration
-
-Configured per club via `/edit_club`:
-
-| Setting | Default | Description |
-|---|---|---|
-| `bomb_trigger_days` | 3 | Days behind before bomb activates |
-| `bomb_countdown_days` | 7 | Days to recover before alert |
-| `bombs_enabled` | true | Toggle bomb system on/off |
-
-Use `/bomb_status` to see all active bombs for a club.
+Every quota-history row records `days_behind`. A negative deficit extends the
+streak only when the immediately preceding calendar day also has a negative
+row. Reaching quota resets the value to zero, and a missing day starts the next
+negative streak at one. The daily report and member status commands display
+this value; there is no separate warning-countdown subsystem in the current
+release.
 
 ---
 
 ## Monthly Reset
 
-At the start of each month, the bot automatically detects when fan counts drop significantly (below 50% of the previous total) and triggers a reset, which:
-
-- Preserves prior-month quota history and starts writing the new month separately
-- Clears active bombs
-- Resets current member baselines and starts fresh for the new month
-
-If the automatic detection reports an incorrect reset, review the scrape data and correct the underlying configuration before running another check.
+Quota calculations are month-bounded, so the new month's expected totals and
+days-behind streaks start fresh while prior history and manual-deactivation
+choices remain stored. No destructive reset job is required.
 
 ---
 
@@ -74,7 +55,7 @@ If the automatic detection reports an incorrect reset, review the scrape data an
 
 #### New Trainer Joins Mid-Month
 
-When a trainer joins mid-month, the bot only knows their current total fan count — it has no data on how many fans they earned before joining. Because of this, **their first day is recorded as `+0`** (no daily gain) and they are not held to any quota requirement for that day.
+When a trainer joins mid-month, the bot only knows their current total fan count — it has no data on how many fans they earned before joining. Because of this, **their first daily gain is recorded as `+0`** while the scraper establishes a baseline. Their cumulative quota expectation begins on the recorded join date.
 
 From the next day onward, the bot can calculate their actual daily gain and quota tracking begins normally.
 
@@ -84,11 +65,12 @@ This appears in the daily report embed as:
 TrainerName    +0    [total fans]
 ```
 
-No bomb strike is issued on the first day regardless of their deficit, since the baseline is being established.
-
 #### Trainer Leaves the Club
 
-When a trainer no longer appears in the scraped data, the bot automatically deactivates them. Their quota history is preserved in the database but they are removed from all daily reports and their active bombs are cleared.
+To protect against truncated upstream responses, a trainer is automatically
+deactivated only after being absent from three validated, sufficiently complete
+scrapes. Their quota history is preserved, but inactive trainers are removed
+from daily reports.
 
 If they rejoin later in the same month, the bot reactivates them and treats it as a fresh join — the same first-day `+0` behaviour applies, and their quota expectations are calculated from the return date, not the original join date.
 
@@ -101,36 +83,13 @@ There are two kinds of deactivation:
 
 ---
 
-### Bomb Edge Cases
+### Consecutive Days Reset Each Month
 
-#### Bomb Countdown Only Decrements Once Per Day
-
-Even if the daily check runs more than once (e.g. after a `/force_check`), the bomb countdown only decrements once per calendar day. There is no risk of a bomb expiring faster than intended from repeated checks.
-
-#### Bomb Urgency Colours
-
-The bomb emoji colour in the daily report reflects how much time is left:
-
-| Colour | Days Remaining |
-|---|---|
-| 🟡 Yellow | 5 or more |
-| 🟠 Orange | 3–4 |
-| 🔴 Red | 0–2 |
-
-#### Consecutive Days Resets Each Month
-
-The bomb trigger counts consecutive days behind quota **within the current month only**. If a member ends the previous month behind quota, that does not carry over — they start the new month with a clean streak count.
+Consecutive days behind are counted **within the current month only**. If a
+member ends the previous month behind quota, that streak does not carry over.
 
 A missing scrape day also breaks the streak. Two behind-quota records separated
 by a calendar gap are not treated as consecutive days.
-
-#### Bombs Are Cleared on Monthly Reset
-
-When the bot detects a monthly reset, all active bombs for the club are deleted. Members must accumulate new consecutive behind-days in the new month before a bomb is re-issued.
-
-#### Bomb Alerts for Already-Removed Members
-
-If a member is manually deactivated while a bomb is still active, the bot will not send a kick alert for them. The bomb record is kept in the database for history but is otherwise ignored.
 
 ---
 
@@ -152,15 +111,10 @@ If `/quota` is run multiple times in a single day, the most recently set value t
 
 ---
 
-### Monthly Reset Edge Cases
+### First Ever Scrape
 
-#### Automatic Reset Detection
-
-The bot detects a reset when a member's fan count drops to less than 50% of their previous recorded total. This handles the in-game monthly reset without manual intervention.
-
-#### No Previous Data (First Ever Scrape)
-
-On the very first scrape for a new club, there is no prior history to compare against. The bot skips reset detection entirely and adds all members as new. No reset is triggered even if fan counts appear low.
+On the first scrape for a new club, every observed trainer is added as a new
+member and month-relative history begins from the available Uma.moe baseline.
 
 ---
 
@@ -168,7 +122,9 @@ On the very first scrape for a new club, there is no prior history to compare ag
 
 #### DMs Disabled or User Not Linked
 
-If a member hasn't linked their Discord account via `/link`, or has Discord DMs disabled, bomb notifications and deficit alerts are simply not delivered to them. The report channel and alert channel still receive all notifications as normal — DM failures do not affect channel output.
+If a member has not linked their Discord account with `/link_trainer`, has not
+enabled deficit alerts, or has Discord DMs disabled, a deficit DM is not
+delivered. DM failures do not prevent the daily report from being posted.
 
 Successful deficit DMs are recorded per member and calendar day, so restarting
 the bot or running multiple instances does not normally resend the same alert.

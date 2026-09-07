@@ -89,12 +89,18 @@ class AdminCommands(ClubAutocompleteMixin, commands.Cog):
             current_date = current_datetime.date()
 
             set_by = f"{interaction.user.name}#{interaction.user.discriminator}"
-            await QuotaRequirement.create(
-                club_id=club_obj.club_id,
-                effective_date=current_date,
-                daily_quota=amount,
-                set_by=set_by
-            )
+            async with ScrapeContext(
+                club_obj.club_id, f"set_quota_{club_obj.club_name}"
+            ):
+                await QuotaRequirement.create(
+                    club_id=club_obj.club_id,
+                    effective_date=current_date,
+                    daily_quota=amount,
+                    set_by=set_by,
+                )
+                await QuotaMaintenanceService.recalculate_current_month(
+                    club_obj, today=current_date
+                )
 
             if amount >= 1_000_000:
                 formatted = f"{amount / 1_000_000:.1f}M"
@@ -145,6 +151,10 @@ class AdminCommands(ClubAutocompleteMixin, commands.Cog):
             if updated:
                 await interaction.followup.send("✅ Monthly info board auto-updated!", ephemeral=True)
 
+        except ScrapeLockUnavailableError:
+            await interaction.followup.send(
+                "⚠️ A sync or quota update is already running for this club."
+            )
         except Exception as e:
             logger.error(f"Error in set_quota: {e}", exc_info=True)
             await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
@@ -290,9 +300,21 @@ class AdminCommands(ClubAutocompleteMixin, commands.Cog):
                 await interaction.followup.send("❌ Invalid date format. Use YYYY-MM-DD")
                 return
 
-            deleted = await QuotaRequirement.delete_by_date_and_amount(
-                club_obj.club_id, effective_date, amount
-            )
+            club_tz = pytz.timezone(club_obj.timezone)
+            current_date = datetime.now(club_tz).date()
+            async with ScrapeContext(
+                club_obj.club_id, f"delete_quota_{club_obj.club_name}"
+            ):
+                deleted = await QuotaRequirement.delete_by_date_and_amount(
+                    club_obj.club_id, effective_date, amount
+                )
+                if deleted and (
+                    effective_date.year,
+                    effective_date.month,
+                ) == (current_date.year, current_date.month):
+                    await QuotaMaintenanceService.recalculate_current_month(
+                        club_obj, today=current_date
+                    )
 
             if deleted == 0:
                 await interaction.followup.send(
@@ -316,8 +338,8 @@ class AdminCommands(ClubAutocompleteMixin, commands.Cog):
             )
             embed.add_field(
                 name="ℹ️ Next Steps",
-                value="The bot will now use the next applicable quota entry. "
-                      "Run `/quota_history` to verify, or `/force_check` to recalculate.",
+                value="Current-month history has been recalculated using the "
+                      "remaining quota entries. Run `/quota_history` to verify.",
                 inline=False
             )
             embed.set_footer(text=f"Deleted by {interaction.user}")
@@ -325,8 +347,12 @@ class AdminCommands(ClubAutocompleteMixin, commands.Cog):
             await interaction.followup.send(embed=embed)
             logger.info(f"Quota entry deleted for {club} ({amount:,} on {date}) by {interaction.user}")
 
-            await self._update_monthly_info_board(club_obj, effective_date)
+            await self._update_monthly_info_board(club_obj, current_date)
 
+        except ScrapeLockUnavailableError:
+            await interaction.followup.send(
+                "⚠️ A sync or quota update is already running for this club."
+            )
         except Exception as e:
             logger.error(f"Error in delete_quota: {e}", exc_info=True)
             await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
