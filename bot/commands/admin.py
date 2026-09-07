@@ -10,7 +10,13 @@ import pytz
 import asyncio
 
 from scrapers import UmaMoeAPIScraper
-from services import QuotaCalculator, ReportGenerator, MonthlyInfoService
+from services import (
+    MonthlyInfoService,
+    QuotaCalculator,
+    ReportGenerator,
+    ScrapeContext,
+    ScrapeLockUnavailableError,
+)
 from models import Member, QuotaRequirement, Club, ClubRankHistory
 
 logger = logging.getLogger(__name__)
@@ -342,6 +348,7 @@ class AdminCommands(commands.Cog):
     async def force_check(self, interaction: discord.Interaction, club: str):
         """Manually trigger the daily check"""
         await interaction.response.defer()
+        scrape_context = None
 
         try:
             club_obj = await Club.get_by_name(club, interaction.guild_id)
@@ -352,6 +359,11 @@ class AdminCommands(commands.Cog):
             if not club_obj.belongs_to_guild(interaction.guild_id):
                 await interaction.followup.send(f"❌ Club '{club}' is not registered in this server.")
                 return
+
+            scrape_context = ScrapeContext(
+                club_obj.club_id, f"force_check_{club_obj.club_name}"
+            )
+            await scrape_context.__aenter__()
 
             report_channel = self.bot.get_channel(club_obj.report_channel_id)
             alert_channel = self.bot.get_channel(club_obj.alert_channel_id or club_obj.report_channel_id)
@@ -474,9 +486,22 @@ class AdminCommands(commands.Cog):
                 f"✅ Check complete for {club}: {updated_members} members updated, {new_members} new members"
             )
 
+        except ScrapeLockUnavailableError:
+            await interaction.followup.send(
+                "⚠️ A sync or quota check is already running for this club."
+            )
         except Exception as e:
             logger.error(f"Error in force_check: {e}", exc_info=True)
             await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
+        finally:
+            if scrape_context and scrape_context.lock_acquired:
+                try:
+                    await scrape_context.__aexit__(None, None, None)
+                except Exception:
+                    logger.exception(
+                        "Failed to release force-check lock for club %s",
+                        club,
+                    )
 
     @app_commands.command(name="add_member", description="Manually add a new member")
     @app_commands.checks.has_permissions(administrator=True)

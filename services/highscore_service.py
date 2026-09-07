@@ -231,18 +231,20 @@ class HighscoreService:
             async with aiohttp.ClientSession() as session:
                 async with session.get(api_url, headers=headers, timeout=30) as response:
                     if response.status != 200:
-                        logger.warning(
-                            f"API returned status {response.status} for {year}-{month:02d}"
+                        raise RuntimeError(
+                            f"Uma.moe API returned HTTP {response.status} "
+                            f"for {year}-{month:02d}"
                         )
-                        return [], None
 
                     data = await response.json()
         except (asyncio.TimeoutError, aiohttp.ClientError, json.JSONDecodeError) as e:
-            logger.warning(f"API request failed for {year}-{month:02d}: {e}")
-            return [], None
+            raise RuntimeError(
+                f"Uma.moe API request failed for {year}-{month:02d}"
+            ) from e
         except Exception as e:
-            logger.warning(f"Unexpected API error for {year}-{month:02d}: {e}")
-            return [], None
+            raise RuntimeError(
+                f"Unexpected Uma.moe API error for {year}-{month:02d}"
+            ) from e
 
         # Extract top-level monthly rank
         monthly_rank: Optional[int] = data.get("circle", {}).get("monthly_rank")

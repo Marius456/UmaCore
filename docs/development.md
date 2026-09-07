@@ -39,3 +39,18 @@ network checks for explicit integration scripts.
 Schema initialization currently includes idempotent migrations in
 `config/database.py`. Any schema change must be safe to run repeatedly against
 an existing database and should have a rollback plan before deployment.
+
+## Concurrency and delivery guarantees
+
+- Scrapes, manual force checks, dashboard syncs, and dashboard recalculations
+  share a per-club database lock. Lock ownership is token-based and refreshed
+  while work is active; callers must not bypass `ScrapeContext` when writing
+  member or quota-history state.
+- Delayed daily-data retries are bounded to six hours and stop at the club's
+  local date boundary. Shutdown cancels and awaits those jobs before database
+  and browser resources are closed.
+- Prediction snapshots are committed only after every primary report embed is
+  delivered. Deficit DMs use a database delivery claim to prevent duplicate
+  sends across restarts or multiple bot instances.
+- Playwright browser creation and replacement are serialized. Every page must
+  be closed in a `finally` block, including retry paths.

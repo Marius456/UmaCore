@@ -3,6 +3,7 @@ Leaderboard Report Service — generates a "news segment" embed analyzing
 today's leaderboard position changes (with month-long context for
 rivalries and leader changes).
 """
+import asyncio
 import logging
 import calendar
 from collections import defaultdict
@@ -106,6 +107,24 @@ class BotMood(Enum):
     NEUTRAL = "neutral"         # Default
 
 
+class ReportEmbeds(list):
+    """Embed list carrying the prediction snapshot to commit after delivery."""
+
+    def __init__(
+        self,
+        first_embed: discord.Embed,
+        club_id: UUID,
+        club_name: str,
+        report_date: date,
+        predictions: list[dict[str, Any]],
+    ):
+        super().__init__([first_embed])
+        self.club_id = club_id
+        self.club_name = club_name
+        self.report_date = report_date
+        self.predictions = predictions
+
+
 class LeaderboardReportService:
     """Generates a rich 'sports broadcast' style news report for club activity."""
 
@@ -205,12 +224,6 @@ class LeaderboardReportService:
         # History records
         history_records = cls._compute_history_records(daily_deltas, daily_rankings, latest_date)
 
-        # Save today's predictions for tomorrow's "Yesterday's Calls" section
-        if predictions_for_export:
-            save_prediction_snapshot(
-                club_id, club_name, latest_date, predictions_for_export
-            )
-
         # 3. Assemble Embeds
         main_embed = discord.Embed(
             title=f"🥕 Leaderboard News — {club_name}",
@@ -223,7 +236,13 @@ class LeaderboardReportService:
         )
 
         # We'll build a list: [main_embed, overflow_embed_1, overflow_embed_2, ...]
-        embeds = [main_embed]
+        embeds = ReportEmbeds(
+            main_embed,
+            club_id,
+            club_name,
+            latest_date,
+            predictions_for_export,
+        )
         overflow_index = 1
 
         def add_field(name: str, value: str, inline: bool = False) -> None:
@@ -311,6 +330,20 @@ class LeaderboardReportService:
         # Set footer on the main embed
         main_embed.set_footer(text=f"{club_name} · Powering Through {month_name}")
         return embeds
+
+    @staticmethod
+    async def persist_delivered_predictions(embeds: List[discord.Embed]) -> None:
+        """Commit forecast state after every primary report embed was delivered."""
+        if not isinstance(embeds, ReportEmbeds):
+            raise TypeError("expected report embeds returned by generate_leaderboard_report")
+        # Persist an empty list too, replacing stale data from an earlier rerun.
+        await asyncio.to_thread(
+            save_prediction_snapshot,
+            embeds.club_id,
+            embeds.club_name,
+            embeds.report_date,
+            embeds.predictions,
+        )
 
     # --- Computation Logic ---
 

@@ -53,7 +53,13 @@ class Club:
             scrape_time = time(16, 0)
 
         query = """
-            WITH slug_candidate AS (
+            WITH slug_lock AS MATERIALIZED (
+                -- Serialize allocation for the same base slug. Without this,
+                -- concurrent creates can both select the same free suffix.
+                SELECT pg_advisory_xact_lock(
+                    hashtextextended(COALESCE($3::text, ''), 0)
+                )
+            ), slug_candidate AS (
                 SELECT CASE
                     WHEN $3::text IS NULL OR $3::text = '' THEN NULL
                     ELSE (
@@ -74,6 +80,7 @@ class Club:
                         LIMIT 1
                     )
                 END AS public_slug
+                FROM slug_lock
             )
             INSERT INTO clubs (club_name, scrape_url, circle_id, guild_id, daily_quota, quota_period,
                              timezone, scrape_time, public_slug)

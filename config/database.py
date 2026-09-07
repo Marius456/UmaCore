@@ -3,6 +3,7 @@ PostgreSQL database connection management
 """
 import json
 import asyncpg
+from contextlib import asynccontextmanager
 from typing import Optional, List, Any
 import logging
 
@@ -66,6 +67,13 @@ class Database:
         """Fetch single value"""
         async with self.pool.acquire() as conn:
             return await conn.fetchval(query, *args)
+
+    @asynccontextmanager
+    async def transaction(self):
+        """Yield one connection inside a database transaction."""
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                yield conn
     
     async def initialize_schema(self):
         """Initialize database schema with multi-club support"""
@@ -413,6 +421,18 @@ class Database:
             ON quota_requirements(effective_date DESC);
         CREATE INDEX IF NOT EXISTS idx_user_links_member_id
             ON user_links(member_id);
+
+        -- Cross-process notification idempotency. A pending claim may be
+        -- reclaimed after 15 minutes if a worker dies before sending.
+        CREATE TABLE IF NOT EXISTS notification_deliveries (
+            discord_user_id BIGINT NOT NULL,
+            member_id UUID NOT NULL REFERENCES members(member_id) ON DELETE CASCADE,
+            delivery_date DATE NOT NULL,
+            notification_type VARCHAR(50) NOT NULL,
+            claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            sent_at TIMESTAMPTZ,
+            PRIMARY KEY (discord_user_id, member_id, delivery_date, notification_type)
+        );
         
         -- Unique constraint for trainer_id per club
         DROP INDEX IF EXISTS members_trainer_id_key;

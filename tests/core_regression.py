@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, time
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,11 +10,17 @@ from uuid import UUID
 from bot.tasks import BotTasks
 from models.club import Club
 from models.quota_requirement import QuotaRequirement
+from models.quota_history import QuotaHistory
 from services import prediction_store
+from services.leaderboard_report_service import (
+    LeaderboardReportService,
+    ReportEmbeds,
+)
 from services.quota_calculator import QuotaCalculator
 
 
 CLUB_ID = UUID("11111111-1111-1111-1111-111111111111")
+MEMBER_ID = UUID("44444444-4444-4444-4444-444444444444")
 
 
 def make_club(*, guild_id=123):
@@ -76,6 +83,39 @@ class QuotaCalculationTests(unittest.TestCase):
             ],
         )
         self.assertEqual(result, 400_000)
+
+
+class ConsecutiveDayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_calculator_breaks_streak_across_missing_calendar_day(self):
+        history = [
+            SimpleNamespace(date=date(2026, 9, 5), deficit_surplus=-1),
+            SimpleNamespace(date=date(2026, 9, 3), deficit_surplus=-1),
+        ]
+        with patch.object(
+            QuotaHistory,
+            "get_last_n_days",
+            new=AsyncMock(return_value=history),
+        ):
+            result = await QuotaCalculator()._calculate_days_behind(
+                MEMBER_ID, -1, date(2026, 9, 6)
+            )
+
+        self.assertEqual(result, 2)
+
+    async def test_history_counter_stops_at_recovery_day(self):
+        rows = [
+            {"date": date(2026, 9, 7), "deficit_surplus": -1},
+            {"date": date(2026, 9, 6), "deficit_surplus": 1},
+            {"date": date(2026, 9, 5), "deficit_surplus": -1},
+        ]
+        with patch(
+            "models.quota_history.db.fetch", new=AsyncMock(return_value=rows)
+        ):
+            result = await QuotaHistory.check_consecutive_behind_days(
+                MEMBER_ID, 10, date(2026, 9, 7)
+            )
+
+        self.assertEqual(result, 1)
 
 
 class MonthlyResetTests(unittest.IsolatedAsyncioTestCase):
@@ -145,6 +185,32 @@ class PredictionStoreTests(unittest.TestCase):
                 self.assertIn(str(CLUB_ID), paths[0].name)
 
 
+class PredictionDeliveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_predictions_are_committed_only_by_delivery_hook(self):
+        embeds = ReportEmbeds(
+            MagicMock(),
+            CLUB_ID,
+            "Test",
+            date(2026, 9, 7),
+            [],
+        )
+        with patch(
+            "services.leaderboard_report_service.save_prediction_snapshot"
+        ) as save:
+            await LeaderboardReportService.persist_delivered_predictions(embeds)
+
+        save.assert_called_once_with(CLUB_ID, "Test", date(2026, 9, 7), [])
+
+    async def test_failed_embed_delivery_stops_before_later_embeds(self):
+        channel = SimpleNamespace(
+            send=AsyncMock(side_effect=[None, RuntimeError("send failed")])
+        )
+        with self.assertRaises(RuntimeError):
+            await BotTasks._send_embeds(channel, [object(), object(), object()])
+
+        self.assertEqual(channel.send.await_count, 2)
+
+
 class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
     async def test_report_embed_lists_are_sent_individually(self):
         channel = SimpleNamespace(send=AsyncMock())
@@ -166,6 +232,29 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
             await tasks._run_scheduled_daily_check(club)
 
         self.assertNotIn(club.club_id, tasks._running_club_ids)
+
+    async def test_shutdown_waits_for_background_task_cleanup(self):
+        tasks = BotTasks(SimpleNamespace())
+        cleanup_finished = asyncio.Event()
+
+        async def worker():
+            try:
+                await asyncio.Event().wait()
+            finally:
+                await asyncio.sleep(0)
+                cleanup_finished.set()
+
+        background = asyncio.create_task(worker())
+        await asyncio.sleep(0)
+        tasks._scheduled_tasks.add(background)
+        tasks._running_club_ids.add(CLUB_ID)
+
+        await tasks.stop_tasks()
+
+        self.assertTrue(cleanup_finished.is_set())
+        self.assertTrue(background.done())
+        self.assertEqual(tasks._scheduled_tasks, set())
+        self.assertEqual(tasks._running_club_ids, set())
 
 
 if __name__ == "__main__":

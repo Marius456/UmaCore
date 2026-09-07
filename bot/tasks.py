@@ -23,6 +23,9 @@ from config.settings import EVENTS_JSON_PATH
 
 logger = logging.getLogger(__name__)
 
+LONG_RETRY_INTERVAL_SECONDS = 10 * 60
+LONG_RETRY_WINDOW_SECONDS = 6 * 60 * 60
+
 
 class BotTasks:
     """Manages scheduled tasks for the bot"""
@@ -36,6 +39,7 @@ class BotTasks:
         # Track last run per club per day (club_id_YYYY-MM-DD -> True)
         self.last_runs = {}
         self._running_club_ids = set()
+        self._scheduled_tasks = set()
         # Serializes event scraping with notification reads/writes of events.json.
         self._events_lock = asyncio.Lock()
         # Prevents duplicate Discord posts if a successful send is followed by
@@ -54,11 +58,32 @@ class BotTasks:
             "daily official event scraping)"
         )
 
-    def stop_tasks(self):
-        """Stop all scheduled tasks"""
+    async def stop_tasks(self):
+        """Cancel scheduled work and wait until it has finished unwinding."""
+        loop_tasks = [
+            loop.get_task()
+            for loop in (
+                self.hourly_check,
+                self.hourly_event_notifications,
+                self.daily_official_events_check,
+            )
+            if loop.get_task() is not None
+        ]
         self.hourly_check.cancel()
         self.hourly_event_notifications.cancel()
         self.daily_official_events_check.cancel()
+        scheduled_tasks = tuple(self._scheduled_tasks)
+        for task in scheduled_tasks:
+            task.cancel()
+        current_task = asyncio.current_task()
+        pending = {
+            task for task in (*loop_tasks, *scheduled_tasks)
+            if task is not current_task and not task.done()
+        }
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        self._scheduled_tasks.clear()
+        self._running_club_ids.clear()
         logger.info("Scheduled tasks stopped")
 
     @tasks.loop(hours=1)
@@ -106,7 +131,11 @@ class BotTasks:
                         logger.info(f"⏰ Time to check {club.club_name} ({now_in_club_tz.strftime('%H:%M')} {club.timezone})")
 
                         self._running_club_ids.add(club.club_id)
-                        asyncio.create_task(self._run_scheduled_daily_check(club))
+                        task = asyncio.create_task(
+                            self._run_scheduled_daily_check(club, current_date)
+                        )
+                        self._scheduled_tasks.add(task)
+                        task.add_done_callback(self._scheduled_task_done)
                     else:
                         logger.debug(
                             f"{club.club_name}: Not time yet "
@@ -121,10 +150,16 @@ class BotTasks:
         except Exception as e:
             logger.error(f"Error in hourly_check: {e}", exc_info=True)
 
-    async def _run_scheduled_daily_check(self, club: Club):
+    def _scheduled_task_done(self, task: asyncio.Task):
+        """Retain background tasks through completion and consume failures."""
+        self._scheduled_tasks.discard(task)
+        if not task.cancelled() and (error := task.exception()) is not None:
+            logger.error("Scheduled daily check crashed", exc_info=error)
+
+    async def _run_scheduled_daily_check(self, club: Club, run_date=None):
         """Run one scheduled check and always clear its in-process guard."""
         try:
-            await self.daily_check_for_club(club)
+            await self.daily_check_for_club(club, run_date=run_date)
         finally:
             self._running_club_ids.discard(club.club_id)
 
@@ -134,11 +169,14 @@ class BotTasks:
         for embed in embeds:
             await channel.send(embed=embed)
 
-    async def daily_check_for_club(self, club: Club):
+    async def daily_check_for_club(self, club: Club, run_date=None):
         """Daily quota check and report generation for a specific club"""
         logger.info("=" * 80)
         logger.info(f"Starting daily check for {club.club_name}")
         logger.info("=" * 80)
+
+        if run_date is None:
+            run_date = datetime.now(pytz.timezone(club.timezone)).date()
 
         try:
             async with ScrapeContext(club.club_id, f"tasks_{club.club_name}"):
@@ -221,12 +259,24 @@ class BotTasks:
 
                 # STEP 3: If all fast retries failed with DataNotAvailableError, enter long retry loop
                 if not scraped_data and isinstance(last_error, DataNotAvailableError):
+                    loop = asyncio.get_running_loop()
+                    retry_deadline = loop.time() + LONG_RETRY_WINDOW_SECONDS
                     logger.warning(
                         f"⏳ Data not yet available for {club.club_name} after {max_retries} fast retries. "
-                        f"Entering 10-minute retry loop until data arrives..."
+                        f"Entering a bounded 10-minute retry loop..."
                     )
                     while not scraped_data:
-                        await asyncio.sleep(600)  # 10 minutes
+                        remaining = retry_deadline - loop.time()
+                        local_date = datetime.now(club_tz).date()
+                        if remaining <= 0 or local_date != run_date:
+                            logger.warning(
+                                "Stopping delayed retries for %s after the retry window/date ended",
+                                club.club_name,
+                            )
+                            break
+                        await asyncio.sleep(min(LONG_RETRY_INTERVAL_SECONDS, remaining))
+                        if loop.time() >= retry_deadline:
+                            break
                         try:
                             logger.info(f"🔍 Retrying scrape for {club.club_name} (10-min cycle)...")
                             scraped_data = await scraper.scrape()
@@ -390,6 +440,7 @@ class BotTasks:
                                 **tier_kwargs,
                             )
                             await self._send_embeds(leaderboard_channel, embeds)
+                            await LeaderboardReportService.persist_delivered_predictions(embeds)
                             logger.info(
                                 f"Leaderboard report sent for {club.club_name} "
                                 f"({len(embeds)} embed(s))"
@@ -405,11 +456,9 @@ class BotTasks:
                     logger.error(f"Error generating leaderboard report for {club.club_name}: {e}", exc_info=True)
 
                 # Mark this club as successfully completed for today
-                club_tz = pytz.timezone(club.timezone)
-                now_in_club_tz = datetime.now(club_tz)
-                run_key = f"{club.club_id}_{now_in_club_tz.date()}"
+                run_key = f"{club.club_id}_{run_date}"
                 self.last_runs[run_key] = True
-                logger.info(f"✅ Marked {club.club_name} as completed for {now_in_club_tz.date()}")
+                logger.info(f"✅ Marked {club.club_name} as completed for {run_date}")
 
                 # STEP 9: Final summary
                 logger.info("=" * 80)

@@ -35,6 +35,7 @@ class DataNotAvailableError(Exception):
 _browser = None
 _browser_context = None
 _playwright = None
+_browser_lifecycle_lock = asyncio.Lock()
 
 # Shared launch args for bundled Chromium
 LAUNCH_ARGS = [
@@ -117,23 +118,28 @@ async def _get_browser_context() -> BrowserContext:
     The context stores Cloudflare clearance cookies so they survive restarts.
     """
     global _browser_context, _browser
-    if _browser_context is None or not _browser_context.browser or not _browser_context.browser.is_connected():
-        browser = await _get_browser()
-        cookie_dir = _get_cookie_dir()
-        _browser_context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1920, "height": 1080},
-            locale="en-US",
-            timezone_id="America/New_York",
-            storage_state=os.path.join(cookie_dir, "storage_state.json") if os.path.exists(
-                os.path.join(cookie_dir, "storage_state.json")) else None,
-        )
-        logger.info("Created persistent Playwright browser context (headless)")
-    return _browser_context
+    async with _browser_lifecycle_lock:
+        if (
+            _browser_context is None
+            or not _browser_context.browser
+            or not _browser_context.browser.is_connected()
+        ):
+            browser = await _get_browser()
+            cookie_dir = _get_cookie_dir()
+            storage_path = os.path.join(cookie_dir, "storage_state.json")
+            _browser_context = await browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+                timezone_id="America/New_York",
+                storage_state=storage_path if os.path.exists(storage_path) else None,
+            )
+            logger.info("Created persistent Playwright browser context (headless)")
+        return _browser_context
 
 
 async def _get_browser():
@@ -168,6 +174,12 @@ async def _get_browser():
 
 async def _close_browser():
     """Close the shared browser instance (call on bot shutdown)."""
+    async with _browser_lifecycle_lock:
+        await _close_browser_unlocked()
+
+
+async def _close_browser_unlocked():
+    """Close the shared browser while holding the lifecycle lock."""
     global _browser, _browser_context, _playwright
 
     # Save storage state (cookies + localStorage) before closing

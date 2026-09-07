@@ -385,12 +385,13 @@ class QuotaCalculator:
 
         # Count consecutive days with negative deficit before data_date
         consecutive_days = 1  # Count the current day
+        expected_date = data_date - timedelta(days=1)
 
         for history in recent_history:
-            if history.deficit_surplus < 0:
-                consecutive_days += 1
-            else:
+            if history.date != expected_date or history.deficit_surplus >= 0:
                 break
+            consecutive_days += 1
+            expected_date -= timedelta(days=1)
 
         logger.debug(f"Member {member_id}: {consecutive_days} consecutive days behind")
         return consecutive_days

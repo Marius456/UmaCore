@@ -6,6 +6,7 @@ from typing import List, Dict
 import logging
 
 from models import UserLink
+from config.database import db
 from config.settings import COLOR_BEHIND
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,37 @@ class NotificationService:
             
             if not user_link:
                 continue
+
+            delivery_date = current_date or history.date
+            try:
+                claim = await db.fetchval(
+                    """
+                    INSERT INTO notification_deliveries
+                        (discord_user_id, member_id, delivery_date, notification_type)
+                    VALUES ($1, $2, $3, 'deficit')
+                    ON CONFLICT (discord_user_id, member_id, delivery_date, notification_type)
+                    DO UPDATE SET claimed_at = NOW()
+                    WHERE notification_deliveries.sent_at IS NULL
+                      AND notification_deliveries.claimed_at < NOW() - INTERVAL '15 minutes'
+                    RETURNING member_id
+                    """,
+                    user_link.discord_user_id,
+                    member.member_id,
+                    delivery_date,
+                )
+            except Exception:
+                logger.exception(
+                    "Could not claim deficit notification for user %s",
+                    user_link.discord_user_id,
+                )
+                continue
+            if claim is None:
+                logger.debug(
+                    "Skipping duplicate deficit notification for user %s on %s",
+                    user_link.discord_user_id,
+                    delivery_date,
+                )
+                continue
             
             try:
                 user = await self.bot.fetch_user(user_link.discord_user_id)
@@ -86,9 +118,32 @@ class NotificationService:
                 embed.set_footer(text=f"Use /my_status to check progress • {club_name}")
                 
                 await user.send(embed=embed)
+                await db.execute(
+                    """
+                    UPDATE notification_deliveries
+                    SET sent_at = NOW()
+                    WHERE discord_user_id = $1 AND member_id = $2
+                      AND delivery_date = $3 AND notification_type = 'deficit'
+                    """,
+                    user_link.discord_user_id,
+                    member.member_id,
+                    delivery_date,
+                )
                 logger.info(f"Sent deficit notification to Discord user {user_link.discord_user_id} for {member.trainer_name} in {club_name}")
                 
             except discord.Forbidden:
+                # Treat a deterministic opt-out as handled for this date.
+                await db.execute(
+                    """
+                    UPDATE notification_deliveries
+                    SET sent_at = NOW()
+                    WHERE discord_user_id = $1 AND member_id = $2
+                      AND delivery_date = $3 AND notification_type = 'deficit'
+                    """,
+                    user_link.discord_user_id,
+                    member.member_id,
+                    delivery_date,
+                )
                 logger.warning(f"Cannot send DM to user {user_link.discord_user_id} (DMs disabled)")
             except Exception as e:
                 logger.error(f"Error sending deficit notification to {user_link.discord_user_id}: {e}")

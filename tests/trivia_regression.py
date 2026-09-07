@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from bot.commands.trivia import TriviaCommands
 from models.trivia_question import TriviaQuestion
+from models.trivia_leaderboard import TriviaLeaderboardEntry
 
 
 class FakeInteraction:
@@ -115,6 +116,39 @@ class TriviaVisibilityTests(unittest.IsolatedAsyncioTestCase):
 
         interaction.followup.send.assert_awaited_once()
         self.assertTrue(interaction.followup.send.await_args.kwargs["ephemeral"])
+
+
+class TriviaLeaderboardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_tied_streak_is_not_reported_as_a_new_record(self):
+        row = {
+            "user_id": 123,
+            "highest_streak": 5,
+            "total_correct": 20,
+            "last_played": None,
+        }
+        connection = SimpleNamespace(
+            execute=AsyncMock(),
+            fetchval=AsyncMock(return_value=5),
+            fetchrow=AsyncMock(return_value=row),
+        )
+
+        class Transaction:
+            async def __aenter__(self):
+                return connection
+
+            async def __aexit__(self, *_):
+                return False
+
+        with patch("models.trivia_leaderboard.db.transaction", return_value=Transaction()):
+            entry, is_new = await TriviaLeaderboardEntry.record_result(123, 5, 5)
+
+        self.assertEqual(entry.highest_streak, 5)
+        self.assertFalse(is_new)
+        connection.execute.assert_awaited_once_with(
+            "SELECT pg_advisory_xact_lock($1)", 123
+        )
+        connection.fetchval.assert_awaited_once()
+        connection.fetchrow.assert_awaited_once()
 
     async def test_empty_question_bank_message_is_ephemeral(self):
         commands = TriviaCommands(None)

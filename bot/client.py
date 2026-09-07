@@ -147,7 +147,7 @@ class UmamusumeBot(commands.Bot):
     async def close(self):
         """Cleanup when bot is shutting down"""
         if self.tasks_manager:
-            self.tasks_manager.stop_tasks()
+            await self.tasks_manager.stop_tasks()
         
         # Close Playwright browser used for report image rendering
         await _close_playwright_browser_async()

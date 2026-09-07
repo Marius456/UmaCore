@@ -60,10 +60,9 @@ Use `/bomb_status` to see all active bombs for a club.
 
 At the start of each month, the bot automatically detects when fan counts drop significantly (below 50% of the previous total) and triggers a reset, which:
 
-- Clears quota history
+- Preserves prior-month quota history and starts writing the new month separately
 - Clears active bombs
-- Clears tracking data
-- Starts fresh for the new month
+- Resets current member baselines and starts fresh for the new month
 
 If the automatic detection reports an incorrect reset, review the scrape data and correct the underlying configuration before running another check.
 
@@ -122,6 +121,9 @@ The bomb emoji colour in the daily report reflects how much time is left:
 
 The bomb trigger counts consecutive days behind quota **within the current month only**. If a member ends the previous month behind quota, that does not carry over — they start the new month with a clean streak count.
 
+A missing scrape day also breaks the streak. Two behind-quota records separated
+by a calendar gap are not treated as consecutive days.
+
 #### Bombs Are Cleared on Monthly Reset
 
 When the bot detects a monthly reset, all active bombs for the club are deleted. Members must accumulate new consecutive behind-days in the new month before a bomb is re-issued.
@@ -167,3 +169,6 @@ On the very first scrape for a new club, there is no prior history to compare ag
 #### DMs Disabled or User Not Linked
 
 If a member hasn't linked their Discord account via `/link`, or has Discord DMs disabled, bomb notifications and deficit alerts are simply not delivered to them. The report channel and alert channel still receive all notifications as normal — DM failures do not affect channel output.
+
+Successful deficit DMs are recorded per member and calendar day, so restarting
+the bot or running multiple instances does not normally resend the same alert.

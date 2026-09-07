@@ -13,7 +13,7 @@ from aiohttp import web
 from config.database import db
 from models import Club
 from scrapers import UmaMoeAPIScraper
-from services import QuotaCalculator, ScrapeContext
+from services import QuotaCalculator, ScrapeContext, ScrapeLockUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -115,18 +115,20 @@ async def _backfill_month(club: Club, scraped_data: dict, fetched_year: int, fet
             deficit_surplus = comp_fans - expected
             consecutive_behind = consecutive_behind + 1 if deficit_surplus < 0 else 0
 
-            await db.execute(
+            inserted_id = await db.fetchval(
                 """
                 INSERT INTO quota_history
                     (member_id, club_id, date, cumulative_fans, expected_fans,
                      deficit_surplus, days_behind)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (member_id, date) DO NOTHING
+                RETURNING id
                 """,
                 member_id, club.club_id, comp_date,
                 comp_fans, expected, deficit_surplus, consecutive_behind
             )
-            backfilled += 1
+            if inserted_id is not None:
+                backfilled += 1
 
     return backfilled
 
@@ -198,6 +200,13 @@ async def handle_sync(request: web.Request) -> web.StreamResponse:
                     'backfilled': backfilled,
                 }
 
+    except ScrapeLockUnavailableError as e:
+        logger.warning("Web sync lock unavailable for club %s: %s", club.club_id, e)
+        return await _send_json(
+            request,
+            {'error': 'Another sync or recalculation is already running'},
+            status=409,
+        )
     except Exception as e:
         logger.error(f"Web sync failed for {club.club_name}: {e}", exc_info=True)
         error = "Sync failed. Please try again later."
@@ -226,6 +235,26 @@ async def handle_recalculate(request: web.Request) -> web.StreamResponse:
     if not club:
         return await _send_json(request, {'error': 'Club not found'}, status=404)
 
+    try:
+        async with ScrapeContext(club.club_id, f"web_recalculate_{club.club_name}"):
+            updated = await _recalculate_club(club)
+    except ScrapeLockUnavailableError as e:
+        logger.warning("Recalculation lock unavailable for club %s: %s", club_id, e)
+        return await _send_json(
+            request,
+            {'error': 'Another sync or recalculation is already running'},
+            status=409,
+        )
+    except Exception as e:
+        logger.error("Recalculation failed for club %s: %s", club_id, e, exc_info=True)
+        return await _send_json(request, {'error': 'Recalculation failed'}, status=500)
+
+    logger.info(f"Recalculated {updated} quota_history rows for club {club_id}")
+    return await _send_json(request, {'recalculated': updated})
+
+
+async def _recalculate_club(club: Club) -> int:
+    """Recalculate the current month while the caller holds the club lock."""
     period_days = {'daily': 1, 'weekly': 7, 'biweekly': 14}.get(club.quota_period, 1)
     default_quota = club.daily_quota
 
@@ -236,7 +265,7 @@ async def handle_recalculate(request: web.Request) -> web.StreamResponse:
         "SELECT effective_date, daily_quota FROM quota_requirements "
         "WHERE club_id = $1 AND effective_date >= $2 "
         "ORDER BY effective_date ASC",
-        club_id, month_start
+        club.club_id, month_start
     )
 
     def quota_for(d: date) -> int:
@@ -265,7 +294,7 @@ async def handle_recalculate(request: web.Request) -> web.StreamResponse:
         JOIN quota_history qh ON qh.member_id = m.member_id
         WHERE m.club_id = $1 AND qh.date >= $2
         """,
-        club_id, month_start
+        club.club_id, month_start
     )
 
     updated = 0
@@ -281,10 +310,19 @@ async def handle_recalculate(request: web.Request) -> web.StreamResponse:
         )
 
         consecutive_behind = 0
+        previous_date = None
         for row in history:
             expected = calc_expected(member['join_date'], row['date'])
             deficit_surplus = row['cumulative_fans'] - expected
-            consecutive_behind = consecutive_behind + 1 if deficit_surplus < 0 else 0
+            is_adjacent = (
+                previous_date is not None
+                and row['date'] == previous_date + timedelta(days=1)
+            )
+            consecutive_behind = (
+                consecutive_behind + 1 if deficit_surplus < 0 and is_adjacent
+                else 1 if deficit_surplus < 0
+                else 0
+            )
             await db.execute(
                 """
                 UPDATE quota_history
@@ -294,9 +332,9 @@ async def handle_recalculate(request: web.Request) -> web.StreamResponse:
                 expected, deficit_surplus, consecutive_behind, row['id']
             )
             updated += 1
+            previous_date = row['date']
 
-    logger.info(f"Recalculated {updated} quota_history rows for club {club_id}")
-    return await _send_json(request, {'recalculated': updated})
+    return updated
 
 
 async def handle_health(request: web.Request) -> web.StreamResponse:

@@ -95,6 +95,7 @@ class LeaderboardCommands(commands.Cog):
             await interaction.followup.send(embed=embeds[0])
             for extra_embed in embeds[1:]:
                 await interaction.followup.send(embed=extra_embed)
+            await LeaderboardReportService.persist_delivered_predictions(embeds)
 
             # Also post to the club's report channel if configured and different
             if (

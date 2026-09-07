@@ -265,11 +265,9 @@ class TriviaCommands(commands.Cog):
                 else:
                     # Game over — update leaderboard and show result
                     if current_streak > 0:
-                        entry = await TriviaLeaderboardEntry.upsert(
+                        _, is_new_record = await TriviaLeaderboardEntry.record_result(
                             user_id, current_streak, total_correct
                         )
-                        # Check if this is a new personal best record
-                        is_new_record = (current_streak >= entry.highest_streak)
                     else:
                         is_new_record = False
 
