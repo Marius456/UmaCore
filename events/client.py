@@ -28,6 +28,8 @@ _FILES = [
     "en/missions/limited",          # limited-time mission events (ms timestamps)
 ]
 
+CACHE_TTL_SECONDS = 5 * 60
+
 
 def _normalize_ts(ts: int) -> int:
     """Convert millisecond timestamps to seconds if needed."""
@@ -57,6 +59,9 @@ def _get_name(item: dict) -> str:
 class GametoraClient:
     def __init__(self):
         self._session: aiohttp.ClientSession | None = None
+        self._cache: dict | None = None
+        self._cache_at = 0.0
+        self._cache_lock = asyncio.Lock()
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -85,6 +90,21 @@ class GametoraClient:
         return await self._fetch(url)
 
     async def get_events_data(self) -> dict:
+        """Return cached event data, coalescing concurrent refreshes."""
+        now = time.monotonic()
+        if self._cache is not None and now - self._cache_at < CACHE_TTL_SECONDS:
+            return self._cache
+
+        async with self._cache_lock:
+            now = time.monotonic()
+            if self._cache is not None and now - self._cache_at < CACHE_TTL_SECONDS:
+                return self._cache
+            data = await self._fetch_events_data()
+            self._cache = data
+            self._cache_at = time.monotonic()
+            return data
+
+    async def _fetch_events_data(self) -> dict:
         """
         Fetch and return all current Global event/gacha data.
 

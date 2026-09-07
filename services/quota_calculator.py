@@ -177,9 +177,15 @@ class QuotaCalculator:
         
         return False
     
-    async def _auto_deactivate_missing_members(self, club_id: UUID, scraped_trainer_ids: Set[str]):
+    async def _auto_deactivate_missing_members(
+        self,
+        club_id: UUID,
+        scraped_trainer_ids: Set[str],
+        active_members=None,
+    ):
         """Safely deactivate members absent from several complete scrapes."""
-        active_members = await Member.get_all_active(club_id)
+        if active_members is None:
+            active_members = await Member.get_all_active(club_id)
 
         if not active_members:
             return
@@ -251,9 +257,22 @@ class QuotaCalculator:
             )
             logger.info(f"Monthly member-state reset complete for club {club_id}")
         
+        # Load the roster once. This replaces one member lookup per scraped row
+        # and is also reused by missing-member reconciliation.
+        all_members = await Member.get_all_for_club(club_id)
+        active_members = [member for member in all_members if member.is_active]
+        members_by_trainer_id = {
+            member.trainer_id: member
+            for member in all_members
+            if member.trainer_id
+        }
+        members_by_name = {member.trainer_name: member for member in all_members}
+
         # Auto-deactivate members who are no longer in the scraped data
         scraped_trainer_ids = set(scraped_data.keys())
-        await self._auto_deactivate_missing_members(club_id, scraped_trainer_ids)
+        await self._auto_deactivate_missing_members(
+            club_id, scraped_trainer_ids, active_members
+        )
         
         # Process each member
         new_members = 0
@@ -273,6 +292,19 @@ class QuotaCalculator:
         )
         club = await Club.get_by_id(club_id)
         default_quota = club.daily_quota if club else 1_000_000
+
+        previous_rows = await db.fetch(
+            """
+            SELECT member_id, deficit_surplus, days_behind
+            FROM quota_history
+            WHERE club_id = $1 AND date = $2
+            """,
+            club_id,
+            data_date - timedelta(days=1),
+        )
+        previous_by_member = {row['member_id']: row for row in previous_rows}
+        seen_member_ids = []
+        history_records = []
         
         for key, member_data in scraped_data.items():
             trainer_id = member_data.get("trainer_id")
@@ -287,11 +319,12 @@ class QuotaCalculator:
             # Use the last value in the fans array
             cumulative_fans = daily_fans[-1]
             
-            # Look up member by trainer_id first, then by name
-            if trainer_id:
-                member = await Member.get_by_trainer_id(club_id, trainer_id)
-            else:
-                member = await Member.get_by_name(club_id, trainer_name)
+            # Look up member by trainer_id first, then by name in the preloaded roster.
+            member = (
+                members_by_trainer_id.get(trainer_id)
+                if trainer_id
+                else members_by_name.get(trainer_name)
+            )
             
             if not member:
                 # New member - resolve their join day into a full date
@@ -327,8 +360,7 @@ class QuotaCalculator:
                         await member.update_join_date(data_date)
                         logger.info(f"Reactivated returning member: {trainer_name} (join_date reset to {data_date})")
             
-            # last_seen tracks when we actually observed them (wall-clock date)
-            await member.update_last_seen(current_date)
+            seen_member_ids.append(member.member_id)
             
             # All quota calculations use data_date
             days_active = self.calculate_days_active_in_month(member.join_date, data_date)
@@ -343,24 +375,58 @@ class QuotaCalculator:
             
             deficit_surplus = self.calculate_deficit_surplus(cumulative_fans, expected_fans)
             
-            days_behind = await self._calculate_days_behind(member.member_id, deficit_surplus, data_date)
+            previous = previous_by_member.get(member.member_id)
+            days_behind = 0
+            if deficit_surplus < 0:
+                days_behind = (
+                    previous['days_behind'] + 1
+                    if previous and previous['deficit_surplus'] < 0
+                    else 1
+                )
             
             # Store history keyed to data_date
-            await QuotaHistory.create(
-                member_id=member.member_id,
-                club_id=club_id,
-                date=data_date,
-                cumulative_fans=cumulative_fans,
-                expected_fans=expected_fans,
-                deficit_surplus=deficit_surplus,
-                days_behind=days_behind
-            )
+            history_records.append((
+                member.member_id,
+                club_id,
+                data_date,
+                cumulative_fans,
+                expected_fans,
+                deficit_surplus,
+                days_behind,
+            ))
             
             updated_members += 1
             
             logger.debug(f"{trainer_name}: {cumulative_fans:,} fans "
                         f"(expected: {expected_fans:,}, {deficit_surplus:+,}, days active: {days_active})")
         
+        if history_records:
+            async with db.transaction() as conn:
+                await conn.execute(
+                    """
+                    UPDATE members
+                    SET last_seen = $1, missing_scrapes = 0, updated_at = NOW()
+                    WHERE member_id = ANY($2::uuid[])
+                    """,
+                    current_date,
+                    seen_member_ids,
+                )
+                await conn.executemany(
+                    """
+                    INSERT INTO quota_history
+                        (member_id, club_id, date, cumulative_fans,
+                         expected_fans, deficit_surplus, days_behind)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (member_id, date)
+                    DO UPDATE SET
+                        cumulative_fans = EXCLUDED.cumulative_fans,
+                        expected_fans = EXCLUDED.expected_fans,
+                        deficit_surplus = EXCLUDED.deficit_surplus,
+                        days_behind = EXCLUDED.days_behind
+                    """,
+                    history_records,
+                )
+
         logger.info(f"Processed {updated_members} members ({new_members} new) for club {club_id}")
         return new_members, updated_members
     
@@ -440,8 +506,6 @@ class QuotaCalculator:
         Returns:
             Dict with categorized member data
         """
-        members = await Member.get_all_active(club_id)
-
         period_info = self.get_period_info(quota_period, current_date)
 
         # Pre-compute period_quota for the current period when not daily
@@ -451,14 +515,79 @@ class QuotaCalculator:
             period_quota = round(stored_quota / period_info['period_days'] * actual_period_length)
             period_info['period_quota'] = period_quota
 
+        period_start = period_info['period_start'] if period_info else None
+        rows = await db.fetch(
+            """
+            SELECT
+                m.member_id, m.club_id, m.trainer_id, m.trainer_name,
+                m.join_date, m.is_active, m.manually_deactivated,
+                m.last_seen, m.missing_scrapes,
+                latest.id AS history_id,
+                latest.date AS history_date,
+                latest.cumulative_fans,
+                latest.expected_fans,
+                latest.deficit_surplus,
+                latest.days_behind,
+                previous.cumulative_fans AS previous_cumulative_fans,
+                period_start.cumulative_fans AS period_start_fans
+            FROM members m
+            LEFT JOIN LATERAL (
+                SELECT id, date, cumulative_fans, expected_fans,
+                       deficit_surplus, days_behind
+                FROM quota_history
+                WHERE member_id = m.member_id
+                ORDER BY date DESC
+                LIMIT 1
+            ) latest ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT cumulative_fans
+                FROM quota_history
+                WHERE member_id = m.member_id AND date < $2
+                ORDER BY date DESC
+                LIMIT 1
+            ) previous ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT cumulative_fans
+                FROM quota_history
+                WHERE member_id = m.member_id AND date = $3::date - 1
+                LIMIT 1
+            ) period_start ON $3::date IS NOT NULL
+            WHERE m.club_id = $1 AND m.is_active = TRUE
+            ORDER BY m.trainer_name
+            """,
+            club_id,
+            current_date,
+            period_start,
+        )
+
         on_track = []
         behind = []
 
-        for member in members:
-            latest_history = await QuotaHistory.get_latest_for_member(member.member_id)
-
-            if not latest_history:
+        for row in rows:
+            if row['history_id'] is None:
                 continue
+
+            member = Member(
+                member_id=row['member_id'],
+                club_id=row['club_id'],
+                trainer_id=row['trainer_id'],
+                trainer_name=row['trainer_name'],
+                join_date=row['join_date'],
+                is_active=row['is_active'],
+                manually_deactivated=row['manually_deactivated'],
+                last_seen=row['last_seen'],
+                missing_scrapes=row['missing_scrapes'],
+            )
+            latest_history = QuotaHistory(
+                id=row['history_id'],
+                member_id=row['member_id'],
+                club_id=row['club_id'],
+                date=row['history_date'],
+                cumulative_fans=row['cumulative_fans'],
+                expected_fans=row['expected_fans'],
+                deficit_surplus=row['deficit_surplus'],
+                days_behind=row['days_behind'],
+            )
 
             member_status = {
                 'member': member,
@@ -468,17 +597,16 @@ class QuotaCalculator:
             # Get the most recent cumulative_fans before today for daily progress calculation
             # Using the latest record strictly before current_date (not necessarily yesterday)
             # to properly compute today's delta even if a day was skipped
-            previous_history = await QuotaHistory.get_latest_for_member_before_date(member.member_id, current_date)
-            member_status['yesterday_cumulative_fans'] = previous_history.cumulative_fans if previous_history else 0
+            member_status['yesterday_cumulative_fans'] = (
+                row['previous_cumulative_fans'] or 0
+            )
 
             if period_info:
                 # Fans earned before this period started
                 if period_info['period_start'].day == 1:
                     period_start_fans = 0
                 else:
-                    day_before_period = period_info['period_start'] - timedelta(days=1)
-                    prev_record = await QuotaHistory.get_for_member_date(member.member_id, day_before_period)
-                    period_start_fans = prev_record.cumulative_fans if prev_record else 0
+                    period_start_fans = row['period_start_fans'] or 0
 
                 member_status['period_start_fans'] = period_start_fans
                 member_status['period_info'] = period_info
@@ -497,6 +625,6 @@ class QuotaCalculator:
         return {
             'on_track': on_track,
             'behind': behind,
-            'total_members': len(members),
+            'total_members': len(rows),
             'period_info': period_info,
         }

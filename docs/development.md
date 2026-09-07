@@ -54,3 +54,17 @@ an existing database and should have a rollback plan before deployment.
   sends across restarts or multiple bot instances.
 - Playwright browser creation and replacement are serialized. Every page must
   be closed in a `finally` block, including retry paths.
+
+## Performance notes
+
+- Report status data is loaded with one set-based query; do not reintroduce
+  per-member history lookups.
+- Scrape reconciliation preloads the roster and previous-day streak state,
+  then batches last-seen and quota-history writes in one transaction.
+- Dashboard month backfill and recalculation use bulk reads and batched writes.
+  Keep monthly expected-quota calculations prefix-based rather than rescanning
+  from day one for each history row.
+- GameTora event responses are cached for five minutes and concurrent refreshes
+  are coalesced. Uma.moe highscore month scans reuse one HTTP session.
+- Local JSON reads, atomic writes, and chart rendering must stay off the asyncio
+  event-loop thread.

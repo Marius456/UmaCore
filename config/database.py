@@ -411,6 +411,10 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_members_club_id ON members(club_id);
         CREATE INDEX IF NOT EXISTS idx_quota_history_club_id ON quota_history(club_id);
         CREATE INDEX IF NOT EXISTS idx_quota_requirements_club_id ON quota_requirements(club_id);
+        CREATE INDEX IF NOT EXISTS idx_quota_history_club_date
+            ON quota_history(club_id, date DESC);
+        CREATE INDEX IF NOT EXISTS idx_quota_requirements_club_date
+            ON quota_requirements(club_id, effective_date DESC);
         CREATE INDEX IF NOT EXISTS idx_quota_history_member_date 
             ON quota_history(member_id, date DESC);
         CREATE INDEX IF NOT EXISTS idx_members_active 

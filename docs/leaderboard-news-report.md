@@ -34,11 +34,14 @@ SELECT qh.date,
 FROM quota_history qh
 JOIN members m ON m.member_id = qh.member_id
 WHERE qh.club_id = $1
-  AND date_part('year', qh.date) = $2
-  AND date_part('month', qh.date) = $3
+  AND qh.date >= $2
+  AND qh.date < $3
   AND m.is_active = TRUE
 ORDER BY qh.date ASC
 ```
+
+`$2` is the first day of the requested month and `$3` is the first day of the
+next month. This range form uses the `(club_id, date)` index.
 
 | Column | Type | Description |
 |---|---|---|

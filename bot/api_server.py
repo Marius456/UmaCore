@@ -51,49 +51,65 @@ async def _backfill_month(club: Club, scraped_data: dict, fetched_year: int, fet
         club.club_id, month_start
     )
 
-    def quota_for(d: date) -> int:
-        q = default_quota
-        for row in quota_reqs:
-            if row['effective_date'] <= d:
-                q = row['daily_quota']
-            else:
-                break
-        return q
+    days_in_month = (
+        date(fetched_year + (fetched_month == 12), fetched_month % 12 + 1, 1)
+        - month_start
+    ).days
+    quota_prefix = [0.0] * (days_in_month + 1)
+    quota_index = 0
+    effective_quota = default_quota
+    for day in range(1, days_in_month + 1):
+        current = date(fetched_year, fetched_month, day)
+        while (
+            quota_index < len(quota_reqs)
+            and quota_reqs[quota_index]['effective_date'] <= current
+        ):
+            effective_quota = quota_reqs[quota_index]['daily_quota']
+            quota_index += 1
+        quota_prefix[day] = quota_prefix[day - 1] + effective_quota / period_days
 
     def calc_expected(join_date: date, data_date: date) -> int:
-        start_of_month = date(data_date.year, data_date.month, 1)
-        start = join_date if join_date >= start_of_month else start_of_month
-        total = 0.0
-        cur = start
-        while cur <= data_date:
-            total += quota_for(cur) / period_days
-            cur += timedelta(days=1)
-        return round(total)
+        start = join_date if join_date >= month_start else month_start
+        if start > data_date:
+            return 0
+        return round(quota_prefix[data_date.day] - quota_prefix[start.day - 1])
 
-    backfilled = 0
+    member_rows = await db.fetch(
+        """
+        SELECT member_id, trainer_id, join_date
+        FROM members
+        WHERE club_id = $1 AND is_active = TRUE
+          AND trainer_id = ANY($2::text[])
+        """,
+        club.club_id,
+        list(scraped_data),
+    )
+    members_by_trainer_id = {row['trainer_id']: row for row in member_rows}
+    existing_rows = await db.fetch(
+        """
+        SELECT member_id, date, deficit_surplus
+        FROM quota_history
+        WHERE club_id = $1 AND date >= $2 AND date < $3
+        """,
+        club.club_id,
+        month_start,
+        month_start + timedelta(days=days_in_month),
+    )
+    existing_by_member = {}
+    for row in existing_rows:
+        existing_by_member.setdefault(row['member_id'], {})[row['date']] = row['deficit_surplus']
 
+    records = []
     for trainer_id, member_data in scraped_data.items():
-        member_row = await db.fetchrow(
-            "SELECT member_id, join_date FROM members "
-            "WHERE club_id = $1 AND trainer_id = $2 AND is_active = TRUE",
-            club.club_id, trainer_id
-        )
-        if not member_row:
+        member_row = members_by_trainer_id.get(trainer_id)
+        if member_row is None:
             continue
 
         member_id = member_row['member_id']
         join_date_val: date = member_row['join_date']
         join_day: int = member_data['join_day']
         fans: list = member_data['fans']
-
-        existing = {
-            row['date']: row['deficit_surplus']
-            for row in await db.fetch(
-                "SELECT date, deficit_surplus FROM quota_history "
-                "WHERE member_id = $1 AND date >= $2",
-                member_id, month_start
-            )
-        }
+        existing = existing_by_member.get(member_id, {})
 
         consecutive_behind = 0
 
@@ -115,22 +131,35 @@ async def _backfill_month(club: Club, scraped_data: dict, fetched_year: int, fet
             deficit_surplus = comp_fans - expected
             consecutive_behind = consecutive_behind + 1 if deficit_surplus < 0 else 0
 
-            inserted_id = await db.fetchval(
-                """
-                INSERT INTO quota_history
-                    (member_id, club_id, date, cumulative_fans, expected_fans,
-                     deficit_surplus, days_behind)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (member_id, date) DO NOTHING
-                RETURNING id
-                """,
-                member_id, club.club_id, comp_date,
-                comp_fans, expected, deficit_surplus, consecutive_behind
-            )
-            if inserted_id is not None:
-                backfilled += 1
+            records.append((
+                member_id,
+                club.club_id,
+                comp_date,
+                comp_fans,
+                expected,
+                deficit_surplus,
+                consecutive_behind,
+            ))
 
-    return backfilled
+    if not records:
+        return 0
+
+    inserted = await db.fetch(
+        """
+        INSERT INTO quota_history
+            (member_id, club_id, date, cumulative_fans, expected_fans,
+             deficit_surplus, days_behind)
+        SELECT *
+        FROM UNNEST(
+            $1::uuid[], $2::uuid[], $3::date[], $4::bigint[],
+            $5::bigint[], $6::bigint[], $7::integer[]
+        )
+        ON CONFLICT (member_id, date) DO NOTHING
+        RETURNING id
+        """,
+        *zip(*records),
+    )
+    return len(inserted)
 
 
 async def handle_sync(request: web.Request) -> web.StreamResponse:
@@ -268,73 +297,67 @@ async def _recalculate_club(club: Club) -> int:
         club.club_id, month_start
     )
 
-    def quota_for(d: date) -> int:
-        q = default_quota
-        for row in quota_reqs:
-            if row['effective_date'] <= d:
-                q = row['daily_quota']
-            else:
-                break
-        return q
+    days_in_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - month_start
+    quota_prefix = [0.0] * (days_in_month.days + 1)
+    quota_index = 0
+    effective_quota = default_quota
+    for day in range(1, days_in_month.days + 1):
+        current = date(today.year, today.month, day)
+        while (
+            quota_index < len(quota_reqs)
+            and quota_reqs[quota_index]['effective_date'] <= current
+        ):
+            effective_quota = quota_reqs[quota_index]['daily_quota']
+            quota_index += 1
+        quota_prefix[day] = quota_prefix[day - 1] + effective_quota / period_days
 
-    def calc_expected(join_date: date, data_date: date) -> int:
-        month_start = date(data_date.year, data_date.month, 1)
-        start = join_date if join_date >= month_start else month_start
-        total = 0.0
-        cur = start
-        while cur <= data_date:
-            total += quota_for(cur) / period_days
-            cur += timedelta(days=1)
-        return round(total)
-
-    members = await db.fetch(
+    history = await db.fetch(
         """
-        SELECT DISTINCT m.member_id, m.join_date
-        FROM members m
-        JOIN quota_history qh ON qh.member_id = m.member_id
-        WHERE m.club_id = $1 AND qh.date >= $2
+        SELECT qh.id, qh.member_id, qh.date, qh.cumulative_fans, m.join_date
+        FROM quota_history qh
+        JOIN members m ON m.member_id = qh.member_id
+        WHERE m.club_id = $1 AND qh.date >= $2 AND qh.date <= $3
+        ORDER BY qh.member_id, qh.date ASC
         """,
-        club.club_id, month_start
+        club.club_id,
+        month_start,
+        today,
     )
 
-    updated = 0
-    for member in members:
-        history = await db.fetch(
-            """
-            SELECT id, date, cumulative_fans
-            FROM quota_history
-            WHERE member_id = $1 AND date >= $2
-            ORDER BY date ASC
-            """,
-            member['member_id'], month_start
+    streaks = {}
+    updates = []
+    for row in history:
+        start = row['join_date'] if row['join_date'] >= month_start else month_start
+        expected = (
+            round(quota_prefix[row['date'].day] - quota_prefix[start.day - 1])
+            if start <= row['date']
+            else 0
         )
+        deficit_surplus = row['cumulative_fans'] - expected
+        previous_date, consecutive_behind = streaks.get(row['member_id'], (None, 0))
+        is_adjacent = (
+            previous_date is not None
+            and row['date'] == previous_date + timedelta(days=1)
+        )
+        consecutive_behind = (
+            consecutive_behind + 1 if deficit_surplus < 0 and is_adjacent
+            else 1 if deficit_surplus < 0
+            else 0
+        )
+        streaks[row['member_id']] = (row['date'], consecutive_behind)
+        updates.append((expected, deficit_surplus, consecutive_behind, row['id']))
 
-        consecutive_behind = 0
-        previous_date = None
-        for row in history:
-            expected = calc_expected(member['join_date'], row['date'])
-            deficit_surplus = row['cumulative_fans'] - expected
-            is_adjacent = (
-                previous_date is not None
-                and row['date'] == previous_date + timedelta(days=1)
-            )
-            consecutive_behind = (
-                consecutive_behind + 1 if deficit_surplus < 0 and is_adjacent
-                else 1 if deficit_surplus < 0
-                else 0
-            )
-            await db.execute(
+    if updates:
+        async with db.transaction() as conn:
+            await conn.executemany(
                 """
                 UPDATE quota_history
                 SET expected_fans = $1, deficit_surplus = $2, days_behind = $3
                 WHERE id = $4
                 """,
-                expected, deficit_surplus, consecutive_behind, row['id']
+                updates,
             )
-            updated += 1
-            previous_date = row['date']
-
-    return updated
+    return len(updates)
 
 
 async def handle_health(request: web.Request) -> web.StreamResponse:

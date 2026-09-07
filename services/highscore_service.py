@@ -195,23 +195,32 @@ class HighscoreService:
         year = now.year
         month = now.month
 
-        while (year > EARLIEST_YEAR) or (year == EARLIEST_YEAR and month >= EARLIEST_MONTH):
-            logger.info(f"Fetching API data for {year}-{month:02d}...")
-            rows, monthly_rank = await cls._fetch_and_parse_api_month(circle_id, year, month)
-            all_ranks[(year, month)] = monthly_rank
-            if rows:
-                all_rows.extend(rows)
-            else:
-                # No data for this month — club didn't exist yet, stop
-                logger.info(f"No data for {year}-{month:02d}, club likely didn't exist yet.")
-                break
-            year, month = cls._prev_month(year, month)
+        timeout = aiohttp.ClientTimeout(total=30)
+        headers = {"accept": "application/json", "X-API-Key": UMAMOE_API_KEY}
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            while (year > EARLIEST_YEAR) or (year == EARLIEST_YEAR and month >= EARLIEST_MONTH):
+                logger.info(f"Fetching API data for {year}-{month:02d}...")
+                rows, monthly_rank = await cls._fetch_and_parse_api_month(
+                    circle_id, year, month, session=session
+                )
+                all_ranks[(year, month)] = monthly_rank
+                if rows:
+                    all_rows.extend(rows)
+                else:
+                    # No data for this month — club didn't exist yet, stop
+                    logger.info(f"No data for {year}-{month:02d}, club likely didn't exist yet.")
+                    break
+                year, month = cls._prev_month(year, month)
 
         return all_rows, all_ranks
 
     @classmethod
     async def _fetch_and_parse_api_month(
-        cls, circle_id: str, year: int, month: int
+        cls,
+        circle_id: str,
+        year: int,
+        month: int,
+        session: Optional[aiohttp.ClientSession] = None,
     ) -> Tuple[List[Dict[str, Any]], Optional[int]]:
         """
         Fetch a single month from Uma.moe API.
@@ -222,21 +231,23 @@ class HighscoreService:
         base_url = "https://uma.moe/api/v4/circles"
         api_url = f"{base_url}?circle_id={circle_id}&year={year}&month={month}"
 
-        headers = {
-            "accept": "application/json",
-            "X-API-Key": UMAMOE_API_KEY,
-        }
+        async def fetch(active_session: aiohttp.ClientSession):
+            async with active_session.get(api_url) as response:
+                if response.status != 200:
+                    raise RuntimeError(
+                        f"Uma.moe API returned HTTP {response.status} "
+                        f"for {year}-{month:02d}"
+                    )
+                return await response.json()
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(api_url, headers=headers, timeout=30) as response:
-                    if response.status != 200:
-                        raise RuntimeError(
-                            f"Uma.moe API returned HTTP {response.status} "
-                            f"for {year}-{month:02d}"
-                        )
-
-                    data = await response.json()
+            if session is None:
+                timeout = aiohttp.ClientTimeout(total=30)
+                headers = {"accept": "application/json", "X-API-Key": UMAMOE_API_KEY}
+                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as owned_session:
+                    data = await fetch(owned_session)
+            else:
+                data = await fetch(session)
         except (asyncio.TimeoutError, aiohttp.ClientError, json.JSONDecodeError) as e:
             raise RuntimeError(
                 f"Uma.moe API request failed for {year}-{month:02d}"
@@ -532,44 +543,34 @@ class HighscoreService:
           - end_date: last day of the streak
         or None if insufficient data.
         """
-        # 1. Group rows by member, sorted by date
+        # 1. Build member- and date-oriented indexes in one pass. The previous
+        # implementation rescanned every member's full history for every date.
         member_data: Dict[str, List[Tuple[date, int]]] = defaultdict(list)
-        for row in rows:
-            member_data[row["trainer_name"]].append(
-                (row["date"], row["lifetime_fans"])
-            )
-
-        # 2. Compute daily gain per member per date (needed for day-1 tiebreaker)
-        daily_gain: Dict[date, Dict[str, int]] = defaultdict(dict)
-        for name, entries in member_data.items():
-            entries.sort(key=lambda x: x[0])
-            for i in range(1, len(entries)):
-                prev_date, prev_fans = entries[i - 1]
-                curr_date, curr_fans = entries[i]
-                days_diff = (curr_date - prev_date).days
-                if days_diff != 1:
-                    continue
-                delta = curr_fans - prev_fans
-                if delta > 0:
-                    existing = daily_gain[curr_date].get(name, 0)
-                    if delta > existing:
-                        daily_gain[curr_date][name] = delta
-
-        # 3. Build next_month_start mapping from synthetic end-of-month entries
+        fans_by_date: Dict[date, Dict[str, int]] = defaultdict(dict)
+        first_fans_by_month: Dict[str, Dict[Tuple[int, int], int]] = defaultdict(dict)
         next_month_start_map: Dict[str, Dict[Tuple[int, int], int]] = defaultdict(dict)
         for row in rows:
+            name = row["trainer_name"]
+            row_date = row["date"]
+            fans = row["lifetime_fans"]
+            month_key = (row_date.year, row_date.month)
+            member_data[name].append((row_date, fans))
+            # Synthetic month-end rows may share a date with a real daily row;
+            # keep the real row encountered first for daily leader ranking.
+            fans_by_date[row_date].setdefault(name, fans)
+            first_fans_by_month[name].setdefault(month_key, fans)
             if row.get("is_end_of_month"):
-                member = row["trainer_name"]
-                month_key = (row["date"].year, row["date"].month)
-                next_month_start_map[member][month_key] = row["lifetime_fans"]
+                next_month_start_map[name][month_key] = fans
 
-        # 4. Determine month_start_lifetime for each member+month.
+        # 2. Determine month_start_lifetime for each member+month.
         #    month_start = lifetime_fans at end of previous month.
         #    For the first month a member appears, use their first day's value.
-        member_active_months: Dict[str, List[int]] = {}
+        member_active_months: Dict[str, List[Tuple[int, int]]] = {}
         for name, entries in member_data.items():
-            months = sorted({d.year * 12 + d.month for d, _ in entries})
-            member_active_months[name] = list(set(months))
+            entries.sort(key=lambda item: item[0])
+            member_active_months[name] = sorted(
+                {(d.year, d.month) for d, _ in entries}
+            )
 
         all_months = sorted({(row["date"].year, row["date"].month) for row in rows})
         month_start_lifetime: Dict[Tuple[int, int], Dict[str, int]] = {}
@@ -579,28 +580,22 @@ class HighscoreService:
             for name in member_data:
                 prev_month_key = None
                 for pm in member_active_months[name]:
-                    if pm < year * 12 + month:
+                    if pm < month_key:
                         prev_month_key = pm
                     else:
                         break
                 if prev_month_key is not None:
-                    pm_year = prev_month_key // 12
-                    pm_month = prev_month_key % 12
-                    if pm_month == 0:
-                        pm_month = 12
-                        pm_year -= 1
-                    val = next_month_start_map.get(name, {}).get((pm_year, pm_month))
+                    val = next_month_start_map.get(name, {}).get(prev_month_key)
                     if val is not None:
                         month_start_lifetime[month_key][name] = val
                         continue
                 # Fallback: first entry of current month
-                for d, fans in member_data[name]:
-                    if d.year == year and d.month == month:
-                        month_start_lifetime[month_key][name] = fans
-                        break
+                first_fans = first_fans_by_month[name].get(month_key)
+                if first_fans is not None:
+                    month_start_lifetime[month_key][name] = first_fans
 
-        # 5. For EVERY date in the data, compute cumulative gain and leader
-        all_dates = sorted({row["date"] for row in rows})
+        # 3. For every date in the data, compute cumulative gain and leader.
+        all_dates = sorted(fans_by_date)
         if len(all_dates) < 2:
             return None
 
@@ -620,12 +615,7 @@ class HighscoreService:
             # gain = lifetime_fans_today - month_start_lifetime
             # This gives the true cumulative gain from month start.
             today_gains: Dict[str, int] = {}
-            member_fans_today: Dict[str, int] = {}
-            for name, entries in member_data.items():
-                for d2, fans in entries:
-                    if d2 == d:
-                        member_fans_today[name] = fans
-                        break
+            member_fans_today = fans_by_date[d]
 
             for name, fans_today in member_fans_today.items():
                 start_val = month_start_lifetime.get(month_key, {}).get(name)
@@ -657,7 +647,7 @@ class HighscoreService:
                         best = name
                 daily_leader[d] = best
 
-        # 6. Walk through dates tracking streaks
+        # 4. Walk through dates tracking streaks
         best_streak = 0
         best_name: Optional[str] = None
         best_start: Optional[date] = None

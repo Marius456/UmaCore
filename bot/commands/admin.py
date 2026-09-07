@@ -4,7 +4,7 @@ Administrative commands for quota management
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import pytz
 import asyncio
@@ -633,6 +633,47 @@ class AdminCommands(commands.Cog):
             logger.error(f"Error in activate_member: {e}", exc_info=True)
             await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
+    @staticmethod
+    async def _recalculate_days_behind(club_id, current_date):
+        """Bulk-recalculate current-month streaks and return the row count."""
+        from config.database import db as _db
+
+        rows = await _db.fetch(
+            """
+            SELECT id, member_id, date, deficit_surplus
+            FROM quota_history
+            WHERE club_id = $1
+              AND date >= date_trunc('month', $2::date)::date
+              AND date <= $2
+            ORDER BY member_id, date ASC
+            """,
+            club_id,
+            current_date,
+        )
+        streaks = {}
+        updates = []
+        for row in rows:
+            previous_date, consecutive = streaks.get(row['member_id'], (None, 0))
+            is_adjacent = (
+                previous_date is not None
+                and row['date'] == previous_date + timedelta(days=1)
+            )
+            consecutive = (
+                consecutive + 1 if row['deficit_surplus'] < 0 and is_adjacent
+                else 1 if row['deficit_surplus'] < 0
+                else 0
+            )
+            streaks[row['member_id']] = (row['date'], consecutive)
+            updates.append((consecutive, row['id']))
+
+        if updates:
+            async with _db.transaction() as conn:
+                await conn.executemany(
+                    "UPDATE quota_history SET days_behind = $1 WHERE id = $2",
+                    updates,
+                )
+        return len(updates)
+
     @app_commands.command(name="recalculate", description="Recalculate days-behind counts from current history")
     @app_commands.checks.has_permissions(administrator=True)
     async def recalculate(self, interaction: discord.Interaction, club: str):
@@ -649,42 +690,17 @@ class AdminCommands(commands.Cog):
                 await interaction.followup.send(f"❌ Club '{club}' is not registered in this server.")
                 return
 
-            from config.database import db as _db
-
             club_tz = pytz.timezone(club_obj.timezone)
             current_date = datetime.now(club_tz).date()
 
             await interaction.followup.send(f"🔄 Recalculating for {club}...")
 
-            # Recalculate days_behind for all members in the current month.
-            # Walk each member's history in date order and track consecutive deficit days.
-            members = await Member.get_all_active(club_obj.club_id)
-            updated_entries = 0
-
-            for member in members:
-                rows = await _db.fetch(
-                    """
-                    SELECT id, date, deficit_surplus
-                    FROM quota_history
-                    WHERE member_id = $1
-                      AND date_part('year', date) = $2
-                      AND date_part('month', date) = $3
-                    ORDER BY date ASC
-                    """,
-                    member.member_id, current_date.year, current_date.month
+            async with ScrapeContext(
+                club_obj.club_id, f"recalculate_{club_obj.club_name}"
+            ):
+                updated_entries = await self._recalculate_days_behind(
+                    club_obj.club_id, current_date
                 )
-
-                consecutive = 0
-                for row in rows:
-                    if row['deficit_surplus'] < 0:
-                        consecutive += 1
-                    else:
-                        consecutive = 0
-                    await _db.execute(
-                        "UPDATE quota_history SET days_behind = $1 WHERE id = $2",
-                        consecutive, row['id']
-                    )
-                    updated_entries += 1
 
             embed = discord.Embed(
                 title=f"✅ Recalculation Complete - {club}",
@@ -701,6 +717,10 @@ class AdminCommands(commands.Cog):
             logger.info(f"Recalculation performed for {club} by {interaction.user}: "
                         f"{updated_entries} entries updated")
 
+        except ScrapeLockUnavailableError:
+            await interaction.followup.send(
+                "⚠️ A sync or quota check is already running for this club."
+            )
         except Exception as e:
             logger.error(f"Error in recalculate: {e}", exc_info=True)
             await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")

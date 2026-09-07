@@ -9,6 +9,7 @@ from uuid import UUID
 
 from bot.tasks import BotTasks
 from models.club import Club
+from models.member import Member
 from models.quota_requirement import QuotaRequirement
 from models.quota_history import QuotaHistory
 from services import prediction_store
@@ -143,6 +144,68 @@ class MonthlyResetTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any("DELETE FROM quota_requirements" in query for query in queries))
 
 
+class ScrapeBatchingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unchanged_roster_uses_bulk_reads_and_writes(self):
+        member = SimpleNamespace(
+            member_id=MEMBER_ID,
+            club_id=CLUB_ID,
+            trainer_id="123",
+            trainer_name="Trainer",
+            join_date=date(2026, 9, 1),
+            is_active=True,
+            manually_deactivated=False,
+            last_seen=date(2026, 9, 6),
+            missing_scrapes=0,
+        )
+        connection = SimpleNamespace(execute=AsyncMock(), executemany=AsyncMock())
+
+        class Transaction:
+            async def __aenter__(self):
+                return connection
+
+            async def __aexit__(self, *_):
+                return False
+
+        calculator = QuotaCalculator()
+        calculator._get_previous_cumulative_totals = AsyncMock(return_value={})
+        calculator._auto_deactivate_missing_members = AsyncMock()
+
+        with (
+            patch.object(
+                Member, "get_all_for_club", new=AsyncMock(return_value=[member])
+            ) as roster,
+            patch.object(Member, "get_by_trainer_id", new=AsyncMock()) as lookup,
+            patch.object(QuotaHistory, "create", new=AsyncMock()) as create_history,
+            patch("services.quota_calculator.db.fetch", new=AsyncMock(side_effect=[[], []])),
+            patch(
+                "services.quota_calculator.db.transaction",
+                return_value=Transaction(),
+            ),
+            patch.object(Club, "get_by_id", new=AsyncMock(return_value=make_club())),
+        ):
+            result = await calculator.process_scraped_data(
+                CLUB_ID,
+                {
+                    "123": {
+                        "trainer_id": "123",
+                        "name": "Trainer",
+                        "fans": [100],
+                        "join_day": 1,
+                    }
+                },
+                date(2026, 9, 7),
+                7,
+            )
+
+        self.assertEqual(result, (0, 1))
+        roster.assert_awaited_once_with(CLUB_ID)
+        lookup.assert_not_awaited()
+        create_history.assert_not_awaited()
+        connection.execute.assert_awaited_once()
+        connection.executemany.assert_awaited_once()
+        self.assertEqual(len(connection.executemany.await_args.args[1]), 1)
+
+
 class QuotaRequirementTests(unittest.IsolatedAsyncioTestCase):
     async def test_lookup_does_not_carry_prior_month_override_forward(self):
         with (
@@ -209,6 +272,51 @@ class PredictionDeliveryTests(unittest.IsolatedAsyncioTestCase):
             await BotTasks._send_embeds(channel, [object(), object(), object()])
 
         self.assertEqual(channel.send.await_count, 2)
+
+
+class StatusSummaryQueryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_daily_summary_uses_one_set_based_database_query(self):
+        row = {
+            "member_id": MEMBER_ID,
+            "club_id": CLUB_ID,
+            "trainer_id": "123",
+            "trainer_name": "Trainer",
+            "join_date": date(2026, 9, 1),
+            "is_active": True,
+            "manually_deactivated": False,
+            "last_seen": date(2026, 9, 7),
+            "missing_scrapes": 0,
+            "history_id": UUID("55555555-5555-5555-5555-555555555555"),
+            "history_date": date(2026, 9, 7),
+            "cumulative_fans": 800,
+            "expected_fans": 700,
+            "deficit_surplus": 100,
+            "days_behind": 0,
+            "previous_cumulative_fans": 650,
+            "period_start_fans": None,
+        }
+        fetch = AsyncMock(return_value=[row])
+
+        with patch("services.quota_calculator.db.fetch", new=fetch):
+            summary = await QuotaCalculator().get_member_status_summary(
+                CLUB_ID, date(2026, 9, 7)
+            )
+
+        fetch.assert_awaited_once()
+        self.assertEqual(summary["total_members"], 1)
+        self.assertEqual(summary["on_track"][0]["yesterday_cumulative_fans"], 650)
+        self.assertEqual(summary["on_track"][0]["history"].cumulative_fans, 800)
+
+    async def test_month_history_query_uses_indexable_date_bounds(self):
+        fetch = AsyncMock(return_value=[])
+        with patch("models.quota_history.db.fetch", new=fetch):
+            await QuotaHistory.get_current_month_for_club(CLUB_ID, 2026, 12)
+
+        query, club_id, month_start, next_month = fetch.await_args.args
+        self.assertNotIn("date_part", query)
+        self.assertEqual(club_id, CLUB_ID)
+        self.assertEqual(month_start, date(2026, 12, 1))
+        self.assertEqual(next_month, date(2027, 1, 1))
 
 
 class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):

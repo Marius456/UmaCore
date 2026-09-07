@@ -585,7 +585,7 @@ class BotTasks:
             notified_clubs.append(dedup_key)
             event["notified_clubs"] = notified_clubs
             self._sent_event_notifications.add(notification_key)
-            if not self._save_events_json():
+            if not await asyncio.to_thread(self._save_events_json):
                 logger.warning(
                     f"Sent {notif_type} notification for '{title[:60]}', "
                     "but failed to persist its deduplication state"
@@ -626,6 +626,12 @@ class BotTasks:
             logger.error(f"Failed to save events JSON: {e}")
             return False
 
+    @staticmethod
+    def _load_events_json():
+        """Read the event cache off the event-loop thread."""
+        with open(EVENTS_JSON_PATH, "r", encoding="utf-8") as f:
+            return json_mod.load(f)
+
     # ── Event Notifications ────────────────────────────────────────────
 
     async def event_notifications(self):
@@ -651,8 +657,7 @@ class BotTasks:
                 logger.warning(f"Events file not found: {EVENTS_JSON_PATH}")
                 return
 
-            with open(EVENTS_JSON_PATH, "r", encoding="utf-8") as f:
-                self._events_data = json_mod.load(f)
+            self._events_data = await asyncio.to_thread(self._load_events_json)
 
             events = self._events_data.get("events", [])
             if not events:

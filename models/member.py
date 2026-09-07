@@ -87,6 +87,19 @@ class Member:
         """
         rows = await db.fetch(query, club_id)
         return [cls(**dict(row)) for row in rows]
+
+    @classmethod
+    async def get_all_for_club(cls, club_id: UUID) -> list['Member']:
+        """Get active and inactive members for bulk reconciliation."""
+        query = """
+            SELECT member_id, club_id, trainer_id, trainer_name, join_date,
+                   is_active, manually_deactivated, last_seen, missing_scrapes
+            FROM members
+            WHERE club_id = $1
+            ORDER BY trainer_name
+        """
+        rows = await db.fetch(query, club_id)
+        return [cls(**dict(row)) for row in rows]
     
     async def update_last_seen(self, last_seen: date):
         """Update last seen date"""
