@@ -35,6 +35,7 @@ nav:
   - FAQ: faq.md
   - Setup Guide: setup.md
   - Development: development.md
+  - Architecture: architecture.md
   - Quota System: quota-system.md
   - Data Sources: data-sources.md
   - Commands:

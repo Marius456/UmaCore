@@ -14,6 +14,7 @@ import pytz
 import aiohttp
 
 from models import Club, QuotaHistory, QuotaRequirement
+from .common import ClubAutocompleteMixin
 
 UMAMOE_API_URL = "https://uma.moe/api/v4/circles"
 
@@ -173,23 +174,13 @@ def _build_chart(member_data: dict[str, dict]) -> bytes:
             browser.close()
 
 
-class ChartCommands(commands.Cog):
+class ChartCommands(ClubAutocompleteMixin, commands.Cog):
     """Chart and visualization commands"""
+
+    club_autocomplete = ClubAutocompleteMixin.club_autocomplete
 
     def __init__(self, bot):
         self.bot = bot
-
-    async def club_autocomplete(self, interaction: discord.Interaction, current: str):
-        try:
-            club_names = await Club.get_names_for_guild(interaction.guild_id)
-            return [
-                app_commands.Choice(name=name, value=name)
-                for name in club_names
-                if current.lower() in name.lower()
-            ][:25]
-        except Exception as e:
-            logger.error(f"Error in club autocomplete: {e}")
-            return []
 
     @app_commands.command(
         name="progress_chart",

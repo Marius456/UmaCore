@@ -8,28 +8,18 @@ from datetime import date as date_class
 import logging
 
 from models import Member, QuotaHistory, UserLink, Club, QuotaRequirement
+from .common import ClubAutocompleteMixin
 
 logger = logging.getLogger(__name__)
 
 
-class MemberCommands(commands.Cog):
+class MemberCommands(ClubAutocompleteMixin, commands.Cog):
     """Member status and user linking commands"""
+
+    club_autocomplete = ClubAutocompleteMixin.club_autocomplete
     
     def __init__(self, bot):
         self.bot = bot
-    
-    async def club_autocomplete(self, interaction: discord.Interaction, current: str):
-        """Autocomplete for club names visible in this guild"""
-        try:
-            club_names = await Club.get_names_for_guild(interaction.guild_id)
-            return [
-                app_commands.Choice(name=name, value=name)
-                for name in club_names
-                if current.lower() in name.lower()
-            ][:25]
-        except Exception as e:
-            logger.error(f"Error in club autocomplete: {e}")
-            return []
     
     @app_commands.command(name="link_trainer", description="Link your Discord account to your trainer")
     async def link_trainer(self, interaction: discord.Interaction, trainer_name: str, club: str):

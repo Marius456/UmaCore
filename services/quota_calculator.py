@@ -10,6 +10,7 @@ import math
 
 from models import Member, QuotaHistory, QuotaRequirement, Club
 from config.database import db
+from .quota_schedule import QuotaSchedule, advance_days_behind
 
 logger = logging.getLogger(__name__)
 
@@ -66,41 +67,13 @@ class QuotaCalculator:
         quota_schedule,
     ) -> int:
         """Calculate expected fans from an already-fetched quota schedule."""
-        if member_join_date.year == current_date.year and member_join_date.month == current_date.month:
-            start_date = member_join_date
-        else:
-            start_date = date(current_date.year, current_date.month, 1)
-
-        period_days = {'daily': 1, 'weekly': 7, 'biweekly': 14}.get(quota_period, 1)
-
-        total_expected = 0.0
-        schedule = [
-            (row['effective_date'], row['daily_quota'])
-            for row in quota_schedule
-        ]
-        schedule_index = 0
-        effective_quota = default_quota
-
-        while schedule_index < len(schedule) and schedule[schedule_index][0] < start_date:
-            effective_quota = schedule[schedule_index][1]
-            schedule_index += 1
-
-        day_count = (current_date - start_date).days + 1
-        current_day = start_date
-        for _ in range(day_count):
-            while (
-                schedule_index < len(schedule)
-                and schedule[schedule_index][0] <= current_day
-            ):
-                effective_quota = schedule[schedule_index][1]
-                schedule_index += 1
-            total_expected += effective_quota / period_days
-            current_day += timedelta(days=1)
-
-        result = round(total_expected)
-        logger.debug(f"Expected fans calculation: {start_date} to {current_date} = {day_count} days "
-                     f"(period={quota_period}) = {result:,}")
-        return result
+        schedule = QuotaSchedule(
+            current_date,
+            quota_period,
+            default_quota,
+            quota_schedule,
+        )
+        return schedule.expected(member_join_date, current_date)
     
     @staticmethod
     def calculate_days_active_in_month(member_join_date: date, current_date: date) -> int:
@@ -376,13 +349,17 @@ class QuotaCalculator:
             deficit_surplus = self.calculate_deficit_surplus(cumulative_fans, expected_fans)
             
             previous = previous_by_member.get(member.member_id)
-            days_behind = 0
-            if deficit_surplus < 0:
-                days_behind = (
-                    previous['days_behind'] + 1
-                    if previous and previous['deficit_surplus'] < 0
-                    else 1
-                )
+            previous_days = (
+                previous['days_behind']
+                if previous and previous['deficit_surplus'] < 0
+                else 0
+            )
+            days_behind = advance_days_behind(
+                data_date - timedelta(days=1) if previous else None,
+                previous_days,
+                data_date,
+                deficit_surplus,
+            )
             
             # Store history keyed to data_date
             history_records.append((

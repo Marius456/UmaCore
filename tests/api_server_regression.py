@@ -4,8 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
-from bot.api_server import _backfill_month, _recalculate_club
-from bot.commands.admin import AdminCommands
+from services.quota_maintenance_service import QuotaMaintenanceService
 
 
 CLUB_ID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
@@ -36,8 +35,10 @@ class BackfillRegressionTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
-        with patch("bot.api_server.db.fetch", new=fetch):
-            count = await _backfill_month(club, scraped, 2026, 9)
+        with patch("services.quota_maintenance_service.db.fetch", new=fetch):
+            count = await QuotaMaintenanceService.backfill_month(
+                club, scraped, 2026, 9
+            )
 
         self.assertEqual(count, 0)
         self.assertEqual(fetch.await_count, 4)
@@ -66,12 +67,15 @@ class RecalculationRegressionTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "bot.api_server.db.fetch",
+                "services.quota_maintenance_service.db.fetch",
                 new=AsyncMock(side_effect=[[], history]),
             ),
-            patch("bot.api_server.db.transaction", return_value=Transaction()),
+            patch(
+                "services.quota_maintenance_service.db.transaction",
+                return_value=Transaction(),
+            ),
         ):
-            updated = await _recalculate_club(club)
+            updated = await QuotaMaintenanceService.recalculate_current_month(club)
 
         self.assertEqual(updated, 2)
         updates = connection.executemany.await_args.args[1]
@@ -96,7 +100,7 @@ class RecalculationRegressionTests(unittest.IsolatedAsyncioTestCase):
             patch("config.database.db.fetch", new=fetch),
             patch("config.database.db.transaction", return_value=Transaction()),
         ):
-            count = await AdminCommands._recalculate_days_behind(
+            count = await QuotaMaintenanceService.recalculate_days_behind(
                 CLUB_ID, date(2026, 9, 7)
             )
 

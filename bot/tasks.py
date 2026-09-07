@@ -17,7 +17,10 @@ from scrapers import (
     UmaMoeAPIScraper, DataNotAvailableError,
     check_and_save as check_and_save_official_events,
 )
-from services import QuotaCalculator, ReportGenerator, NotificationService, ScrapeContext
+from services.notification_service import NotificationService
+from services.quota_calculator import QuotaCalculator
+from services.report_generator import ReportGenerator
+from services.scrape_lock_manager import ScrapeContext
 from services.leaderboard_report_service import LeaderboardReportService
 from config.settings import EVENTS_JSON_PATH
 

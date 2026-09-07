@@ -4,45 +4,33 @@ Administrative commands for quota management
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 import pytz
 import asyncio
 
 from scrapers import UmaMoeAPIScraper
-from services import (
-    MonthlyInfoService,
-    QuotaCalculator,
-    ReportGenerator,
-    ScrapeContext,
-    ScrapeLockUnavailableError,
-)
+from services.monthly_info_service import MonthlyInfoService
+from services.quota_calculator import QuotaCalculator
+from services.quota_maintenance_service import QuotaMaintenanceService
+from services.report_generator import ReportGenerator
+from services.scrape_lock_manager import ScrapeContext, ScrapeLockUnavailableError
 from models import Member, QuotaRequirement, Club, ClubRankHistory
+from .common import ClubAutocompleteMixin
 
 logger = logging.getLogger(__name__)
 
 
-class AdminCommands(commands.Cog):
+class AdminCommands(ClubAutocompleteMixin, commands.Cog):
     """Administrative commands for quota management"""
+
+    club_autocomplete = ClubAutocompleteMixin.club_autocomplete
 
     def __init__(self, bot):
         self.bot = bot
         self.quota_calculator = QuotaCalculator()
         self.report_generator = ReportGenerator()
         self.monthly_info_service = MonthlyInfoService()
-
-    async def club_autocomplete(self, interaction: discord.Interaction, current: str):
-        """Autocomplete for club names visible in this guild"""
-        try:
-            club_names = await Club.get_names_for_guild(interaction.guild_id)
-            return [
-                app_commands.Choice(name=name, value=name)
-                for name in club_names
-                if current.lower() in name.lower()
-            ][:25]
-        except Exception as e:
-            logger.error(f"Error in club autocomplete: {e}")
-            return []
 
     async def _update_monthly_info_board(self, club_obj: Club, current_date) -> bool:
         """Auto-update the monthly info board after quota changes"""
@@ -633,47 +621,6 @@ class AdminCommands(commands.Cog):
             logger.error(f"Error in activate_member: {e}", exc_info=True)
             await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
-    @staticmethod
-    async def _recalculate_days_behind(club_id, current_date):
-        """Bulk-recalculate current-month streaks and return the row count."""
-        from config.database import db as _db
-
-        rows = await _db.fetch(
-            """
-            SELECT id, member_id, date, deficit_surplus
-            FROM quota_history
-            WHERE club_id = $1
-              AND date >= date_trunc('month', $2::date)::date
-              AND date <= $2
-            ORDER BY member_id, date ASC
-            """,
-            club_id,
-            current_date,
-        )
-        streaks = {}
-        updates = []
-        for row in rows:
-            previous_date, consecutive = streaks.get(row['member_id'], (None, 0))
-            is_adjacent = (
-                previous_date is not None
-                and row['date'] == previous_date + timedelta(days=1)
-            )
-            consecutive = (
-                consecutive + 1 if row['deficit_surplus'] < 0 and is_adjacent
-                else 1 if row['deficit_surplus'] < 0
-                else 0
-            )
-            streaks[row['member_id']] = (row['date'], consecutive)
-            updates.append((consecutive, row['id']))
-
-        if updates:
-            async with _db.transaction() as conn:
-                await conn.executemany(
-                    "UPDATE quota_history SET days_behind = $1 WHERE id = $2",
-                    updates,
-                )
-        return len(updates)
-
     @app_commands.command(name="recalculate", description="Recalculate days-behind counts from current history")
     @app_commands.checks.has_permissions(administrator=True)
     async def recalculate(self, interaction: discord.Interaction, club: str):
@@ -698,7 +645,7 @@ class AdminCommands(commands.Cog):
             async with ScrapeContext(
                 club_obj.club_id, f"recalculate_{club_obj.club_name}"
             ):
-                updated_entries = await self._recalculate_days_behind(
+                updated_entries = await QuotaMaintenanceService.recalculate_days_behind(
                     club_obj.club_id, current_date
                 )
 

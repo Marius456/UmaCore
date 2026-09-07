@@ -14,29 +14,18 @@ from models import Club
 from scrapers import UmaMoeAPIScraper
 from services.leaderboard_report_service import LeaderboardReportService
 from services.highscore_service import HighscoreService
+from .common import ClubAutocompleteMixin
 
 logger = logging.getLogger(__name__)
 
 
-class LeaderboardCommands(commands.Cog):
+class LeaderboardCommands(ClubAutocompleteMixin, commands.Cog):
     """Commands for the leaderboard news-style report."""
+
+    club_autocomplete = ClubAutocompleteMixin.club_autocomplete
 
     def __init__(self, bot):
         self.bot = bot
-
-    async def club_autocomplete(
-        self, interaction: discord.Interaction, current: str
-    ):
-        try:
-            club_names = await Club.get_names_for_guild(interaction.guild_id)
-            return [
-                app_commands.Choice(name=name, value=name)
-                for name in club_names
-                if current.lower() in name.lower()
-            ][:25]
-        except Exception as e:
-            logger.error(f"Error in club autocomplete: {e}")
-            return []
 
     @app_commands.command(
         name="leaderboard_report",

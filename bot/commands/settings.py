@@ -9,30 +9,20 @@ import logging
 import pytz
 
 from models import Club
-from services import MonthlyInfoService
+from services.monthly_info_service import MonthlyInfoService
+from .common import ClubAutocompleteMixin
 
 logger = logging.getLogger(__name__)
 
 
-class SettingsCommands(commands.Cog):
+class SettingsCommands(ClubAutocompleteMixin, commands.Cog):
     """Channel and bot configuration commands"""
+
+    club_autocomplete = ClubAutocompleteMixin.club_autocomplete
     
     def __init__(self, bot):
         self.bot = bot
         self.monthly_info_service = MonthlyInfoService()
-    
-    async def club_autocomplete(self, interaction: discord.Interaction, current: str):
-        """Autocomplete for club names visible in this guild"""
-        try:
-            club_names = await Club.get_names_for_guild(interaction.guild_id)
-            return [
-                app_commands.Choice(name=name, value=name)
-                for name in club_names
-                if current.lower() in name.lower()
-            ][:25]
-        except Exception as e:
-            logger.error(f"Error in club autocomplete: {e}")
-            return []
     
     @app_commands.command(name="set_report_channel", description="Set the channel for daily reports")
     @app_commands.checks.has_permissions(administrator=True)
