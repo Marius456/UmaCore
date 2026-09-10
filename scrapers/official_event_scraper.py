@@ -19,6 +19,7 @@ import logging
 import os
 import re
 import tempfile
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from enum import Enum
@@ -52,6 +53,49 @@ IN_DOCKER = os.environ.get("RUNNING_IN_DOCKER") == "true" or os.path.exists("/.d
 # Longer timeouts for Docker environment
 PAGE_LOAD_TIMEOUT = 90000 if IN_DOCKER else 60000  # 90s in Docker, 60s locally
 DEFAULT_WAIT_TIMEOUT = 5000 if IN_DOCKER else 3000  # 5s in Docker, 3s locally
+OFFICIAL_EVENTS_PROXY = os.getenv(
+    "OFFICIAL_EVENTS_PROXY", "http://100.111.216.3:8888"
+).strip()
+PROXY_CONNECT_TIMEOUT = 3.0
+
+
+async def _reachable_proxy(proxy_address: str) -> Optional[str]:
+    """Return the configured proxy only when its TCP endpoint is reachable."""
+    if not proxy_address:
+        return None
+
+    parsed = urlparse(proxy_address)
+    if not parsed.hostname:
+        logger.warning("Ignoring invalid OFFICIAL_EVENTS_PROXY value")
+        return None
+
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError:
+        logger.warning("Ignoring OFFICIAL_EVENTS_PROXY with an invalid port")
+        return None
+    writer = None
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(parsed.hostname, port),
+            timeout=PROXY_CONNECT_TIMEOUT,
+        )
+        return proxy_address
+    except (OSError, asyncio.TimeoutError) as exc:
+        logger.warning(
+            "Official-events proxy %s:%s is unreachable (%s); trying direct connection",
+            parsed.hostname,
+            port,
+            exc,
+        )
+        return None
+    finally:
+        if writer is not None:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except OSError:
+                pass
 
 
 class EventType(str, Enum):
@@ -441,14 +485,16 @@ async def scrape_official_events(known_titles: Optional[Set[str]] = None) -> Lis
     known_titles = known_titles or set()
 
     async with async_playwright() as p:
-        proxy_address = "http://100.111.216.3:8888"
+        proxy_address = await _reachable_proxy(OFFICIAL_EVENTS_PROXY)
+        launch_options = {
+            "headless": True,
+            "args": LAUNCH_ARGS,
+            "timeout": 30000,
+        }
+        if proxy_address:
+            launch_options["proxy"] = {"server": proxy_address}
         browser = await p.chromium.launch(
-            headless=True,
-            args=LAUNCH_ARGS,
-            timeout=30000,
-            proxy={
-                "server": proxy_address
-            },
+            **launch_options,
         )
         context = await browser.new_context(
             user_agent=(

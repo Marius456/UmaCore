@@ -106,6 +106,51 @@ def _parse_name_with_variant(text: str) -> tuple:
     return text.strip(), None
 
 
+def _parse_banner_text(banner_id: str, text: str) -> Optional[GachaBanner]:
+    """Parse one banner from its visible text without relying on generated CSS classes."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) < 3 or lines[0] not in {"Character Gacha", "Support Card Gacha"}:
+        return None
+
+    banner_type = lines[0]
+    date_match = re.match(r"^(.+?)\s*[–-]\s*(.+?)$", lines[1])
+    start_date = date_match.group(1).strip() if date_match else ""
+    end_date = date_match.group(2).strip() if date_match else ""
+
+    items = []
+    for line in lines[2:]:
+        item_match = re.match(r"^(.+?)\s+((?:New,\s*)?[\d.]+%)$", line, re.IGNORECASE)
+        if not item_match:
+            continue
+
+        name, variant = _parse_name_with_variant(item_match.group(1))
+        rate_text = item_match.group(2)
+        card_type = None
+        if variant and banner_type == "Support Card Gacha":
+            type_match = re.match(r"(SSR|SR|R)\s", variant)
+            if type_match:
+                card_type = type_match.group(1)
+
+        items.append(GachaItem(
+            name=name,
+            variant=variant,
+            is_new=_has_new_badge(rate_text),
+            rate=_parse_rate(rate_text),
+            card_type=card_type,
+        ))
+
+    if not items:
+        return None
+
+    return GachaBanner(
+        banner_id=banner_id,
+        banner_type=banner_type,
+        start_date=start_date,
+        end_date=end_date,
+        items=items,
+    )
+
+
 async def scrape_gacha_banners() -> List[GachaBanner]:
     """
     Scrape current gacha banners from GameTora.
@@ -154,17 +199,20 @@ async def scrape_gacha_banners() -> List[GachaBanner]:
             except Exception as e:
                 logger.debug(f"Cookie consent popup handling (non-critical): {e}")
 
-            # Wait for banner containers to appear (JS-rendered content)
-            await page.wait_for_selector(
-                "[class*='sc-51fc945c-0']",
-                timeout=30000
+            # Generated styled-components class names change on every GameTora rebuild.
+            # Anchor to the stable heading and direct child banner IDs instead.
+            current_banners = page.get_by_role(
+                "heading", name="Current banners", exact=True
             )
+            await current_banners.wait_for(state="visible", timeout=30000)
 
             # Extra wait for all banner data to fully render
             await page.wait_for_timeout(2000)
 
             # Find all banner containers
-            banner_elements = await page.locator("[class*='sc-51fc945c-0']").all()
+            banner_elements = await current_banners.locator(
+                "xpath=following-sibling::div[1]/div[@id]"
+            ).all()
             logger.info(f"Found {len(banner_elements)} banner(s) on page")
 
             for el in banner_elements:
@@ -188,77 +236,5 @@ async def scrape_gacha_banners() -> List[GachaBanner]:
 
 async def _parse_banner_element(el) -> Optional[GachaBanner]:
     """Parse a single banner container element into a GachaBanner object."""
-    # Extract banner ID from element id attribute
     banner_id = await el.get_attribute("id") or "unknown"
-
-    # Extract banner type (Character Gacha / Support Card Gacha)
-    type_element = el.locator("[class*='sc-51fc945c-8']")
-    banner_type = (await type_element.text_content() or "Unknown Gacha").strip()
-
-    # Extract date range - it's in the div sibling to the type element
-    date_text = ""
-    try:
-        parent = el.locator("[class*='sc-51fc945c-2']")
-        inner_text = (await parent.text_content() or "")
-        # The date text is the part after the type label
-        date_text = inner_text.replace(banner_type, "").strip()
-    except Exception:
-        pass
-
-    # Parse start and end dates
-    start_date = ""
-    end_date = ""
-    date_match = re.match(
-        r'(.+?)\s*[–-]\s*(.+?)\s*$',
-        date_text
-    )
-    if date_match:
-        start_date = date_match.group(1).strip()
-        end_date = date_match.group(2).strip()
-
-    # Extract rate-up items
-    items = []
-    li_elements = await el.locator("[class*='sc-51fc945c-3'] li").all()
-
-    for li in li_elements:
-        try:
-            # Name element - inner span with class gacha_link_alt or similar
-            name_el = li.locator("span[class*='gacha_link_alt']")
-            name_text = (await name_el.text_content() or "").strip()
-
-            # Rate/new badge element
-            rate_el = li.locator("[class*='sc-51fc945c-6']")
-            rate_text = (await rate_el.text_content() or "").strip()
-
-            name, variant = _parse_name_with_variant(name_text)
-            rate = _parse_rate(rate_text)
-            is_new = _has_new_badge(rate_text)
-
-            # Determine card_type from variant for supports
-            card_type = None
-            if variant and banner_type == "Support Card Gacha":
-                type_match = re.match(r'(SSR|SR|R)\s', variant)
-                if type_match:
-                    card_type = type_match.group(1)
-
-            items.append(GachaItem(
-                name=name,
-                variant=variant,
-                is_new=is_new,
-                rate=rate,
-                card_type=card_type,
-            ))
-        except Exception as e:
-            logger.warning(f"Failed to parse a banner item: {e}")
-            continue
-
-    if not banner_type or not items:
-        return None
-
-    return GachaBanner(
-        banner_id=banner_id,
-        banner_type=banner_type,
-        start_date=start_date,
-        end_date=end_date,
-        items=items,
-    )
+    return _parse_banner_text(banner_id, await el.inner_text())

@@ -13,6 +13,7 @@ from scrapers.official_event_scraper import (
     _dedup_events,
     _extract_times_from_body,
     _parse_date_jst,
+    _reachable_proxy,
     check_and_save,
 )
 
@@ -57,6 +58,16 @@ class OfficialEventTimeParsingTests(unittest.TestCase):
             _canonical_event_key(ended.title, ended.type),
             _canonical_event_key(scheduled.title, scheduled.type),
         )
+
+    def test_unreachable_proxy_falls_back_to_direct_connection(self):
+        async def check():
+            with patch(
+                "scrapers.official_event_scraper.asyncio.open_connection",
+                new=AsyncMock(side_effect=OSError("offline")),
+            ):
+                return await _reachable_proxy("http://100.111.216.3:8888")
+
+        self.assertIsNone(asyncio.run(check()))
 
     def test_known_event_is_refreshed_and_notification_history_is_preserved(self):
         with tempfile.TemporaryDirectory() as temp_dir:

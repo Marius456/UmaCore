@@ -46,6 +46,8 @@ postgresql://user:password@host:5432/database_name
 DISCORD_TOKEN=your_bot_token_here
 DATABASE_URL=postgresql://user:password@host:5432/database_name
 LOG_LEVEL=INFO
+# Optional when the host IP is blocked by the official news site:
+OFFICIAL_EVENTS_PROXY=http://proxy-host:8888
 ```
 
 ### 6. Run the bot

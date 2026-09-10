@@ -113,6 +113,8 @@ After inviting, use `/add_club` with the club's Uma.moe circle ID, then `/set_re
    DISCORD_TOKEN=your_bot_token_here
    DATABASE_URL=postgresql://user:password@host:5432/database_name
    LOG_LEVEL=INFO
+   # Optional: route official umamusume.com news through a reachable HTTP proxy
+   OFFICIAL_EVENTS_PROXY=http://proxy-host:8888
    ```
 
 3. Run the bot:
