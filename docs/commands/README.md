@@ -17,10 +17,11 @@ All commands are Discord slash commands (`/`).
 
 | Command | Who | Description |
 |---|---|---|
+| `/help` | Anyone | View a private member command guide |
 | `/add_club` | Admin | Register a new club |
 | `/remove_club` | Admin | Delete a club |
 | `/edit_club` | Admin | Modify club settings |
-| `/list_clubs` | Admin | View all clubs in server |
+| `/list_clubs` | Anyone | View all clubs in server |
 | `/activate_club` | Admin | Reactivate a deactivated club |
 | `/quota` | Admin | Set daily quota for a club |
 | `/quota_history` | Admin | View quota changes this month |
@@ -44,8 +45,8 @@ All commands are Discord slash commands (`/`).
 | `/notification_settings` | Member | Manage DM preferences |
 | `/progress_chart` | Anyone | Fan progression chart this month |
 | `/previous_month` | Anyone | Last month's final fan stats |
-| `/leaderboard_report` | Anyone | Generate current-month leaderboard analysis |
-| `/club_highscores` | Anyone | Show all-time club records |
+| `/leaderboard_report` | Admin | Generate current-month leaderboard analysis |
+| `/club_highscores` | Admin | Show all-time club records |
 | `/gacha` | Anyone | Show current GameTora banners |
 | `/privacy` | Anyone | View privacy and terms links |
 | `/stats` | Author | Bot-wide club/member statistics |

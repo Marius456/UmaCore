@@ -4,6 +4,18 @@ These commands are available to all members.
 
 ---
 
+## /help
+
+View a private guide to member commands, grouped into account linking and notifications,
+clubs and progress, gacha and trivia, and privacy information. Includes required arguments
+and guidance for linking your exact trainer name and club before checking personal status
+or managing notifications.
+
+No parameters. Available without linking an account or administrator permissions.
+Only you can see the response.
+
+---
+
 ## /link_trainer
 
 Link your Discord account to your in-game trainer name. Required for DM notifications and `/my_status`.

@@ -13,6 +13,7 @@ async def setup(bot):
     from .leaderboard import LeaderboardCommands
     from .gacha import GachaCommands
     from .trivia import TriviaCommands
+    from .help import HelpCommands
 
     await bot.add_cog(SettingsCommands(bot))
     await bot.add_cog(AdminCommands(bot))
@@ -23,3 +24,4 @@ async def setup(bot):
     await bot.add_cog(LeaderboardCommands(bot))
     await bot.add_cog(GachaCommands(bot))
     await bot.add_cog(TriviaCommands(bot))
+    await bot.add_cog(HelpCommands(bot))
