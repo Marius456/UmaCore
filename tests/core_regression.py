@@ -7,6 +7,8 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
+import pytz
+
 from bot.tasks import BotTasks
 from models.club import Club
 from models.member import Member
@@ -314,11 +316,33 @@ class StatusSummaryQueryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
-    def test_daily_check_remains_due_after_configured_hour(self):
-        now = datetime(2026, 9, 7, 17, 10)
+    def test_daily_check_only_matches_configured_minute(self):
+        scheduled_time = time(18, 0)
 
-        self.assertTrue(BotTasks._is_daily_check_due(now, time(16, 30)))
-        self.assertFalse(BotTasks._is_daily_check_due(now, time(18, 0)))
+        self.assertFalse(
+            BotTasks._is_daily_check_time(datetime(2026, 9, 7, 17, 59), scheduled_time)
+        )
+        self.assertTrue(
+            BotTasks._is_daily_check_time(datetime(2026, 9, 7, 18, 0), scheduled_time)
+        )
+        self.assertFalse(
+            BotTasks._is_daily_check_time(datetime(2026, 9, 7, 18, 1), scheduled_time)
+        )
+        self.assertFalse(
+            BotTasks._is_daily_check_time(datetime(2026, 9, 7, 18, 44), scheduled_time)
+        )
+
+    def test_scheduled_report_loop_polls_every_minute(self):
+        self.assertEqual(BotTasks.scheduled_report_check.minutes, 1.0)
+
+    def test_daily_check_uses_club_local_time(self):
+        instant = pytz.UTC.localize(datetime(2026, 9, 7, 18, 0))
+        utc_now = instant.astimezone(pytz.timezone("UTC"))
+        vilnius_now = instant.astimezone(pytz.timezone("Europe/Vilnius"))
+
+        self.assertTrue(BotTasks._is_daily_check_time(utc_now, time(18, 0)))
+        self.assertTrue(BotTasks._is_daily_check_time(vilnius_now, time(21, 0)))
+        self.assertFalse(BotTasks._is_daily_check_time(vilnius_now, time(18, 0)))
 
     async def test_report_embed_lists_are_sent_individually(self):
         channel = SimpleNamespace(send=AsyncMock())

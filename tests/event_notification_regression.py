@@ -138,10 +138,10 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
         scrape.assert_awaited_once()
 
     async def test_start_and_stop_manage_hourly_event_notification_loop(self):
-        self.tasks.hourly_check.start = MagicMock()
+        self.tasks.scheduled_report_check.start = MagicMock()
         self.tasks.hourly_event_notifications.start = MagicMock()
         self.tasks.daily_official_events_check.start = MagicMock()
-        self.tasks.hourly_check.cancel = MagicMock()
+        self.tasks.scheduled_report_check.cancel = MagicMock()
         self.tasks.hourly_event_notifications.cancel = MagicMock()
         self.tasks.daily_official_events_check.cancel = MagicMock()
 

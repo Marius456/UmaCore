@@ -49,22 +49,22 @@ class BotTasks:
         # a transient failure while persisting the deduplication state.
         self._sent_event_notifications = set()
 
-        logger.info("Multi-club tasks configured - will check all clubs hourly")
+        logger.info("Multi-club tasks configured - will check club schedules every minute")
 
     def start_tasks(self):
         """Start all scheduled tasks"""
-        self.hourly_check.start()
+        self.scheduled_report_check.start()
         self.hourly_event_notifications.start()
         self.daily_official_events_check.start()
         logger.info(
-            "Scheduled tasks started (hourly reports, hourly event notifications, "
+            "Scheduled tasks started (minute-based report scheduling, hourly event notifications, "
             "daily official event scraping)"
         )
 
     @staticmethod
-    def _is_daily_check_due(now_in_club_tz: datetime, scrape_time) -> bool:
-        """Return whether today's configured local run time has passed."""
-        return (now_in_club_tz.hour, now_in_club_tz.minute) >= (
+    def _is_daily_check_time(now_in_club_tz: datetime, scrape_time) -> bool:
+        """Return whether the current local minute matches the configured run time."""
+        return (now_in_club_tz.hour, now_in_club_tz.minute) == (
             scrape_time.hour,
             scrape_time.minute,
         )
@@ -74,13 +74,13 @@ class BotTasks:
         loop_tasks = [
             loop.get_task()
             for loop in (
-                self.hourly_check,
+                self.scheduled_report_check,
                 self.hourly_event_notifications,
                 self.daily_official_events_check,
             )
             if loop.get_task() is not None
         ]
-        self.hourly_check.cancel()
+        self.scheduled_report_check.cancel()
         self.hourly_event_notifications.cancel()
         self.daily_official_events_check.cancel()
         scheduled_tasks = tuple(self._scheduled_tasks)
@@ -97,11 +97,11 @@ class BotTasks:
         self._running_club_ids.clear()
         logger.info("Scheduled tasks stopped")
 
-    @tasks.loop(hours=1)
-    async def hourly_check(self):
-        """Check every hour if it's time to run any club's daily report"""
+    @tasks.loop(minutes=1)
+    async def scheduled_report_check(self):
+        """Check every minute for clubs whose daily report is scheduled now."""
         logger.info("=" * 80)
-        logger.info("Hourly check - scanning all clubs...")
+        logger.info("Scheduled report check - scanning all clubs...")
         logger.info("=" * 80)
 
         try:
@@ -127,7 +127,7 @@ class BotTasks:
                     target_hour = club.scrape_time.hour
                     target_minute = club.scrape_time.minute
 
-                    if self._is_daily_check_due(now_in_club_tz, club.scrape_time):
+                    if self._is_daily_check_time(now_in_club_tz, club.scrape_time):
 
                         run_key = f"{club.club_id}_{current_date}"
                         if self.last_runs.get(run_key):
@@ -158,7 +158,7 @@ class BotTasks:
                     continue
 
         except Exception as e:
-            logger.error(f"Error in hourly_check: {e}", exc_info=True)
+            logger.error(f"Error in scheduled_report_check: {e}", exc_info=True)
 
     def _scheduled_task_done(self, task: asyncio.Task):
         """Retain background tasks through completion and consume failures."""
@@ -467,9 +467,9 @@ class BotTasks:
                 except Exception as e:
                     logger.error(f"Error generating leaderboard report for {club.club_name}: {e}", exc_info=True)
 
-                # Only suppress later hourly retries after the primary report
-                # was completely delivered. Data processing alone is not a
-                # successful scheduled report run.
+                # Suppress additional checks only after the primary report was
+                # completely delivered. Data processing alone is not a successful
+                # scheduled report run.
                 if daily_report_sent:
                     run_key = f"{club.club_id}_{run_date}"
                     self.last_runs[run_key] = True
@@ -506,11 +506,11 @@ class BotTasks:
             except Exception:
                 pass
 
-    @hourly_check.before_loop
-    async def before_hourly_check(self):
+    @scheduled_report_check.before_loop
+    async def before_scheduled_report_check(self):
         """Wait for bot to be ready before starting tasks"""
         await self.bot.wait_until_ready()
-        logger.info("Bot ready, multi-club hourly check loop starting")
+        logger.info("Bot ready, minute-based report schedule loop starting")
 
     # ── Event Notification Helpers ─────────────────────────────────────
 

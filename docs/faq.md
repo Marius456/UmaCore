@@ -23,8 +23,10 @@ club-local scrape time comfortably after that instant.
 
 ## The bot didn't scrape at the time I set
 
-The scheduler checks once per hour. It runs on the first check at or after the
-configured club-local time, so a report may be up to roughly one hour late.
+The scheduler checks once per minute and runs during the configured minute in the
+club's timezone. If the bot is offline or starts after that minute, the automatic
+report is skipped for that day; an administrator can use `/force_check` to run it
+manually.
 
 ---
 
