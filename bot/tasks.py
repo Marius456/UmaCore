@@ -69,6 +69,19 @@ class BotTasks:
             scrape_time.minute,
         )
 
+    @staticmethod
+    def _club_goal_kwargs(rank_data):
+        """Select the live uma.moe fields used by the leaderboard Club Goal."""
+        if not rank_data:
+            return {}
+        keys = (
+            "club_rank",
+            "monthly_rank",
+            "fans_to_next_tier",
+            "fans_to_lower_tier",
+        )
+        return {key: rank_data.get(key) for key in keys}
+
     async def stop_tasks(self):
         """Cancel scheduled work and wait until it has finished unwinding."""
         loop_tasks = [
@@ -339,6 +352,7 @@ class BotTasks:
 
                 # Extract and persist club rank data
                 monthly_rank = scraper.get_monthly_rank()
+                club_rank = scraper.get_club_rank()
                 last_month_rank = scraper.get_last_month_rank()
                 yesterday_rank = scraper.get_yesterday_rank()
                 fans_to_next_tier = scraper.get_fans_to_next_tier()
@@ -350,6 +364,7 @@ class BotTasks:
                     and fans_to_lower_tier is not None
                 ):
                     rank_data = {
+                        'club_rank': club_rank,
                         'monthly_rank': monthly_rank,
                         'last_month_rank': last_month_rank,
                         'yesterday_rank': yesterday_rank,
@@ -442,10 +457,7 @@ class BotTasks:
                             year, month = current_date.year, current_date.month
 
                             # Pass tier progress data from the scraper if available
-                            tier_kwargs = {}
-                            if rank_data:
-                                tier_kwargs['fans_to_next_tier'] = rank_data.get('fans_to_next_tier')
-                                tier_kwargs['fans_to_lower_tier'] = rank_data.get('fans_to_lower_tier')
+                            tier_kwargs = self._club_goal_kwargs(rank_data)
 
                             embeds = await LeaderboardReportService.generate_leaderboard_report(
                                 club.club_id, club.club_name, year, month,
@@ -764,7 +776,7 @@ class BotTasks:
             if changed:
                 logger.info("✅ New official events detected and saved to JSON")
             else:
-                logger.info("ℹ️ No new official events found (JSON unchanged)")
+                logger.info("ℹ️ No new official events found; refreshed saved event data")
         except Exception as e:
             logger.error(f"Error in daily_official_events_check: {e}", exc_info=True)
             return

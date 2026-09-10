@@ -234,11 +234,12 @@ class UmaMoeAPIScraper(BaseScraper):
         # Set to a date object when the scraper fell back to the previous month;
         # None when the fetched data matches the current calendar date.
         self._data_date: Optional[date] = None
-        # Club/monthly rank fields from the API response (nested inside "circle" key)
+        # Club tier code is at the response root; monthly positions are in "circle".
+        self._club_rank: Optional[int] = None
         self._monthly_rank: Optional[int] = None
         self._last_month_rank: Optional[int] = None
         self._yesterday_rank: Optional[int] = None
-        # Club tier progress fields from the API response (nested inside "circle" key)
+        # Club tier boundary distances are at the response root.
         self._fans_to_next_tier: Optional[int] = None
         self._fans_to_lower_tier: Optional[int] = None
         super().__init__(self.base_url)
@@ -319,6 +320,32 @@ class UmaMoeAPIScraper(BaseScraper):
             "fans_to_lower_tier": fans_to_lower_tier,
         }
 
+    @staticmethod
+    def _extract_club_rank_metadata(data: Optional[dict]) -> Dict[str, int]:
+        """Return independently validated club tier and monthly rank metadata."""
+        if not isinstance(data, dict):
+            return {}
+
+        result: Dict[str, int] = {}
+        club_rank = data.get("club_rank")
+        if (
+            isinstance(club_rank, int)
+            and not isinstance(club_rank, bool)
+            and 1 <= club_rank <= 11
+        ):
+            result["club_rank"] = club_rank
+
+        circle = data.get("circle")
+        monthly_rank = circle.get("monthly_rank") if isinstance(circle, dict) else None
+        if (
+            isinstance(monthly_rank, int)
+            and not isinstance(monthly_rank, bool)
+            and monthly_rank > 0
+        ):
+            result["monthly_rank"] = monthly_rank
+
+        return result
+
     async def fetch_tier_progress(
         self, year: int, month: int
     ) -> Optional[Dict[str, int]]:
@@ -349,6 +376,9 @@ class UmaMoeAPIScraper(BaseScraper):
                 year,
                 month,
             )
+            return None
+
+        tier_progress.update(self._extract_club_rank_metadata(data))
         return tier_progress
 
     async def _fetch_via_playwright(self, year: int, month: int) -> dict:
@@ -554,7 +584,9 @@ class UmaMoeAPIScraper(BaseScraper):
             # On Day 1 prefer the current-month endpoint (more timely), fall back to primary.
             rank_source = (endpoint_data if (now.day == 1 and endpoint_data) else primary_data) or {}
             circle_data = rank_source.get("circle") or {}
-            self._monthly_rank = circle_data.get("monthly_rank")
+            rank_metadata = self._extract_club_rank_metadata(rank_source)
+            self._club_rank = rank_metadata.get("club_rank")
+            self._monthly_rank = rank_metadata.get("monthly_rank")
             self._last_month_rank = circle_data.get("last_month_rank")
             self._yesterday_rank = circle_data.get("yesterday_rank")
             tier_progress = self._extract_tier_progress(rank_source)
@@ -565,7 +597,8 @@ class UmaMoeAPIScraper(BaseScraper):
                 tier_progress["fans_to_lower_tier"] if tier_progress else None
             )
             logger.info(
-                f"Club ranks: monthly_rank={self._monthly_rank}, "
+                f"Club ranks: club_rank={self._club_rank}, "
+                f"monthly_rank={self._monthly_rank}, "
                 f"last_month_rank={self._last_month_rank}, "
                 f"yesterday_rank={self._yesterday_rank}"
             )
@@ -588,6 +621,7 @@ class UmaMoeAPIScraper(BaseScraper):
                     "the new competition period. Dropping all rank data to avoid false display."
                 )
                 self._monthly_rank = None
+                self._club_rank = None
                 self._last_month_rank = None
                 self._yesterday_rank = None
                 self._fans_to_next_tier = None
@@ -774,6 +808,10 @@ class UmaMoeAPIScraper(BaseScraper):
         """Return the club's current monthly position rank (from circle.monthly_rank)."""
         return self._monthly_rank
 
+    def get_club_rank(self) -> Optional[int]:
+        """Return the club's tier code (D=1 through SS=11)."""
+        return self._club_rank
+
     def get_last_month_rank(self) -> Optional[int]:
         """Return the club's previous month position rank (from circle.last_month_rank)."""
         return self._last_month_rank
@@ -783,11 +821,11 @@ class UmaMoeAPIScraper(BaseScraper):
         return self._yesterday_rank
 
     def get_fans_to_next_tier(self) -> Optional[int]:
-        """Return the fans needed to reach the next club tier (from circle.fans_to_next_tier)."""
+        """Return the fans needed to reach the next club tier."""
         return self._fans_to_next_tier
 
     def get_fans_to_lower_tier(self) -> Optional[int]:
-        """Return the fans above the lower club tier (from circle.fans_to_lower_tier)."""
+        """Return the fans above the lower club tier."""
         return self._fans_to_lower_tier
 
 

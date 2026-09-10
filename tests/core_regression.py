@@ -316,6 +316,25 @@ class StatusSummaryQueryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
+    def test_scheduled_leaderboard_passes_all_club_goal_fields(self):
+        rank_data = {
+            "club_rank": 6,
+            "monthly_rank": 1_137,
+            "fans_to_next_tier": 95_035_383,
+            "fans_to_lower_tier": 338_997_978,
+            "last_month_rank": 981,
+        }
+
+        self.assertEqual(
+            BotTasks._club_goal_kwargs(rank_data),
+            {
+                "club_rank": 6,
+                "monthly_rank": 1_137,
+                "fans_to_next_tier": 95_035_383,
+                "fans_to_lower_tier": 338_997_978,
+            },
+        )
+
     def test_daily_check_only_matches_configured_minute(self):
         scheduled_time = time(18, 0)
 

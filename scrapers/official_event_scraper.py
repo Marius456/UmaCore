@@ -574,7 +574,11 @@ async def scrape_official_events(known_titles: Optional[Set[str]] = None) -> Lis
                     logger.debug(f"Skipping non-event: '{title[:50]}'")
                     continue
 
-                logger.info(f"Processing new event: '{title[:50]}' ({event_type.value})")
+                # Classification only makes this an event article; whether the
+                # underlying event is new is decided after canonical deduplication
+                # against events.json in check_and_save(). Calling every article
+                # "new" here made normal restart refreshes look like discoveries.
+                logger.info(f"Processing event article: '{title[:50]}' ({event_type.value})")
 
                 # Navigate directly to the article URL
                 if not url:

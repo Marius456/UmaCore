@@ -129,6 +129,7 @@ class LeaderboardReportService:
     """Generates a rich 'sports broadcast' style news report for club activity."""
 
     MILESTONES = [1_000_000, 5_000_000, 10_000_000, 25_000_000, 50_000_000, 100_000_000]
+    CLUB_TIERS = ("D", "D+", "C", "C+", "B", "B+", "A", "A+", "S", "S+", "SS")
 
     FIELD_MAX = 1024
 
@@ -139,6 +140,8 @@ class LeaderboardReportService:
         cls, club_id: UUID, club_name: str, year: int, month: int,
         fans_to_next_tier: Optional[int] = None,
         fans_to_lower_tier: Optional[int] = None,
+        club_rank: Optional[int] = None,
+        monthly_rank: Optional[int] = None,
     ) -> List[discord.Embed]:
         """
         Fetch the month's QuotaHistory, compute all analysis segments,
@@ -220,6 +223,8 @@ class LeaderboardReportService:
             daily_rankings, latest_date,
             fans_to_next_tier=fans_to_next_tier,
             fans_to_lower_tier=fans_to_lower_tier,
+            club_rank=club_rank,
+            monthly_rank=monthly_rank,
         )
         # History records
         history_records = cls._compute_history_records(daily_deltas, daily_rankings, latest_date)
@@ -295,12 +300,7 @@ class LeaderboardReportService:
         if milestones:
             add_field(name="MILESTONE TRACKER", value=milestone_text + "\n\n───")
 
-        # --- Section 5: Movers ---
-        condensed = cls._compute_condensed_movers(movers)
-        if condensed:
-            add_field(name="TOP MOVERS", value=cls._format_condensed_movers(condensed))
-
-        # --- Section 6: Club Activity ---
+        # --- Section 5: Club Activity ---
         if club_activity and club_activity["active_count"] > 0:
             activity_text = (
                 f"**Total fans gained today**: +{cls._fmt_fans(club_activity['total_gain'])}\n"
@@ -309,22 +309,23 @@ class LeaderboardReportService:
             )
             add_field(name="CLUB ACTIVITY", value=activity_text + "\n\n───")
 
-        # --- Section 7: History & Records ---
+        # --- Section 6: History & Records ---
         if history_records:
             add_field(name="📊 MONTHLY RECORDS", value="\n".join(history_records) + "\n\n───")
 
-        # --- Section 8: Club Goal ---
+        # --- Section 7: Club Goal ---
         if club_goal:
-            rank_str = ""
-            if club_goal.get("rank_delta") is not None and club_goal.get("monthly_rank") is not None:
-                delta = club_goal["rank_delta"]
-                arrow = "↑" if delta > 0 else "↓"
-                rank_str = f"\nRank: #{club_goal['monthly_rank']} {arrow}{abs(delta)} vs last month"
-            goal_text = (
-                f"**Next tier**: [{club_goal['bar']}] {club_goal['progress_pct']:.1f}%"
-                f" · {cls._fmt_fans(club_goal['fans_to_next_tier'])} remaining"
-                f"{rank_str}"
+            goal_lines = []
+            tier_line = cls._format_club_tier_line(
+                club_goal.get("club_rank"), club_goal.get("monthly_rank")
             )
+            if tier_line:
+                goal_lines.append(tier_line)
+            goal_lines.extend((
+                f"**BUFFER:** {club_goal['fans_to_lower_tier']:,}",
+                f"**NEEDED:** {club_goal['fans_to_next_tier']:,}",
+            ))
+            goal_text = "\n".join(goal_lines)
             add_field(name="📈 CLUB GOAL", value=goal_text)
 
         # Set footer on the main embed
@@ -1148,9 +1149,9 @@ class LeaderboardReportService:
         daily_rankings: Dict[date, List[Dict]],
         latest_date: date,
         monthly_rank: Optional[int] = None,
-        last_month_rank: Optional[int] = None,
         fans_to_next_tier: Optional[int] = None,
         fans_to_lower_tier: Optional[int] = None,
+        club_rank: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         """Generate club-level goal progress using API tier data."""
         today_entries = daily_rankings.get(latest_date, [])
@@ -1170,27 +1171,47 @@ class LeaderboardReportService:
         if total_tier_range <= 0:
             return None
 
-        total_fans = sum(e["fans"] for e in today_entries)
-        progress_pct = round((fans_to_lower_tier / total_tier_range) * 100, 1)
+        valid_club_rank = (
+            club_rank
+            if isinstance(club_rank, int)
+            and not isinstance(club_rank, bool)
+            and 1 <= club_rank <= len(cls.CLUB_TIERS)
+            else None
+        )
+        valid_monthly_rank = (
+            monthly_rank
+            if isinstance(monthly_rank, int)
+            and not isinstance(monthly_rank, bool)
+            and monthly_rank > 0
+            else None
+        )
 
-        filled = max(0, min(10, int((progress_pct / 100) * 10)))
-        bar = "▰" * filled + "▱" * (10 - filled)
-
-        result = {
-            "total_fans": total_fans,
-            "progress_pct": progress_pct,
-            "bar": bar,
-            "monthly_rank": monthly_rank,
-            "last_month_rank": last_month_rank,
+        return {
+            "club_rank": valid_club_rank,
+            "monthly_rank": valid_monthly_rank,
             "fans_to_next_tier": fans_to_next_tier,
             "fans_to_lower_tier": fans_to_lower_tier,
         }
 
-        if monthly_rank is not None and last_month_rank is not None:
-            rank_delta = last_month_rank - monthly_rank  # positive = improved
-            result["rank_delta"] = rank_delta
+    @classmethod
+    def _format_club_tier_line(
+        cls, club_rank: Optional[int], monthly_rank: Optional[int]
+    ) -> str:
+        """Format lower/current/next club tiers with the live monthly rank."""
+        if club_rank is None:
+            return ""
 
-        return result
+        current = f"**{cls.CLUB_TIERS[club_rank - 1]}**"
+        if monthly_rank is not None:
+            current += f" (Rank #{monthly_rank:,})"
+
+        parts = []
+        if club_rank > 1:
+            parts.append(f"**{cls.CLUB_TIERS[club_rank - 2]}** ◀")
+        parts.append(current)
+        if club_rank < len(cls.CLUB_TIERS):
+            parts.append(f"▶ **{cls.CLUB_TIERS[club_rank]}**")
+        return " ".join(parts)
 
     @classmethod
     def _compute_history_records(
