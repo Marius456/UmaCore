@@ -99,10 +99,35 @@ If you want to use the Uma.moe API (recommended):
 
 ## Deployment
 
-### Docker
+### Production server
+
+On Windows, use the checked-in deployment wrapper:
+
+```powershell
+.\scripts\deploy.ps1
+```
+
+It defaults to `origin/feat/fix-issues` on the configured Ubuntu host. All
+connection settings and the selected remote branch can be overridden:
+
+```powershell
+.\scripts\deploy.ps1 -Branch main
+.\scripts\deploy.ps1 -Host example.com -User ubuntu -IdentityFile C:\keys\server.key
+```
+
+The remote `~/UmaCore` checkout must be clean and must not contain server-only
+commits. Only commits already pushed to `origin` can be deployed. The server's
+`.env` remains in place and is never copied to the local machine. The deployment
+builds before stopping the current bot, waits up to 60
+seconds for the internal `/health` endpoint, and automatically restores the
+previous container if startup fails. If a deployment reports a pre-existing
+`para-bot-container-rollback`, inspect and resolve that container manually
+before retrying.
+
+### Local Docker
 
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 ### Railway / Render / Fly.io

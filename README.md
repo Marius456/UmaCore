@@ -131,9 +131,30 @@ After inviting, use `/add_club` with the club's Uma.moe circle ID, then `/set_re
 
 ### Deployment
 
-**Docker:**
+From Windows, deploy the default `origin/feat/fix-issues` branch to the
+configured Ubuntu server with:
+
+```powershell
+.\scripts\deploy.ps1
+```
+
+Deploy a different remote branch or override a connection setting when needed:
+
+```powershell
+.\scripts\deploy.ps1 -Branch main
+.\scripts\deploy.ps1 -Host example.com -User ubuntu -IdentityFile C:\keys\server.key
+```
+
+The command requires a clean server checkout and an existing `~/UmaCore/.env`.
+It deploys from `origin`, so commit and push local changes before running it.
+It builds the new image while the current bot is online, verifies the internal
+health endpoint after replacement, and restores the previous container if the
+new version does not become healthy. SSH host-key verification remains enabled.
+
+For local Docker development:
+
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 **PM2 / Linux:**

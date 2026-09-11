@@ -207,13 +207,6 @@ class LeaderboardReportService:
             rivalries[0]["is_top"] = True
             rivalries[0]["month_context"] = month_name
 
-        # Compute milestone ETAs
-        milestone_etas = {}
-        for m in milestones:
-            eta = cls._compute_milestone_eta(m.name, m.total, m.milestone, daily_deltas)
-            if eta is not None:
-                milestone_etas[m.name] = eta
-
         # Phase 3: Mood
         mood = cls._determine_mood(movers, leader_change, len(overtakes))
         total_movers_count = len(movers.get("climbers", [])) + len(movers.get("fallers", []))
@@ -295,12 +288,7 @@ class LeaderboardReportService:
         if battles:
             add_field(name="THE BATTLE ZONE", value=battles + "\n\n───")
 
-        # --- Section 4: Milestones ---
-        milestone_text = cls._format_milestone_watch(milestones, milestone_etas)
-        if milestones:
-            add_field(name="MILESTONE TRACKER", value=milestone_text + "\n\n───")
-
-        # --- Section 5: Club Activity ---
+        # --- Section 4: Club Activity ---
         if club_activity and club_activity["active_count"] > 0:
             activity_text = (
                 f"**Total fans gained today**: +{cls._fmt_fans(club_activity['total_gain'])}\n"
@@ -309,11 +297,11 @@ class LeaderboardReportService:
             )
             add_field(name="CLUB ACTIVITY", value=activity_text + "\n\n───")
 
-        # --- Section 6: History & Records ---
+        # --- Section 5: History & Records ---
         if history_records:
             add_field(name="📊 MONTHLY RECORDS", value="\n".join(history_records) + "\n\n───")
 
-        # --- Section 7: Club Goal ---
+        # --- Section 6: Club Goal ---
         if club_goal:
             goal_lines = []
             tier_line = cls._format_club_tier_line(
