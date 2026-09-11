@@ -45,6 +45,46 @@ class RareAchievementTests(unittest.TestCase):
         self.assertFalse(any(a.title == "PB Spree" for a in achievements))
 
 
+class MonthlyRecordsTests(unittest.TestCase):
+    def test_biggest_day_includes_the_first_day_of_the_month(self):
+        first = date(2026, 8, 1)
+        rankings = {
+            first: [{"name": "Alpha", "daily": 8_000_000, "rank": 1, "prev_rank": None}],
+            first + timedelta(days=1): [
+                {"name": "Alpha", "daily": 2_000_000, "rank": 1, "prev_rank": 1}
+            ],
+        }
+
+        records = LeaderboardReportService._compute_history_records(
+            {}, rankings, first + timedelta(days=1)
+        )
+
+        self.assertIn("📊 **Biggest Day**: **Alpha** — +8,000,000 fans", records)
+
+    def test_biggest_climber_scans_the_entire_month(self):
+        first = date(2026, 8, 1)
+        rankings = {
+            first: [
+                {"name": "Alpha", "daily": 1, "rank": 1, "prev_rank": None},
+                {"name": "Bravo", "daily": 1, "rank": 4, "prev_rank": None},
+            ],
+            first + timedelta(days=1): [
+                {"name": "Bravo", "daily": 1, "rank": 1, "prev_rank": 4},
+                {"name": "Alpha", "daily": 1, "rank": 2, "prev_rank": 1},
+            ],
+            first + timedelta(days=2): [
+                {"name": "Bravo", "daily": 1, "rank": 1, "prev_rank": 1},
+                {"name": "Alpha", "daily": 1, "rank": 2, "prev_rank": 2},
+            ],
+        }
+
+        records = LeaderboardReportService._compute_history_records(
+            {}, rankings, first + timedelta(days=2)
+        )
+
+        self.assertIn("⬆️ **Biggest Climber**: **Bravo** — up 3 spots", records)
+
+
 class ClubGoalTests(unittest.TestCase):
     latest = date(2026, 8, 20)
     rankings = {

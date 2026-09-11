@@ -1208,31 +1208,32 @@ class LeaderboardReportService:
         daily_rankings: Dict[date, List[Dict]],
         latest_date: date,
     ) -> List[str]:
-        """Generate 'Biggest day this month', 'Highest weekly gain', etc."""
+        """Generate month-to-date records from every available daily ranking."""
         records = []
 
         # Biggest single-day gain this month
         best_delta = 0
         best_name = ""
-        for name, deltas in daily_deltas.items():
-            for d in deltas:
-                if d["delta"] > best_delta:
-                    best_delta = d["delta"]
-                    best_name = name
+        for entries in daily_rankings.values():
+            for entry in entries:
+                if entry["daily"] > best_delta:
+                    best_delta = entry["daily"]
+                    best_name = entry["name"]
         if best_delta > 0:
             records.append(f"📊 **Biggest Day**: **{best_name}** — +{best_delta:,} fans")
 
-        # Most improved position (largest single-day rank climb)
-        today_entries = daily_rankings.get(latest_date, [])
+        # Most improved position across the entire month
         best_climb = 0
         best_climber = ""
-        for e in today_entries:
-            prev = e.get("prev_rank")
-            if prev is not None:
-                climb = prev - e["rank"]
+        for entries in daily_rankings.values():
+            for entry in entries:
+                previous_rank = entry.get("prev_rank")
+                if previous_rank is None:
+                    continue
+                climb = previous_rank - entry["rank"]
                 if climb > best_climb:
                     best_climb = climb
-                    best_climber = e["name"]
+                    best_climber = entry["name"]
         if best_climb > 0:
             records.append(f"⬆️ **Biggest Climber**: **{best_climber}** — up {best_climb} spots")
 
