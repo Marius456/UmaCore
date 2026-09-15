@@ -75,6 +75,26 @@ class Member:
         if row:
             return cls(**dict(row))
         return None
+
+    @classmethod
+    async def get_active_by_trainer_id_for_guild(
+        cls, trainer_id: str, guild_id: int
+    ) -> list['Member']:
+        """Get active memberships for a trainer in active clubs in one guild."""
+        query = """
+            SELECT m.member_id, m.club_id, m.trainer_id, m.trainer_name,
+                   m.join_date, m.is_active, m.manually_deactivated,
+                   m.last_seen, m.missing_scrapes
+            FROM members m
+            JOIN clubs c ON c.club_id = m.club_id
+            WHERE m.trainer_id = $1
+              AND m.is_active = TRUE
+              AND c.is_active = TRUE
+              AND c.guild_id = $2
+            ORDER BY m.last_seen DESC, m.member_id
+        """
+        rows = await db.fetch(query, trainer_id, guild_id)
+        return [cls(**dict(row)) for row in rows]
     
     @classmethod
     async def get_all_active(cls, club_id: UUID) -> list['Member']:

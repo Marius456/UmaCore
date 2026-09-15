@@ -6,6 +6,8 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.commands.member import MemberCommands
+from models.member import Member
+from models.user_link import UserLink
 from services.member_status_card import card_html, chart_svg, compact, render_card
 from services.member_status_service import build_status, load_member_status
 from services.trainer_profile_service import (
@@ -190,6 +192,151 @@ class ProfileClientTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StatusCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_inactive_stale_link_switches_to_current_active_member(self):
+        cog = MemberCommands(None)
+        old = member()
+        old.member_id = "old-member"
+        old.is_active = False
+        old.last_seen = date(2026, 9, 10)
+        current = member()
+        current.member_id = "current-member"
+        current.club_id = "current-club"
+        current.last_seen = date(2026, 9, 14)
+        link = SimpleNamespace(
+            discord_user_id=1,
+            member_id=old.member_id,
+            reassign_member=AsyncMock(return_value=True),
+        )
+        with patch.object(
+            Member,
+            "get_active_by_trainer_id_for_guild",
+            new=AsyncMock(return_value=[current]),
+        ) as lookup:
+            resolved = await cog._resolve_current_member(123, link, old)
+
+        self.assertIs(resolved, current)
+        lookup.assert_awaited_once_with(old.trainer_id, 123)
+        link.reassign_member.assert_awaited_once_with(
+            current.member_id, expected_member_id=old.member_id
+        )
+
+    async def test_active_link_switches_only_to_strictly_newer_member(self):
+        cog = MemberCommands(None)
+        old = member()
+        old.member_id = "old-member"
+        old.last_seen = date(2026, 9, 12)
+        current = member()
+        current.member_id = "current-member"
+        current.last_seen = date(2026, 9, 14)
+        link = SimpleNamespace(
+            discord_user_id=1,
+            member_id=old.member_id,
+            reassign_member=AsyncMock(return_value=True),
+        )
+        with patch.object(
+            Member,
+            "get_active_by_trainer_id_for_guild",
+            new=AsyncMock(return_value=[current]),
+        ):
+            resolved = await cog._resolve_current_member(123, link, old)
+
+        self.assertIs(resolved, current)
+        link.reassign_member.assert_awaited_once()
+
+    async def test_equal_newest_memberships_are_ambiguous(self):
+        cog = MemberCommands(None)
+        old = member()
+        old.member_id = "old-member"
+        old.is_active = False
+        old.last_seen = date(2026, 9, 10)
+        first = member()
+        first.member_id = "first"
+        first.last_seen = date(2026, 9, 14)
+        second = member()
+        second.member_id = "second"
+        second.last_seen = date(2026, 9, 14)
+        link = SimpleNamespace(
+            discord_user_id=1,
+            member_id=old.member_id,
+            reassign_member=AsyncMock(return_value=True),
+        )
+        with patch.object(
+            Member,
+            "get_active_by_trainer_id_for_guild",
+            new=AsyncMock(return_value=[first, second]),
+        ):
+            resolved = await cog._resolve_current_member(123, link, old)
+
+        self.assertIs(resolved, old)
+        link.reassign_member.assert_not_awaited()
+
+    async def test_member_lookup_is_exact_active_and_guild_scoped(self):
+        with patch("models.member.db.fetch", new=AsyncMock(return_value=[])) as fetch:
+            self.assertEqual(
+                await Member.get_active_by_trainer_id_for_guild("711119194083", 123),
+                [],
+            )
+
+        query, trainer_id, guild_id = fetch.await_args.args
+        self.assertIn("m.trainer_id = $1", query)
+        self.assertIn("m.is_active = TRUE", query)
+        self.assertIn("c.is_active = TRUE", query)
+        self.assertIn("c.guild_id = $2", query)
+        self.assertEqual((trainer_id, guild_id), ("711119194083", 123))
+
+    async def test_reassignment_preserves_notification_setting(self):
+        link = UserLink(1, "old-member", True, None, None)
+        with patch(
+            "models.user_link.db.fetchrow",
+            new=AsyncMock(return_value={"member_id": "current-member"}),
+        ) as fetchrow:
+            changed = await link.reassign_member(
+                "current-member", expected_member_id="old-member"
+            )
+
+        self.assertTrue(changed)
+        self.assertTrue(link.notify_on_deficit)
+        self.assertEqual(link.member_id, "current-member")
+        query = fetchrow.await_args.args[0]
+        self.assertNotIn("notify_on_deficit", query)
+        self.assertIn("member_id = $3", query)
+
+    async def test_my_status_renders_reassigned_member_immediately(self):
+        cog = MemberCommands(None)
+        interaction = SimpleNamespace(
+            response=SimpleNamespace(defer=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+            user=SimpleNamespace(id=1),
+            guild_id=123,
+        )
+        old = member()
+        old.member_id = "old-member"
+        old.is_active = False
+        old.last_seen = date(2026, 9, 10)
+        current = member()
+        current.member_id = "current-member"
+        current.club_id = "current-club"
+        current.last_seen = date(2026, 9, 14)
+        link = SimpleNamespace(
+            discord_user_id=1,
+            member_id=old.member_id,
+            reassign_member=AsyncMock(return_value=True),
+        )
+        cog._send_member_status = AsyncMock()
+
+        with patch.object(
+            UserLink, "get_by_discord_id", new=AsyncMock(return_value=link)
+        ), patch.object(
+            Member, "get_by_id", new=AsyncMock(return_value=old)
+        ), patch.object(
+            Member,
+            "get_active_by_trainer_id_for_guild",
+            new=AsyncMock(return_value=[current]),
+        ):
+            await cog.my_status.callback(cog, interaction)
+
+        cog._send_member_status.assert_awaited_once_with(interaction, current)
+
     async def test_previous_membership_history_is_not_reused(self):
         latest = record(date(2026, 7, 31), 100)
         with patch("services.member_status_service.QuotaHistory.get_latest_for_member", AsyncMock(return_value=latest)):
@@ -225,6 +372,7 @@ class StatusCommandTests(unittest.IsolatedAsyncioTestCase):
             group.belongs_to_guild = lambda guild: True
             with patch("bot.commands.member.UserLink.get_by_discord_id", AsyncMock(return_value=SimpleNamespace(member_id="member"))), \
                     patch("bot.commands.member.Member.get_by_id", AsyncMock(return_value=member())), \
+                    patch("bot.commands.member.Member.get_active_by_trainer_id_for_guild", AsyncMock(return_value=[])), \
                     patch("bot.commands.member.Member.get_by_name", AsyncMock(return_value=member())), \
                     patch("bot.commands.member.Club.get_by_name", AsyncMock(return_value=group)), \
                     patch("bot.commands.member.load_member_status", AsyncMock(return_value=sample_status())), \

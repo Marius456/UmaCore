@@ -232,11 +232,55 @@ class MemberCommands(ClubAutocompleteMixin, commands.Cog):
                 return
             
             member = await Member.get_by_id(user_link.member_id)
+            member = await self._resolve_current_member(
+                interaction.guild_id, user_link, member
+            )
             await self._send_member_status(interaction, member)
             
         except Exception as e:
             logger.error(f"Error in my_status: {e}", exc_info=True)
             await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
+
+    async def _resolve_current_member(self, guild_id, user_link: UserLink, member: Member):
+        """Repair a stale link when one newer active membership is unambiguous."""
+        if member is None or not member.trainer_id or guild_id is None:
+            return member
+
+        candidates = await Member.get_active_by_trainer_id_for_guild(
+            member.trainer_id, guild_id
+        )
+        if not candidates:
+            return member
+
+        newest_date = candidates[0].last_seen
+        newest = [candidate for candidate in candidates if candidate.last_seen == newest_date]
+        if len(newest) != 1:
+            return member
+
+        candidate = newest[0]
+        if candidate.member_id == member.member_id:
+            return member
+        if member.is_active and candidate.last_seen <= member.last_seen:
+            return member
+
+        reassigned = await user_link.reassign_member(
+            candidate.member_id, expected_member_id=member.member_id
+        )
+        if not reassigned:
+            # Another command may have relinked the user after our initial read.
+            current_link = await UserLink.get_by_discord_id(user_link.discord_user_id)
+            if current_link and current_link.member_id != member.member_id:
+                current_member = await Member.get_by_id(current_link.member_id)
+                return current_member or member
+            return member
+
+        logger.info(
+            "Automatically moved /my_status link for Discord ID %s from %s to %s",
+            user_link.discord_user_id,
+            member.member_id,
+            candidate.member_id,
+        )
+        return candidate
     
     @app_commands.command(name="member_status", description="View status of a specific member")
     async def member_status(self, interaction: discord.Interaction, trainer_name: str, club: str):
