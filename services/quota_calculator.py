@@ -193,16 +193,20 @@ class QuotaCalculator:
         club = await Club.get_by_id(club_id)
         default_quota = club.daily_quota if club else 1_000_000
 
-        previous_rows = await db.fetch(
+        month_history_rows = await db.fetch(
             """
-            SELECT member_id, deficit_surplus, days_behind
+            SELECT member_id, date, deficit_surplus, days_behind
             FROM quota_history
-            WHERE club_id = $1 AND date = $2
+            WHERE club_id = $1
+              AND date >= date_trunc('month', $2::date)::date
+              AND date <= $2
             """,
             club_id,
-            data_date - timedelta(days=1),
+            data_date,
         )
-        previous_by_member = {row['member_id']: row for row in previous_rows}
+        history_by_member = {
+            (row['member_id'], row['date']): row for row in month_history_rows
+        }
         seen_member_ids = []
         history_records = []
         
@@ -262,8 +266,64 @@ class QuotaCalculator:
             
             seen_member_ids.append(member.member_id)
             
-            # All quota calculations use data_date
-            days_active = self.calculate_days_active_in_month(member.join_date, data_date)
+            # A normal daily response contains an extra baseline entry: index D
+            # represents the result for calendar day D. Recover any absent rows
+            # before writing today's snapshot. Day-1 previous-month fallback has
+            # no extra entry and is deliberately excluded.
+            can_backfill = (
+                current_day == data_date.day + 1
+                and len(daily_fans) >= current_day
+            )
+            if can_backfill:
+                month_start = data_date.replace(day=1)
+                backfill_date = max(member.join_date, month_start)
+                while backfill_date < data_date:
+                    history_key = (member.member_id, backfill_date)
+                    source_index = backfill_date.day
+                    source_fans = daily_fans[source_index]
+                    if history_key not in history_by_member and source_fans >= 0:
+                        backfill_expected = self.calculate_expected_fans_from_schedule(
+                            member.join_date,
+                            backfill_date,
+                            quota_period,
+                            default_quota,
+                            quota_schedule,
+                        )
+                        backfill_surplus = self.calculate_deficit_surplus(
+                            source_fans, backfill_expected
+                        )
+                        previous_date = backfill_date - timedelta(days=1)
+                        previous = history_by_member.get((member.member_id, previous_date))
+                        previous_days = (
+                            previous['days_behind']
+                            if previous and previous['deficit_surplus'] < 0
+                            else 0
+                        )
+                        backfill_days = advance_days_behind(
+                            previous_date if previous else None,
+                            previous_days,
+                            backfill_date,
+                            backfill_surplus,
+                        )
+                        recovered = {
+                            'member_id': member.member_id,
+                            'date': backfill_date,
+                            'deficit_surplus': backfill_surplus,
+                            'days_behind': backfill_days,
+                        }
+                        history_by_member[history_key] = recovered
+                        history_records.append((
+                            member.member_id,
+                            club_id,
+                            backfill_date,
+                            source_fans,
+                            backfill_expected,
+                            backfill_surplus,
+                            backfill_days,
+                        ))
+                    backfill_date += timedelta(days=1)
+
+            # All current quota calculations use data_date.
             
             expected_fans = self.calculate_expected_fans_from_schedule(
                 member.join_date,
@@ -275,7 +335,9 @@ class QuotaCalculator:
             
             deficit_surplus = self.calculate_deficit_surplus(cumulative_fans, expected_fans)
             
-            previous = previous_by_member.get(member.member_id)
+            previous = history_by_member.get(
+                (member.member_id, data_date - timedelta(days=1))
+            )
             previous_days = (
                 previous['days_behind']
                 if previous and previous['deficit_surplus'] < 0
@@ -298,11 +360,17 @@ class QuotaCalculator:
                 deficit_surplus,
                 days_behind,
             ))
+            history_by_member[(member.member_id, data_date)] = {
+                'member_id': member.member_id,
+                'date': data_date,
+                'deficit_surplus': deficit_surplus,
+                'days_behind': days_behind,
+            }
             
             updated_members += 1
             
             logger.debug(f"{trainer_name}: {cumulative_fans:,} fans "
-                        f"(expected: {expected_fans:,}, {deficit_surplus:+,}, days active: {days_active})")
+                        f"(expected: {expected_fans:,}, {deficit_surplus:+,})")
         
         if history_records:
             async with db.transaction() as conn:

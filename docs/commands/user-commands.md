@@ -45,6 +45,8 @@ data date, not the full month's future target. Weekly and biweekly requirements 
 labelled accordingly. Average/day uses elapsed membership days in that month. Best day
 uses consecutive observations within a month; missing days break the quota streak.
 Days active counts recorded days in the current membership.
+When uma.moe still provides a missed daily snapshot, the next successful club scrape
+automatically restores that absent history before generating cards and reports.
 
 Team rating, followers, rank score, monthly/all-time rank, and 30-day gain come from
 uma.moe. Circle rank is the club's overall monthly position. Profile data is cached

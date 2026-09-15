@@ -181,6 +181,77 @@ class ScrapeBatchingTests(unittest.IsolatedAsyncioTestCase):
         connection.executemany.assert_awaited_once()
         self.assertEqual(len(connection.executemany.await_args.args[1]), 1)
 
+    async def test_missing_daily_history_is_recovered_from_api_array(self):
+        member = SimpleNamespace(
+            member_id=MEMBER_ID, club_id=CLUB_ID, trainer_id="123",
+            trainer_name="Trainer", join_date=date(2026, 9, 1), is_active=True,
+            manually_deactivated=False, last_seen=date(2026, 9, 6), missing_scrapes=0,
+        )
+        existing = [
+            {"member_id": MEMBER_ID, "date": date(2026, 9, day),
+             "deficit_surplus": 10, "days_behind": 0}
+            for day in (1, 2, 3, 4, 5, 6, 7, 9)
+        ]
+        connection = SimpleNamespace(execute=AsyncMock(), executemany=AsyncMock())
+
+        class Transaction:
+            async def __aenter__(self):
+                return connection
+
+            async def __aexit__(self, *_):
+                return False
+
+        calculator = QuotaCalculator()
+        calculator._auto_deactivate_missing_members = AsyncMock()
+        with (
+            patch.object(Member, "get_all_for_club", new=AsyncMock(return_value=[member])),
+            patch("services.quota_calculator.db.fetch", new=AsyncMock(side_effect=[[], existing])),
+            patch("services.quota_calculator.db.transaction", return_value=Transaction()),
+            patch.object(Club, "get_by_id", new=AsyncMock(return_value=make_club())),
+        ):
+            await calculator.process_scraped_data(
+                CLUB_ID,
+                {"123": {"trainer_id": "123", "name": "Trainer",
+                         # Index 0 is the baseline; index 8 is Sep 8.
+                         "fans": [0, 10, 20, 30, 40, 50, 60, 70, 85, 100],
+                         "join_day": 1}},
+                date(2026, 9, 9),
+                10,
+            )
+
+        written = connection.executemany.await_args.args[1]
+        self.assertEqual([row[2] for row in written], [date(2026, 9, 8), date(2026, 9, 9)])
+        self.assertEqual(written[0][3], 85)
+
+    async def test_day_one_fallback_does_not_shift_historical_rows(self):
+        member = SimpleNamespace(
+            member_id=MEMBER_ID, club_id=CLUB_ID, trainer_id="123",
+            trainer_name="Trainer", join_date=date(2026, 8, 1), is_active=True,
+            manually_deactivated=False, last_seen=date(2026, 8, 30), missing_scrapes=0,
+        )
+        connection = SimpleNamespace(execute=AsyncMock(), executemany=AsyncMock())
+
+        class Transaction:
+            async def __aenter__(self): return connection
+            async def __aexit__(self, *_): return False
+
+        calculator = QuotaCalculator()
+        calculator._auto_deactivate_missing_members = AsyncMock()
+        with (
+            patch.object(Member, "get_all_for_club", new=AsyncMock(return_value=[member])),
+            patch("services.quota_calculator.db.fetch", new=AsyncMock(side_effect=[[], []])),
+            patch("services.quota_calculator.db.transaction", return_value=Transaction()),
+            patch.object(Club, "get_by_id", new=AsyncMock(return_value=make_club())),
+        ):
+            await calculator.process_scraped_data(
+                CLUB_ID,
+                {"123": {"trainer_id": "123", "name": "Trainer",
+                         "fans": list(range(31)), "join_day": 1}},
+                date(2026, 8, 31),
+                31,
+            )
+        self.assertEqual(len(connection.executemany.await_args.args[1]), 1)
+
 
 class QuotaRequirementTests(unittest.IsolatedAsyncioTestCase):
     async def test_same_day_quota_change_is_an_upsert(self):
