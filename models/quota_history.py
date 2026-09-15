@@ -45,6 +45,20 @@ class QuotaHistory:
         return cls(**dict(row))
     
     @classmethod
+    async def get_for_member_range(cls, member_id: UUID, start: date, end: date) -> List['QuotaHistory']:
+        """Observed daily records in an inclusive membership range, oldest first."""
+        rows = await db.fetch(
+            """
+            SELECT id, member_id, club_id, date, cumulative_fans, expected_fans,
+                   deficit_surplus, days_behind
+            FROM quota_history
+            WHERE member_id = $1 AND date BETWEEN $2 AND $3
+            ORDER BY date ASC
+            """, member_id, start, end,
+        )
+        return [cls(**dict(row)) for row in rows]
+
+    @classmethod
     async def get_latest_for_member(cls, member_id: UUID) -> Optional['QuotaHistory']:
         """Get the most recent quota history for a member"""
         query = """
