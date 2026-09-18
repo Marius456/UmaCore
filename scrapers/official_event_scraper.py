@@ -404,6 +404,13 @@ def _extract_times_from_body(body_text: str) -> Tuple[Optional[datetime], Option
 
 # ── Main Scraping Function ───────────────────────────────────────────────────
 
+async def _wait_for_news_cards(page: Page) -> None:
+    """Wait for client-rendered news; a load failure must not become an empty feed."""
+    await page.locator(
+        "a[href^='/news/'], a[class*='newsList_cardLink'], a[href*='/news/article/']"
+    ).first.wait_for(state="visible", timeout=PAGE_LOAD_TIMEOUT)
+
+
 async def _collect_article_cards(page: Page) -> List[Tuple[str, str]]:
     """
     From the news list page, collect all visible article cards.
@@ -512,7 +519,7 @@ async def scrape_official_events(known_titles: Optional[Set[str]] = None) -> Lis
             # ── Step 1: Load news list and expand ──────────────────────
             logger.info(f"Loading news page: {URL}")
             await page.goto(URL, wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT)
-            await page.wait_for_timeout(DEFAULT_WAIT_TIMEOUT)
+            await _wait_for_news_cards(page)
 
             view_more_selectors = [
                 "button:has-text('View More')",

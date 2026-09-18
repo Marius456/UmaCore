@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from scrapers.official_event_scraper import (
     Event,
@@ -14,11 +14,29 @@ from scrapers.official_event_scraper import (
     _extract_times_from_body,
     _parse_date_jst,
     _reachable_proxy,
+    _wait_for_news_cards,
     check_and_save,
 )
 
 
 class OfficialEventTimeParsingTests(unittest.TestCase):
+    def test_news_readiness_timeout_propagates_instead_of_returning_empty_events(self):
+        page = MagicMock()
+        page.locator.return_value.first.wait_for = AsyncMock(
+            side_effect=TimeoutError("News cards never appeared")
+        )
+        with self.assertRaisesRegex(TimeoutError, "News cards never appeared"):
+            asyncio.run(_wait_for_news_cards(page))
+
+    def test_news_readiness_waits_for_visible_dynamic_cards(self):
+        page = MagicMock()
+        page.locator.return_value.first.wait_for = AsyncMock()
+        with patch("scrapers.official_event_scraper.PAGE_LOAD_TIMEOUT", 90000):
+            asyncio.run(_wait_for_news_cards(page))
+        page.locator.return_value.first.wait_for.assert_awaited_once_with(
+            state="visible", timeout=90000
+        )
+
     def test_parses_pm_timestamp_as_utc_evening(self):
         parsed = _parse_date_jst("9:59 p.m., Aug 10, 2026 (UTC)")
 

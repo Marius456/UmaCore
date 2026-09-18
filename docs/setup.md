@@ -58,6 +58,31 @@ python main.py
 
 On first run, the bot automatically creates all database tables, syncs slash commands, and starts the scheduler.
 
+### Windows proxy for official news
+
+The production scraper uses `http://100.111.216.3:8888`, the Windows host's
+Tailscale address. The `UmaProxy` Windows scheduled task launches
+`D:\Projects\UmaCore\start_proxy.bat`, which runs `scripts/start-proxy.ps1`
+with the user's installed Python 3.11. Install the separate host dependency
+with `py -3.11 -m pip install proxy.py==2.4.10`; it is not a bot-container dependency.
+
+The proxy binds only to `100.111.216.3` and writes to
+`logs/official-events-proxy.log`. Keep Tailscale running and preserve these
+launcher files when updating this checkout. For a different Python location,
+run `scripts/start-proxy.ps1 -PythonExe C:\path\to\python.exe`.
+
+Configure the existing `UmaProxy` task to start at logon, restart every minute
+on failure, start when available, and have no execution time limit. Its action
+must point to `start_proxy.bat` in this checkout. Run
+`scripts/repair-proxy-task.ps1` from an administrator PowerShell to apply these
+settings and allow TCP 8888 from production (`100.83.153.101`) on Tailscale.
+The repair preserves Python's block on other ports and blocks other IPv4
+sources on port 8888; it saves the prior task and affected rule names in `logs`.
+Start it manually after repairs
+with `Start-ScheduledTask -TaskName UmaProxy`. A sleeping or powered-off Windows
+host cannot provide the proxy. Verify port 8888 from the production container
+and fetch the news page through it before treating a repair as complete.
+
 ---
 
 ## Quick Start
