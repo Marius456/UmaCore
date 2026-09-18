@@ -7,7 +7,7 @@ import asyncio
 import logging
 import calendar
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple, NamedTuple
 from enum import Enum
@@ -89,14 +89,27 @@ class Achievement(NamedTuple):
 
 
 class HeadlineType(Enum):
-    COMEBACK = "comeback"
-    DOMINATION = "domination"
-    UPSET = "upset"
-    CLUTCH = "clutch"
+    LEADER_CHANGE = "leader_change"
+    CLUB_RECORD = "club_record"
+    CLIMB = "climb"
+    PERSONAL_BEST = "personal_best"
+    CHASE = "chase"
     STREAK = "streak"
-    CHAOS = "chaos"
     BREAKOUT = "breakout"
+    DAILY_GAIN = "daily_gain"
     QUIET = "quiet"
+    SHARED_LEAD = "shared_lead"
+    EMPTY = "empty"
+
+
+class HeadlineCandidate(NamedTuple):
+    """Verified facts for a story, independent of its eventual wording."""
+
+    kind: HeadlineType
+    names: Tuple[str, ...]
+    facts: Dict[str, Any]
+    strength: float = 0
+    rank: int = 0
 
 
 class BotMood(Enum):
@@ -132,6 +145,10 @@ class LeaderboardReportService:
     CLUB_TIERS = ("D", "D+", "C", "C+", "B", "B+", "A", "A+", "S", "S+", "SS")
 
     FIELD_MAX = 1024
+    HEADLINE_ROTATION = (
+        HeadlineType.CLIMB, HeadlineType.PERSONAL_BEST, HeadlineType.CHASE,
+        HeadlineType.BREAKOUT, HeadlineType.STREAK,
+    )
 
     # ── Public entry point ──────────────────────────────────────────────
 
@@ -164,7 +181,6 @@ class LeaderboardReportService:
 
         # 2. Run Analytics
         # These are broken into small, testable methods
-        movers = cls._compute_today_movers(daily_rankings, latest_date)
         leader_change = cls._compute_leader_change(daily_rankings, latest_date, yesterday_date)
         rivalries = cls._compute_rivalries(daily_rankings, latest_date)
         today_records = cls._compute_today_records(daily_deltas, latest_date)
@@ -173,7 +189,6 @@ class LeaderboardReportService:
         king = cls._compute_efficiency_king(daily_rankings, daily_deltas, latest_date)
         tank = cls._compute_tank_analysis(daily_rankings, latest_date, daily_deltas)
         overtakes = cls._compute_projected_overtakes(daily_rankings, latest_date)
-        milestones = cls._compute_milestone_watch(daily_rankings, latest_date)
         consistency = cls._compute_consistency(daily_rankings, daily_deltas, latest_date)
         best_week = cls._compute_best_week(daily_deltas, latest_date)
 
@@ -206,10 +221,6 @@ class LeaderboardReportService:
         if rivalries:
             rivalries[0]["is_top"] = True
             rivalries[0]["month_context"] = month_name
-
-        # Phase 3: Mood
-        mood = cls._determine_mood(movers, leader_change, len(overtakes))
-        total_movers_count = len(movers.get("climbers", [])) + len(movers.get("fallers", []))
 
         # Club goal tracker
         club_goal = cls._compute_club_goal_tracker(
@@ -271,7 +282,7 @@ class LeaderboardReportService:
                 embeds.append(continuation)
 
         # --- Section 1: Headline ---
-        headline = cls._generate_headline(leader_change, king, tank, daily_rankings.get(latest_date), mood, overtakes, total_movers_count)
+        headline = cls._generate_headline(club_id, latest_date, daily_rankings)
         add_field(name="🔥 HEADLINE NEWS", value=headline + "\n\n───")
 
         # --- Section 2: Momentum ---
@@ -1263,96 +1274,263 @@ class LeaderboardReportService:
         return BotMood.NEUTRAL
 
     @classmethod
+    def _headline_candidates(
+        cls, report_date: date, daily_rankings: Dict[date, List[Dict]]
+    ) -> List[HeadlineCandidate]:
+        """Use calendar-verified evidence without changing other report analytics."""
+        month_start = report_date.replace(day=1)
+        snapshots = {
+            day: {entry["name"]: entry for entry in entries}
+            for day, entries in daily_rankings.items()
+            if month_start <= day <= report_date
+        }
+        today = snapshots.get(report_date, {})
+        entries = sorted(today.values(), key=lambda e: (e["rank"], e["name"]))
+        if not entries:
+            return [HeadlineCandidate(HeadlineType.EMPTY, (), {})]
+
+        yesterday = snapshots.get(report_date - timedelta(days=1), {})
+        gains: Dict[str, Dict[date, int]] = defaultdict(dict)
+        for day, members in snapshots.items():
+            previous = snapshots.get(day - timedelta(days=1), {})
+            for name, entry in members.items():
+                if name in previous:
+                    gain = entry["fans"] - previous[name]["fans"]
+                elif day.day == 1:
+                    gain = entry["fans"]
+                else:
+                    continue
+                if gain >= 0:
+                    gains[name][day] = gain
+
+        candidates: List[HeadlineCandidate] = []
+        leaders = [e for e in entries if e["rank"] == 1]
+        old_leaders = [e for e in yesterday.values() if e["rank"] == 1]
+        if len(leaders) == len(old_leaders) == 1:
+            new, old = leaders[0], old_leaders[0]
+            if new["name"] != old["name"] and new["name"] in yesterday and old["name"] in today:
+                candidates.append(HeadlineCandidate(
+                    HeadlineType.LEADER_CHANGE, (new["name"], old["name"]),
+                    {"gap": new["fans"] - today[old["name"]]["fans"]}, rank=1,
+                ))
+
+        earlier_gains = [
+            gain for history in gains.values() for day, gain in history.items()
+            if day < report_date
+        ]
+        previous_club_best = max(earlier_gains) if earlier_gains else None
+        for entry in entries:
+            name, rank = entry["name"], entry["rank"]
+            previous = yesterday.get(name)
+            if previous and previous["rank"] - rank >= 2:
+                climb = previous["rank"] - rank
+                candidates.append(HeadlineCandidate(
+                    HeadlineType.CLIMB, (name,),
+                    {"old_rank": previous["rank"], "rank": rank, "climb": climb},
+                    climb, rank,
+                ))
+
+            gain = gains[name].get(report_date)
+            if gain is None or gain <= 0:
+                continue
+            candidates.append(HeadlineCandidate(
+                HeadlineType.DAILY_GAIN, (name,), {"gain": gain}, gain, rank,
+            ))
+            if previous_club_best is not None and gain > previous_club_best:
+                co_holders = sum(h.get(report_date) == gain for h in gains.values())
+                candidates.append(HeadlineCandidate(
+                    HeadlineType.CLUB_RECORD, (name,),
+                    {"gain": gain, "previous": previous_club_best, "shared": co_holders > 1},
+                    gain, rank,
+                ))
+            earlier = [value for day, value in gains[name].items() if day < report_date]
+            if earlier and gain > max(earlier):
+                candidates.append(HeadlineCandidate(
+                    HeadlineType.PERSONAL_BEST, (name,),
+                    {"gain": gain, "previous": max(earlier)}, gain, rank,
+                ))
+            # Match the efficiency king's sample, volume and surplus rules,
+            # but only use verified daily observations (including today).
+            history = list(gains[name].values())
+            if len(history) >= 3 and gain >= 1_000_000 and entry["surplus"] >= 0:
+                average = sum(history) / len(history)
+                pct = (gain - average) / average * 100
+                if pct >= 50:
+                    candidates.append(HeadlineCandidate(
+                        HeadlineType.BREAKOUT, (name,),
+                        {"gain": gain, "pct": pct}, pct, rank,
+                    ))
+
+        # Examine every adjacent pair, not the battle section's top-three shortlist.
+        rank_counts: Dict[int, int] = defaultdict(int)
+        for entry in entries:
+            rank_counts[entry["rank"]] += 1
+        for target, challenger in zip(entries, entries[1:]):
+            if rank_counts[target["rank"]] != 1 or rank_counts[challenger["rank"]] != 1:
+                continue
+            target_gain = gains[target["name"]].get(report_date)
+            challenger_gain = gains[challenger["name"]].get(report_date)
+            if target_gain is None or challenger_gain is None:
+                continue
+            gap = target["fans"] - challenger["fans"]
+            rate = challenger_gain - target_gain
+            if gap > 0 and rate > 0 and gap / rate <= 2:
+                candidates.append(HeadlineCandidate(
+                    HeadlineType.CHASE, (challenger["name"], target["name"]),
+                    {"gap": gap, "eta": gap / rate, "rank": target["rank"]},
+                    -(gap / rate), challenger["rank"],
+                ))
+
+        if len(leaders) == 1:
+            leader = leaders[0]
+            streak, day = 0, report_date
+            while day in snapshots:
+                day_leaders = [e["name"] for e in snapshots[day].values() if e["rank"] == 1]
+                if day_leaders != [leader["name"]]:
+                    break
+                streak += 1
+                day -= timedelta(days=1)
+            if streak in (5, 10, 15, 20, 25, 30):
+                candidates.append(HeadlineCandidate(
+                    HeadlineType.STREAK, (leader["name"],), {"streak": streak}, rank=1,
+                ))
+            candidates.append(HeadlineCandidate(
+                HeadlineType.QUIET, (leader["name"],), {"fans": leader["fans"]}, rank=1,
+            ))
+        else:
+            candidates.append(HeadlineCandidate(
+                HeadlineType.SHARED_LEAD, tuple(e["name"] for e in leaders[:2]),
+                {"fans": leaders[0]["fans"], "count": len(leaders)}, rank=1,
+            ))
+        return candidates
+
+    @classmethod
+    def _select_headline_candidate(
+        cls, candidates: List[HeadlineCandidate], rotation: int
+    ) -> HeadlineCandidate:
+        strongest: Dict[HeadlineType, HeadlineCandidate] = {}
+        for candidate in sorted(candidates, key=lambda c: (-c.strength, c.rank, c.names)):
+            strongest.setdefault(candidate.kind, candidate)
+        for kind in (HeadlineType.LEADER_CHANGE, HeadlineType.CLUB_RECORD):
+            if kind in strongest:
+                return strongest[kind]
+        stories = [strongest[kind] for kind in cls.HEADLINE_ROTATION if kind in strongest]
+        if stories:
+            return stories[rotation % len(stories)]
+        for kind in (HeadlineType.DAILY_GAIN, HeadlineType.QUIET,
+                     HeadlineType.SHARED_LEAD, HeadlineType.EMPTY):
+            if kind in strongest:
+                return strongest[kind]
+        raise ValueError("At least one headline candidate is required")
+
+    @classmethod
+    def _render_headline(cls, candidate: HeadlineCandidate, variant: int) -> str:
+        """Keep a complete hook and sentence; shorten names before escaping them."""
+        facts = candidate.facts
+        for name_limit in (80, 40, 20):
+            names = []
+            for name in candidate.names:
+                label = " ".join(name.split()) or "Trainer"
+                if len(label) > name_limit:
+                    label = label[:name_limit - 1] + "…"
+                names.append(discord.utils.escape_mentions(discord.utils.escape_markdown(
+                    label, ignore_links=False,
+                )))
+            name = names[0] if names else ""
+            other = names[1] if len(names) > 1 else ""
+            gain = cls._fmt_fans(facts.get("gain", 0))
+            previous = cls._fmt_fans(facts.get("previous", 0))
+            if "previous" in facts and gain == previous:
+                # A small real record must not read as beating the same rounded number.
+                gain = f"{facts['gain']:,}"
+                previous = f"{facts['previous']:,}"
+            kind = candidate.kind
+            if kind == HeadlineType.LEADER_CHANGE:
+                hooks = (f"{name} has the crown. It suits them.",
+                         f"Make room on the throne for {name}.",
+                         f"{name} brought a change of management.")
+                detail = (f"**{name}** takes **#1** from **{other}**, "
+                          f"with a **{cls._fmt_fans(facts['gap'])}-fan** lead.")
+            elif kind == HeadlineType.CLUB_RECORD:
+                hooks = (f"{name} gave the record book homework.",
+                         f"{name} just raised the club's ceiling.",
+                         f"{name} brought a bigger measuring stick.")
+                verb = "jointly sets" if facts["shared"] else "sets"
+                detail = (f"**{name}** {verb} **this month's club daily record** with "
+                          f"**+{gain} fans**, beating the previous **+{previous}**.")
+            elif kind == HeadlineType.CLIMB:
+                hooks = (f"{name} found the leaderboard's fast lane.",
+                         f"{name} is taking the stairs two at a time.",
+                         f"{name} has places to be.")
+                detail = (f"**{name}** climbs **{facts['climb']} places** today, "
+                          f"from **#{facts['old_rank']}** to **#{facts['rank']}**.")
+            elif kind == HeadlineType.PERSONAL_BEST:
+                hooks = (f"{name} just outdid their favourite rival: themselves.",
+                         f"{name} has a new number to brag about.",
+                         f"{name} moved their own goalposts.")
+                detail = (f"**+{gain} fans** gives **{name}** a **new personal best this month**, "
+                          f"up from **+{previous}**.")
+            elif kind == HeadlineType.CHASE:
+                hooks = (f"{name} has entered {other}'s rear-view mirror.",
+                         f"{name} has their eye on {other}'s seat.",
+                         f"{name} is making this interesting, {other}.")
+                horizon = "within a day" if facts["eta"] <= 1 else "within two days"
+                detail = (f"Just **{cls._fmt_fans(facts['gap'])} fans** separate them for "
+                          f"**#{facts['rank']}**—at today's pace, that spot could change hands {horizon}.")
+            elif kind == HeadlineType.BREAKOUT:
+                hooks = (f"{name} found an extra gear.",
+                         f"{name} turned the dial up today.",
+                         f"{name} brought a little extra horsepower.")
+                detail = (f"**+{gain} fans** puts **{name}** **{facts['pct']:.1f}% above "
+                          "this month's average** daily gain.")
+            elif kind == HeadlineType.STREAK:
+                hooks = (f"{name} is getting comfortable up there.",
+                         f"{name} has renewed the lease on #1.",
+                         f"{name} is making the top spot feel like home.")
+                detail = (f"**{name}** reaches **{facts['streak']} consecutive days** "
+                          "as the sole **#1** this month, including today.")
+            elif kind == HeadlineType.DAILY_GAIN:
+                hooks = (f"{name} brought today's biggest fan haul.",
+                         f"{name} set the pace today.",
+                         f"{name} put a big number on the board.")
+                detail = (f"**{name}** posts **+{gain} fans**, "
+                          "the highest verified daily gain in this update.")
+            elif kind == HeadlineType.QUIET:
+                hooks = (f"{name} has the best view of the leaderboard.",
+                         f"{name} occupies the top step.",
+                         f"{name} has the front-row seat.")
+                detail = f"**{name}** sits at **#1** with **{cls._fmt_fans(facts['fans'])} fans** this month."
+            elif kind == HeadlineType.SHARED_LEAD:
+                hooks = ("The top step has company.", "One top spot, shared custody.",
+                         "There's room for company at #1.")
+                remaining = facts["count"] - 2
+                participants = f"**{name}** and **{other}**"
+                if remaining > 0:
+                    participants = (f"**{name}**, **{other}** and {remaining} "
+                                    f"{'other' if remaining == 1 else 'others'}")
+                detail = (f"{participants} share **#1** "
+                          f"with **{cls._fmt_fans(facts['fans'])} fans each** this month.")
+            else:
+                hooks = ("The news desk is warming up.", "The next story is still loading.",
+                         "The leaderboard has yet to enter the chat.")
+                detail = "No leaderboard observations are available for this update."
+            headline = f"**{hooks[variant % len(hooks)]}**\n{detail}"
+            if len(headline + "\n\n───") <= cls.FIELD_MAX:
+                return headline
+        raise ValueError("Headline facts exceed the Discord field limit")
+
+    @classmethod
     def _generate_headline(
-        cls,
-        leader_change: Dict[str, Any],
-        king: Optional[EfficiencyKing],
-        tank: Optional[TankAnalysis],
-        today_entries: Optional[List[Dict]],
-        mood: BotMood,
-        overtakes: List[Overtake],
-        movers_count: int,
+        cls, club_id: UUID, report_date: date, daily_rankings: Dict[date, List[Dict]]
     ) -> str:
-        """Generate varied headline types based on the day's events."""
-        # Priority 1: Leader change
-        if leader_change["changed"]:
-            streak = leader_change["old_streak"]
-            old = leader_change["old_leader"]
-            new_ld = leader_change["new_leader"]
-            swaps = leader_change["swap_count_7d"]
-
-            if swaps >= 3:
-                return (
-                    f"🌪️ Absolute chaos at the top! **{new_ld}** retakes #1 from **{old}** "
-                    f"— the crown has changed hands {swaps} times this week!"
-                )
-            if streak >= 5:
-                return (
-                    f"👑 **{new_ld}** dethrones **{old}** after a dominant **{streak}-day reign**!"
-                )
-            if streak >= 3:
-                return (
-                    f"🏆 **{new_ld}** has overtaken **{old}** for #1! "
-                    f"({streak} day streak broken!)"
-                )
-            return (
-                f"🏆 **{new_ld}** has overtaken **{old}** for #1!"
-            )
-
-        # Priority 2: Domination (king is also #1)
-        if king and tank and king.name == tank.name:
-            return (
-                f"👑 **{king.name}** is dominating the field, "
-                f"leading in both momentum and defensive surplus!"
-            )
-
-        # Priority 3: Streak headline
-        if tank and tank.is_dynasty and tank.daily_gain > tank.daily_gain_2nd:
-            return (
-                f"🔥 **{tank.name}** extends their reign to **{tank.streak} days** at #1 — "
-                f"no one can keep up!"
-            )
-
-        # Priority 4: Clutch / milestone focus
-        if king and king.pct_above_avg > 100:
-            return (
-                f"🎯 **{king.name}** is on fire — performing **{king.pct_above_avg}%** above their average!"
-            )
-
-        # Priority 5: Chaos (many overtakes)
-        if len(overtakes) >= 2 and movers_count >= 3:
-            return (
-                "🌪️ Four positions changed today — the most movement we've seen this week!"
-            )
-
-        # Priority 6: Comeback (leader losing ground)
-        if tank and tank.pressure_streak >= 2:
-            return (
-                f"⚔️ **{tank.name_2nd}** is breathing down **{tank.name}**'s neck — "
-                f"{tank.pressure_streak} days of mounting pressure!"
-            )
-
-        # Priority 7: Standard breakout star
-        if king:
-            return (
-                f"🔥 **{king.name}** is today's breakout star, "
-                f"performing {king.pct_above_avg}% above their usual pace!"
-            )
-
-        # Priority 8: Peaceful / quiet day
-        if today_entries:
-            top = today_entries[0]
-            if mood == BotMood.PEACEFUL:
-                return (
-                    f"😌 A quiet day across the leaderboard. "
-                    f"**{top['name']}** holds steady at #1 with {cls._fmt_fans(top['fans'])} fans."
-                )
-            return (
-                f"👑 **{top['name']}** remains steady at #1 "
-                f"with {cls._fmt_fans(top['fans'])} fans."
-            )
-
-        return "_Leaderboard remains stable._"
+        rotation = report_date.toordinal() + club_id.int
+        candidates = cls._headline_candidates(report_date, daily_rankings)
+        candidate = cls._select_headline_candidate(candidates, rotation)
+        type_count = len({c.kind for c in candidates if c.kind in cls.HEADLINE_ROTATION})
+        # Advance hooks on each tour through the eligible types, even with 3 types.
+        cadence = max(1, type_count) if candidate.kind in cls.HEADLINE_ROTATION else 1
+        variant = rotation // cadence + list(HeadlineType).index(candidate.kind)
+        return cls._render_headline(candidate, variant)
 
     @classmethod
     def _compute_rare_achievements(
