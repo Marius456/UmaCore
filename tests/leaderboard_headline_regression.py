@@ -107,17 +107,63 @@ def test_personal_best_selects_largest_daily_gain_not_percentage_improvement():
     assert Report._select_headline_candidate(stories, 0).names == ("A",)
 
 
-def test_chases_include_pairs_beyond_top_three_and_select_shortest_eta():
+@pytest.mark.parametrize("old_rank, new_rank, qualifies", [
+    (5, 3, True), (4, 3, False), (6, 4, False),
+])
+def test_climbs_require_two_places_and_a_podium_finish(old_rank, new_rank, qualifies):
+    yesterday = {f"Runner{i}": (10 - i) * 100 for i in range(1, 7)}
+    name = f"Runner{old_rank}"
+    today = {**yesterday, name: yesterday[f"Runner{new_rank}"] + 1}
+    stories = of_kind(rankings(yesterday, today), Kind.CLIMB)
+    assert bool(stories) == qualifies
+    if qualifies:
+        assert stories[0].facts == {"old_rank": old_rank, "rank": new_rank,
+                                  "climb": old_rank - new_rank}
+
+
+def test_chases_only_include_podium_targets_and_select_shortest_eta():
     history = rankings(
         {"A": 100, "B": 80, "C": 60, "D": 40, "E": 20, "F": 0},
-        {"A": 100, "B": 90, "C": 80, "D": 70, "E": 60, "F": 59},
+        {"A": 100, "B": 90, "C": 80, "D": 75, "E": 65, "F": 64},
     )
     stories = of_kind(history, Kind.CHASE)
-    assert len(stories) == 5
+    assert {c.facts["rank"] for c in stories} == {1, 2, 3}
     story = Report._select_headline_candidate(stories, 0)
-    assert story.names == ("F", "E")
-    assert story.facts["rank"] == 5
-    assert story.facts["eta"] == pytest.approx(1 / 19)
+    assert story.names == ("D", "C")
+    assert story.facts["rank"] == 3
+    assert story.facts["eta"] == pytest.approx(5 / 15)
+
+
+@pytest.mark.parametrize("target_rank", range(1, 30))
+def test_chase_rank_boundary_even_for_an_imminent_pass(target_rank):
+    yesterday = {f"Runner{i}": (40 - i) * 1000 for i in range(1, 31)}
+    today = {**yesterday,
+             f"Runner{target_rank + 1}": yesterday[f"Runner{target_rank}"] - 1}
+    stories = of_kind(rankings(yesterday, today), Kind.CHASE)
+    assert bool(stories) == (target_rank <= 3)
+
+
+def test_endcore_rank_nineteen_chase_falls_back_to_daily_gain():
+    leaders = {f"Runner{i}": (40 - i) * 1_000_000 for i in range(1, 19)}
+    history = rankings(
+        {**leaders, "Minato": 10_000_000, "zoro": 9_000_000},
+        {**leaders, "Minato": 10_000_000, "zoro": 9_702_700},
+    )
+    assert not of_kind(history, Kind.CHASE)
+    for rotation in range(10):
+        assert selected(history, rotation).kind == Kind.DAILY_GAIN
+
+
+def test_lower_rank_club_record_remains_headline_worthy():
+    leaders = {f"Runner{i}": (40 - i) * 1_000_000 for i in range(1, 19)}
+    history = rankings(
+        {**leaders, "zoro": 1_000_000},
+        {**leaders, "zoro": 2_000_000},
+        {**leaders, "zoro": 4_000_000},
+    )
+    story = selected(history)
+    assert story.kind == Kind.CLUB_RECORD
+    assert story.rank == 19
 
 
 @pytest.mark.parametrize("gap, qualifies", [(10, True), (20, True), (21, False)])
@@ -258,9 +304,9 @@ def test_report_date_and_club_offset_control_selection_reproducibly():
 SAMPLE_STORIES = [
     HeadlineCandidate(Kind.LEADER_CHANGE, ("Ace", "Mike"), {"gap": 200_000}),
     HeadlineCandidate(Kind.CLUB_RECORD, ("Ace",), {"gain": 9_000_000, "previous": 8_000_000, "shared": False}),
-    HeadlineCandidate(Kind.CLIMB, ("Ace",), {"climb": 3, "old_rank": 9, "rank": 6}),
+    HeadlineCandidate(Kind.CLIMB, ("Ace",), {"climb": 3, "old_rank": 6, "rank": 3}),
     HeadlineCandidate(Kind.PERSONAL_BEST, ("Ace",), {"gain": 3_000_000, "previous": 2_000_000}),
-    HeadlineCandidate(Kind.CHASE, ("sesbianlex", "Mike"), {"gap": 910_900, "eta": 0.4, "rank": 6}),
+    HeadlineCandidate(Kind.CHASE, ("sesbianlex", "Mike"), {"gap": 910_900, "eta": 0.4, "rank": 3}),
     HeadlineCandidate(Kind.BREAKOUT, ("Ace",), {"gain": 3_000_000, "pct": 63.9}),
     HeadlineCandidate(Kind.STREAK, ("Ace",), {"streak": 10}),
     HeadlineCandidate(Kind.DAILY_GAIN, ("Ace",), {"gain": 3_000_000}),
@@ -282,6 +328,10 @@ def test_each_story_has_three_complete_bounded_hook_variants(story):
         assert len(text + "\n\n───") <= Report.FIELD_MAX
         assert "Four positions" not in text
         assert "no one can" not in text
+        assert not any(term in text.lower() for term in (
+            "rear-view", "fast lane", "extra gear", "horsepower", "throne",
+            "goalposts", "lease", "front-row seat", "shared custody",
+        ))
 
 
 @pytest.mark.parametrize("eta, horizon", [(0.01, "within a day"), (1, "within a day"),

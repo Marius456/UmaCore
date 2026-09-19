@@ -433,7 +433,9 @@ The final embed has 5 fields, plus a title, description, and footer.
 
 One **bold, playful hook**, followed by a newline and one factual detail sentence.
 The section header supplies the emoji. Each story type has three hook variants;
-the tone is friendly competition without teasing inactivity or poor performance.
+the tone is friendly competition using running, pace, field, and lead imagery,
+without teasing inactivity or poor performance. Avoid automotive and unrelated
+metaphors, or suggesting a finished race when reporting an ongoing chase.
 
 **Selection:**
 
@@ -443,8 +445,9 @@ the tone is friendly competition without teasing inactivity or poor performance.
    the highest earlier verified daily gain; matching it does not qualify.
    Simultaneous record setters are described as jointly setting the record.
 3. Otherwise, rotate among qualifying types in this order: a climb of at least
-   two places, a new personal best this month, an adjacent-rank chase within two
-   days, a breakout at least 50% above this month's average, and a sole-leader
+   two places ending in the top three, a new personal best this month, an
+   adjacent-rank chase for #1–#3 within two days, a breakout at least 50% above
+   this month's average, and a sole-leader
    streak reaching 5/10/15/20/25/30 consecutive days.
 4. With no qualifying story, highlight the highest verified positive daily gain;
    otherwise show the current leader or shared lead. Empty snapshots get an
@@ -452,8 +455,11 @@ the tone is friendly competition without teasing inactivity or poor performance.
 
 Within a type, choose the largest climb, highest new PB/club-record daily gain,
 shortest unrounded chase ETA, or highest breakout percentage. Resolve equal
-strength by current rank, then member name. All adjacent pairs are considered,
-not just the Battle Zone's shortlist; pairs involving tied ranks are excluded.
+strength by current rank, then member name. Chases only consider adjacent pairs
+whose contested position is #1–#3; pairs involving tied ranks are excluded.
+These podium restrictions apply to headline climbs and chases in every club.
+Records and exceptional fan gains remain eligible at any rank. Other movement
+and Battle Zone sections retain their own eligibility rules.
 
 The rotation index is `report_date.toordinal() + club_id.int`, modulo the number
 of eligible rotating types. Hook variants advance on each tour through those
@@ -481,23 +487,23 @@ No delivery history is stored, so changed candidate pools can repeat a subject.
 
 **Illustrative headlines** (fixture values, not live announcements):
 
-> **Ace brought a change of management.**
+> **Ace is the new front-runner.**
 >
 > **Ace** takes **#1** from **Mike**, with a **200.0K-fan** lead.
 
-> **Ace found the leaderboard's fast lane.**
+> **Ace surged through the field.**
 >
-> **Ace** climbs **3 places** today, from **#9** to **#6**.
+> **Ace** climbs **3 places** today, from **#6** to **#3**.
 
-> **Ace has a new number to brag about.**
+> **Ace set a new personal pace.**
 >
 > **+3.0M fans** gives **Ace** a **new personal best this month**, up from **+2.0M**.
 
-> **sesbianlex has entered Mike's rear-view mirror.**
+> **sesbianlex is closing on Mike.**
 >
-> Just **910.9K fans** separate them for **#6**—at today's pace, that spot could change hands within a day.
+> Just **910.9K fans** separate them for **#3**—at today's pace, that spot could change hands within a day.
 
-> **Ace occupies the top step.**
+> **Ace leads the field.**
 >
 > **Ace** sits at **#1** with **40.0M fans** this month.
 

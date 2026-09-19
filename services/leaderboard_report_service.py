@@ -1322,7 +1322,7 @@ class LeaderboardReportService:
         for entry in entries:
             name, rank = entry["name"], entry["rank"]
             previous = yesterday.get(name)
-            if previous and previous["rank"] - rank >= 2:
+            if previous and rank <= 3 and previous["rank"] - rank >= 2:
                 climb = previous["rank"] - rank
                 candidates.append(HeadlineCandidate(
                     HeadlineType.CLIMB, (name,),
@@ -1361,11 +1361,13 @@ class LeaderboardReportService:
                         {"gain": gain, "pct": pct}, pct, rank,
                     ))
 
-        # Examine every adjacent pair, not the battle section's top-three shortlist.
+        # Only podium positions are headline-worthy; Battle Zone has its own rules.
         rank_counts: Dict[int, int] = defaultdict(int)
         for entry in entries:
             rank_counts[entry["rank"]] += 1
         for target, challenger in zip(entries, entries[1:]):
+            if target["rank"] > 3:
+                continue
             if rank_counts[target["rank"]] != 1 or rank_counts[challenger["rank"]] != 1:
                 continue
             target_gain = gains[target["name"]].get(report_date)
@@ -1446,47 +1448,47 @@ class LeaderboardReportService:
                 previous = f"{facts['previous']:,}"
             kind = candidate.kind
             if kind == HeadlineType.LEADER_CHANGE:
-                hooks = (f"{name} has the crown. It suits them.",
-                         f"Make room on the throne for {name}.",
-                         f"{name} brought a change of management.")
+                hooks = (f"{name} has taken the lead.",
+                         f"{name} moves to the front of the field.",
+                         f"{name} is the new front-runner.")
                 detail = (f"**{name}** takes **#1** from **{other}**, "
                           f"with a **{cls._fmt_fans(facts['gap'])}-fan** lead.")
             elif kind == HeadlineType.CLUB_RECORD:
-                hooks = (f"{name} gave the record book homework.",
-                         f"{name} just raised the club's ceiling.",
-                         f"{name} brought a bigger measuring stick.")
+                hooks = (f"{name} set a record pace for the club.",
+                         f"{name} has a new entry in the club record book.",
+                         f"{name} pushed the club's daily record further.")
                 verb = "jointly sets" if facts["shared"] else "sets"
                 detail = (f"**{name}** {verb} **this month's club daily record** with "
                           f"**+{gain} fans**, beating the previous **+{previous}**.")
             elif kind == HeadlineType.CLIMB:
-                hooks = (f"{name} found the leaderboard's fast lane.",
-                         f"{name} is taking the stairs two at a time.",
-                         f"{name} has places to be.")
+                hooks = (f"{name} surged through the field.",
+                         f"{name} made a move into the leading three.",
+                         f"{name} gained ground among the front-runners.")
                 detail = (f"**{name}** climbs **{facts['climb']} places** today, "
                           f"from **#{facts['old_rank']}** to **#{facts['rank']}**.")
             elif kind == HeadlineType.PERSONAL_BEST:
                 hooks = (f"{name} just outdid their favourite rival: themselves.",
-                         f"{name} has a new number to brag about.",
-                         f"{name} moved their own goalposts.")
+                         f"{name} set a new personal pace.",
+                         f"{name} took their best stride yet this month.")
                 detail = (f"**+{gain} fans** gives **{name}** a **new personal best this month**, "
                           f"up from **+{previous}**.")
             elif kind == HeadlineType.CHASE:
-                hooks = (f"{name} has entered {other}'s rear-view mirror.",
-                         f"{name} has their eye on {other}'s seat.",
-                         f"{name} is making this interesting, {other}.")
+                hooks = (f"{name} is closing on {other}.",
+                         f"{name} is picking up the pace behind {other}.",
+                         f"{name} is chasing down {other}.")
                 horizon = "within a day" if facts["eta"] <= 1 else "within two days"
                 detail = (f"Just **{cls._fmt_fans(facts['gap'])} fans** separate them for "
                           f"**#{facts['rank']}**—at today's pace, that spot could change hands {horizon}.")
             elif kind == HeadlineType.BREAKOUT:
-                hooks = (f"{name} found an extra gear.",
-                         f"{name} turned the dial up today.",
-                         f"{name} brought a little extra horsepower.")
+                hooks = (f"{name} picked up the pace today.",
+                         f"{name} found a burst of speed.",
+                         f"{name} lengthened their stride today.")
                 detail = (f"**+{gain} fans** puts **{name}** **{facts['pct']:.1f}% above "
                           "this month's average** daily gain.")
             elif kind == HeadlineType.STREAK:
-                hooks = (f"{name} is getting comfortable up there.",
-                         f"{name} has renewed the lease on #1.",
-                         f"{name} is making the top spot feel like home.")
+                hooks = (f"{name} keeps leading the field.",
+                         f"{name} continues their run at the front.",
+                         f"{name} is holding the lead stride after stride.")
                 detail = (f"**{name}** reaches **{facts['streak']} consecutive days** "
                           "as the sole **#1** this month, including today.")
             elif kind == HeadlineType.DAILY_GAIN:
@@ -1496,13 +1498,13 @@ class LeaderboardReportService:
                 detail = (f"**{name}** posts **+{gain} fans**, "
                           "the highest verified daily gain in this update.")
             elif kind == HeadlineType.QUIET:
-                hooks = (f"{name} has the best view of the leaderboard.",
-                         f"{name} occupies the top step.",
-                         f"{name} has the front-row seat.")
+                hooks = (f"{name} leads the field.",
+                         f"{name} holds the front-running position.",
+                         f"{name} heads the pack.")
                 detail = f"**{name}** sits at **#1** with **{cls._fmt_fans(facts['fans'])} fans** this month."
             elif kind == HeadlineType.SHARED_LEAD:
-                hooks = ("The top step has company.", "One top spot, shared custody.",
-                         "There's room for company at #1.")
+                hooks = ("The front-runners are level.", "It's neck and neck at the front.",
+                         "The lead is shared at this stage.")
                 remaining = facts["count"] - 2
                 participants = f"**{name}** and **{other}**"
                 if remaining > 0:
@@ -1511,8 +1513,8 @@ class LeaderboardReportService:
                 detail = (f"{participants} share **#1** "
                           f"with **{cls._fmt_fans(facts['fans'])} fans each** this month.")
             else:
-                hooks = ("The news desk is warming up.", "The next story is still loading.",
-                         "The leaderboard has yet to enter the chat.")
+                hooks = ("The field is awaiting its first update.", "No pace to report just yet.",
+                         "The first leaderboard update is still to come.")
                 detail = "No leaderboard observations are available for this update."
             headline = f"**{hooks[variant % len(hooks)]}**\n{detail}"
             if len(headline + "\n\n───") <= cls.FIELD_MAX:
