@@ -1,6 +1,6 @@
 import unittest
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import tempfile
 from pathlib import Path
@@ -11,8 +11,10 @@ from scrapers.official_event_scraper import (
     EventType,
     _canonical_event_key,
     _dedup_events,
+    _extract_card_published_at,
     _extract_times_from_body,
     _parse_date_jst,
+    _retain_relevant_events,
     _reachable_proxy,
     _wait_for_news_cards,
     check_and_save,
@@ -20,6 +22,13 @@ from scrapers.official_event_scraper import (
 
 
 class OfficialEventTimeParsingTests(unittest.TestCase):
+    def test_extracts_utc_publication_time_from_news_card(self):
+        parsed = _extract_card_published_at(
+            "Game\n2026/09/18 22:00 (UTC)\nA news title\nDetails"
+        )
+
+        self.assertEqual(parsed, datetime(2026, 9, 18, 22, 0, tzinfo=timezone.utc))
+
     def test_news_readiness_timeout_propagates_instead_of_returning_empty_events(self):
         page = MagicMock()
         page.locator.return_value.first.wait_for = AsyncMock(
@@ -115,7 +124,12 @@ class OfficialEventTimeParsingTests(unittest.TestCase):
                 "scrapers.official_event_scraper.scrape_official_events",
                 new=AsyncMock(return_value=[refreshed]),
             ):
-                changed = asyncio.run(check_and_save(str(path)))
+                changed = asyncio.run(
+                    check_and_save(
+                        str(path),
+                        now=datetime(2026, 8, 1, tzinfo=timezone.utc),
+                    )
+                )
 
             saved = json.loads(path.read_text(encoding="utf-8"))
             self.assertFalse(changed)
@@ -135,6 +149,91 @@ class OfficialEventTimeParsingTests(unittest.TestCase):
             _canonical_event_key(event.title, event.type),
             "story_event:wings of steam and steel",
         )
+
+    def test_retention_keeps_active_and_recent_undated_events(self):
+        now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+        active = Event(
+            title="Active",
+            type=EventType.SPOTLIGHT,
+            start_time=now - timedelta(days=40),
+            end_time=now + timedelta(hours=1),
+            url="https://example.invalid/active",
+            published_at=now - timedelta(days=45),
+        )
+        recent_undated = Event(
+            title="Recent announcement",
+            type=EventType.CHAMPIONS_MEETING,
+            start_time=None,
+            end_time=None,
+            url="https://example.invalid/recent",
+            published_at=now - timedelta(days=30),
+        )
+
+        retained = _retain_relevant_events([active, recent_undated], now=now)
+
+        self.assertEqual(retained, [active, recent_undated])
+
+    def test_retention_prunes_ended_and_stale_undated_events(self):
+        now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+        ended = Event(
+            title="Ended",
+            type=EventType.STORY_EVENT,
+            start_time=now - timedelta(days=10),
+            end_time=now - timedelta(seconds=1),
+            url="https://example.invalid/ended",
+        )
+        stale_undated = Event(
+            title="Stale announcement",
+            type=EventType.CHAMPIONS_MEETING,
+            start_time=None,
+            end_time=None,
+            url="https://example.invalid/stale",
+            published_at=now - timedelta(days=30, seconds=1),
+        )
+
+        self.assertEqual(
+            _retain_relevant_events([ended, stale_undated], now=now),
+            [],
+        )
+
+    def test_retention_keeps_undated_event_when_publication_time_is_unknown(self):
+        event = Event(
+            title="Legacy announcement",
+            type=EventType.CHAMPIONS_MEETING,
+            start_time=None,
+            end_time=None,
+            url="https://example.invalid/legacy",
+        )
+
+        self.assertEqual(_retain_relevant_events([event]), [event])
+
+    def test_pruning_only_does_not_report_a_new_event(self):
+        now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "events.json"
+            path.write_text(
+                json.dumps({
+                    "events": [{
+                        "title": "Bonus Star Piece rewards in Career!",
+                        "type": "bonus_star_piece",
+                        "start_time": "2026-09-01T00:00:00+00:00",
+                        "end_time": "2026-09-02T00:00:00+00:00",
+                        "url": "https://umamusume.com/news/1",
+                        "notified_clubs": [],
+                    }]
+                }),
+                encoding="utf-8",
+            )
+
+            with patch(
+                "scrapers.official_event_scraper.scrape_official_events",
+                new=AsyncMock(return_value=[]),
+            ):
+                changed = asyncio.run(check_and_save(str(path), now=now))
+
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertFalse(changed)
+            self.assertEqual(saved["events"], [])
 
 
 if __name__ == "__main__":
