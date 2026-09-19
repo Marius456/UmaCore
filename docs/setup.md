@@ -67,8 +67,10 @@ with the user's installed Python 3.11. Install the separate host dependency
 with `py -3.11 -m pip install proxy.py==2.4.10`; it is not a bot-container dependency.
 
 The proxy binds only to `100.111.216.3` and writes to
-`logs/official-events-proxy.log`. Keep Tailscale running and preserve these
-launcher files when updating this checkout. For a different Python location,
+`logs/official-events-proxy.log`; its launcher waits for the Tailscale address
+at logon, supervises the process, and writes restarts to
+`logs/official-events-proxy-supervisor.log`. Keep Tailscale running and preserve
+these launcher files when updating this checkout. For a different Python location,
 run `scripts/start-proxy.ps1 -PythonExe C:\path\to\python.exe`.
 
 Configure the existing `UmaProxy` task to start at logon, restart every minute
