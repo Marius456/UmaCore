@@ -86,21 +86,6 @@ class LeaderboardCommands(ClubAutocompleteMixin, commands.Cog):
                 await interaction.followup.send(embed=extra_embed)
             await LeaderboardReportService.persist_delivered_predictions(embeds)
 
-            # Also post to the club's report channel if configured and different
-            if (
-                club_obj.report_channel_id
-                and club_obj.report_channel_id != interaction.channel_id
-            ):
-                report_channel = self.bot.get_channel(club_obj.report_channel_id)
-                if report_channel:
-                    await report_channel.send(embed=embeds[0])
-                    for extra_embed in embeds[1:]:
-                        await report_channel.send(embed=extra_embed)
-                    logger.info(
-                        f"leaderboard_report crossposted to report channel "
-                        f"{club_obj.report_channel_id} for {club}"
-                    )
-
             logger.info(
                 f"leaderboard_report sent for {club} ({year}-{month:02d}) "
                 f"by {interaction.user}"
@@ -123,7 +108,7 @@ class LeaderboardCommands(ClubAutocompleteMixin, commands.Cog):
     )
     @app_commands.checks.has_permissions(administrator=True)
     async def club_highscores(
-        self, interaction: discord.Interaction, club: str, post_to_report: bool = False
+        self, interaction: discord.Interaction, club: str
     ):
         """
         Generate and post an embed showing all-time historical highscores
@@ -152,20 +137,6 @@ class LeaderboardCommands(ClubAutocompleteMixin, commands.Cog):
 
             # Send to the interaction channel
             await interaction.followup.send(embed=embed)
-
-            # Also post to the club's report channel if configured and different
-            if (
-                post_to_report
-                and club_obj.report_channel_id
-                and club_obj.report_channel_id != interaction.channel_id
-            ):
-                report_channel = self.bot.get_channel(club_obj.report_channel_id)
-                if report_channel:
-                    await report_channel.send(embed=embed)
-                    logger.info(
-                        f"club_highscores crossposted to report channel "
-                        f"{club_obj.report_channel_id} for {club}"
-                    )
 
             logger.info(
                 f"club_highscores sent for {club} "

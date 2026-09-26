@@ -46,7 +46,7 @@ All commands are Discord slash commands (`/`).
 | `/progress_chart` | Anyone | Fan progression chart this month |
 | `/previous_month` | Anyone | Last month's final fan stats |
 | `/leaderboard_report` | Admin | Generate current-month leaderboard analysis |
-| `/club_highscores` | Admin | Show recorded highscores, coverage, and inferred days; optional `post_to_report` |
+| `/club_highscores` | Admin | Show recorded highscores, coverage, and inferred days |
 | `/gacha` | Anyone | Show current GameTora banners |
 | `/privacy` | Anyone | View privacy and terms links |
 | `/stats` | Author | Bot-wide club/member statistics |

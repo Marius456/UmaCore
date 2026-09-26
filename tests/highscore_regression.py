@@ -435,10 +435,11 @@ class HighscoreDataQualityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class HighscoreCommandTests(unittest.IsolatedAsyncioTestCase):
-    async def test_report_crosspost_requires_explicit_option(self):
+    async def test_commands_only_send_to_invoking_channel(self):
         from bot.commands.leaderboard import LeaderboardCommands
-        for post in (False, True):
-            with self.subTest(post=post):
+        from services.leaderboard_report_service import LeaderboardReportService
+        for command in ("club_highscores", "leaderboard_report"):
+            with self.subTest(command=command):
                 channel = SimpleNamespace(send=AsyncMock())
                 bot = SimpleNamespace(get_channel=lambda channel_id: channel)
                 cog = LeaderboardCommands(bot)
@@ -447,15 +448,22 @@ class HighscoreCommandTests(unittest.IsolatedAsyncioTestCase):
                     response=SimpleNamespace(defer=AsyncMock()),
                     followup=SimpleNamespace(send=AsyncMock()),
                 )
-                club = SimpleNamespace(club_id=None, club_name="Test", circle_id="123",
+                club = SimpleNamespace(club_id=None, club_name="Test", circle_id=None, timezone="UTC",
                                        report_channel_id=3, belongs_to_guild=lambda guild: True)
                 with (
                     patch("bot.commands.leaderboard.Club.get_by_name", new=AsyncMock(return_value=club)),
                     patch.object(HighscoreService, "generate_highscore_embed", new=AsyncMock(return_value="embed")),
+                    patch.object(LeaderboardReportService, "generate_leaderboard_report",
+                                 new=AsyncMock(return_value=["embed", "overflow"])),
+                    patch.object(LeaderboardReportService, "persist_delivered_predictions",
+                                 new=AsyncMock()) as persist,
                 ):
-                    await cog.club_highscores.callback(cog, interaction, "Test", post_to_report=post)
-                interaction.followup.send.assert_awaited_once_with(embed="embed")
-                self.assertEqual(channel.send.await_count, int(post))
+                    await getattr(cog, command).callback(cog, interaction, "Test")
+                sent = [call.kwargs["embed"] for call in interaction.followup.send.await_args_list]
+                self.assertEqual(sent, ["embed", "overflow"] if command == "leaderboard_report" else ["embed"])
+                channel.send.assert_not_awaited()
+                if command == "leaderboard_report":
+                    persist.assert_awaited_once_with(["embed", "overflow"])
 
 
 if __name__ == "__main__":
