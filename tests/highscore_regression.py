@@ -15,13 +15,13 @@ class HighscoreFetchRegressionTests(unittest.IsolatedAsyncioTestCase):
                 "trainer_name": "Trainer",
             }
         ]
-        fetch = AsyncMock(side_effect=[([], None), (older_rows, 10), ([], None)])
+        fetch = AsyncMock(side_effect=[([], None), (older_rows, 10)] + [([], None)] * 1000)
 
         with patch.object(HighscoreService, "_fetch_and_parse_api_month", new=fetch):
             rows, _ = await HighscoreService._fetch_all_months("123")
 
         self.assertEqual(rows, older_rows)
-        self.assertEqual(fetch.await_count, 3)
+        self.assertGreaterEqual(fetch.await_count, 3)
 
     async def test_transient_older_month_failure_does_not_return_partial_records(self):
         current_rows = [
@@ -54,7 +54,7 @@ class HighscoreFetchRegressionTests(unittest.IsolatedAsyncioTestCase):
             async def __aexit__(self, *_):
                 return False
 
-        fetch = AsyncMock(side_effect=[([{"row": 1}], 10), ([], None)])
+        fetch = AsyncMock(side_effect=[([{"row": 1}], 10)] + [([], None)] * 1000)
         with (
             patch("services.highscore_service.aiohttp.ClientSession", return_value=SessionContext()) as constructor,
             patch.object(HighscoreService, "_fetch_and_parse_api_month", new=fetch),
@@ -62,7 +62,7 @@ class HighscoreFetchRegressionTests(unittest.IsolatedAsyncioTestCase):
             await HighscoreService._fetch_all_months("123")
 
         constructor.assert_called_once()
-        self.assertEqual(fetch.await_count, 2)
+        self.assertGreaterEqual(fetch.await_count, 2)
         self.assertIs(fetch.await_args_list[0].kwargs["session"], session)
         self.assertIs(fetch.await_args_list[1].kwargs["session"], session)
 
@@ -145,13 +145,21 @@ class HighscoreCorrectionTests(unittest.IsolatedAsyncioTestCase):
             self.row("NatsuRegis", 8, 31, 5318214542),
             self.row("NatsuRegis", 8, 31, 5341343259, True),
         ]
+        # Full daily coverage is required to attribute the whole interval.
+        for name in ("Kilua", "NatsuRegis"):
+            start = next(r for r in rows if r["trainer_name"] == name and r["date"].month == 8)
+            end = next(r for r in rows if r["trainer_name"] == name and r["date"] == date(2026, 8, 31))
+            for day in range(start["date"].day + 1, 31):
+                fans = start["lifetime_fans"] + (end["lifetime_fans"] - start["lifetime_fans"]) * (day - start["date"].day) // (31 - start["date"].day)
+                rows.append(self.row(name, 8, day, fans))
         result = HighscoreService._compute_best_monthly_total(list(reversed(rows)))
-        self.assertEqual(result, dict(name="NatsuRegis", total=1055349019,
-                                      month="August 2026"))
+        self.assertEqual(result["name"], "NatsuRegis")
+        self.assertEqual(result["total"], 1055349019)
+        self.assertFalse(result["incomplete"])
 
     def test_monthly_baseline_is_local_even_in_adjacent_months(self):
         rows = [self.row("A", 7, 31, 100), self.row("A", 8, 10, 1000),
-                self.row("A", 8, 31, 1100)]
+                self.row("A", 8, 11, 1100)]
         self.assertEqual(HighscoreService._compute_best_monthly_total(rows)["total"], 100)
 
     def test_zero_baseline_day_does_not_extend_january_reign(self):
@@ -217,6 +225,13 @@ class ReignGapTests(unittest.IsolatedAsyncioTestCase):
                 if fans is not None:
                     rows.append(dict(date=date.fromisoformat(day), trainer_name=name,
                                      lifetime_fans=fans))
+        for name in ("A", "B"):
+            member_rows = [r for r in rows if r["trainer_name"] == name and r["lifetime_fans"] > 0]
+            if member_rows and member_rows[0]["date"].day > 1:
+                first = member_rows[0]
+                for day in range(1, first["date"].day):
+                    rows.append(dict(date=first["date"].replace(day=day), trainer_name=name,
+                                     lifetime_fans=first["lifetime_fans"]))
         return rows
 
     def compute(self, observations):
@@ -255,7 +270,8 @@ class ReignGapTests(unittest.IsolatedAsyncioTestCase):
     def test_different_leader_after_gap_does_not_inherit_days(self):
         result = self.compute([
             ("2026-09-01", 100, 100), ("2026-09-02", 300, 150),
-            ("2026-09-04", 400, 900), ("2026-09-05", 450, 1000),
+            ("2026-09-04", 400, 900), ("2026-09-05", 450, 2000),
+            ("2026-09-06", 500, 2100),
         ])
         self.assertEqual(result["name"], "B")
         self.assertEqual(result["streak"], 2)
@@ -310,6 +326,136 @@ class ReignGapTests(unittest.IsolatedAsyncioTestCase):
         field = next(f for f in embed.fields if f.name == "👑 Longest #1 Reign")
         self.assertIn("Includes 1 inferred day(s)", field.value)
         self.assertIn("at most 2 days", field.value)
+
+
+class HighscoreDataQualityTests(unittest.IsolatedAsyncioTestCase):
+    def rows(self, series):
+        return [dict(date=date(2026, 9, day), trainer_name=name,
+                     trainer_id=name, lifetime_fans=fans)
+                for name, values in series.items() for day, fans in values]
+
+    def test_unrelated_gap_cannot_hide_confirmed_overtake(self):
+        rows = self.rows({
+            "A": [(1,100),(2,300),(3,350),(4,900),(5,1100)],
+            "B": [(1,100),(2,150),(3,500),(4,550),(5,600)],
+            "C": [(1,100),(2,101),(4,102),(5,103)],
+        })
+        result = HighscoreService._compute_longest_first_place_streak_by_total(rows)
+        self.assertEqual(result["name"], "A")
+        self.assertEqual(result["start_date"], date(2026, 9, 4))
+        self.assertEqual(result["streak"], 2)
+
+    def test_long_and_unresolved_outages_do_not_award_competitor_reign(self):
+        for returning in (True, False):
+            with self.subTest(returning=returning):
+                a = [(1,100),(2,1000)] + ([(6,1100)] if returning else [])
+                rows = self.rows({"A": a, "B": [(1,100),(2,150),(3,200),(4,250),(5,300),(6,350)]})
+                self.assertIsNone(HighscoreService._compute_longest_first_place_streak_by_total(rows))
+                self.assertIsNone(HighscoreService._compute_longest_first_place_streak(rows))
+
+    def test_adjacent_endpoint_recovers_lost_month_start(self):
+        rows = self.rows({"A": [(2,200),(3,210),(4,220)],
+                          "B": [(1,100),(2,110),(3,130),(4,150)]})
+        rows.append(dict(date=date(2026,8,31), trainer_name="A", trainer_id="A",
+                         lifetime_fans=100, is_end_of_month=True))
+        total = HighscoreService._compute_best_monthly_total(rows)
+        self.assertEqual(total["name"], "A")
+        self.assertEqual(total["total"], 120)
+        self.assertTrue(total["incomplete"])
+        reign = HighscoreService._compute_longest_first_place_streak_by_total(rows)
+        self.assertEqual(reign["name"], "A")
+        self.assertEqual(reign["streak"], 3)
+
+    def test_drop_and_recovery_cannot_generate_false_daily_record(self):
+        rows = self.rows({"A": [(1,1000),(2,100),(3,1100),(4,1150)]})
+        result = HighscoreService._compute_best_daily_gain(rows)
+        self.assertEqual(result["delta"], 50)
+        self.assertEqual(result["date"], date(2026,9,4))
+
+    def test_same_name_distinct_ids_and_rename(self):
+        rows = self.rows({"1": [(1,100),(2,200),(3,300)], "2": [(1,10000),(2,10001),(3,10002)]})
+        for row in rows:
+            row["trainer_name"] = "Same name"
+        rows[2]["trainer_name"] = "Renamed"
+        daily = HighscoreService._compute_best_daily_gain(rows)
+        self.assertEqual(daily["delta"], 100)
+        self.assertEqual(daily["name"], "Renamed")
+        self.assertEqual(HighscoreService._compute_best_monthly_total(rows)["total"], 200)
+        self.assertEqual(HighscoreService._compute_longest_first_place_streak_by_total(rows)["streak"], 2)
+
+    def test_rejoin_does_not_credit_unobserved_outside_club_gains(self):
+        rows = self.rows({"A": [(1,100),(2,200),(10,1000),(11,1100)]})
+        result = HighscoreService._compute_best_monthly_total(rows)
+        self.assertEqual(result["total"], 200)
+        self.assertTrue(result["incomplete"])
+
+    def test_inferred_reign_is_separate_from_verified(self):
+        rows = self.rows({"A": [(1,100),(2,200),(4,300),(5,400)],
+                          "B": [(1,100),(2,101),(4,102),(5,103)]})
+        estimate = HighscoreService._compute_longest_first_place_streak_by_total(rows)
+        verified = HighscoreService._compute_longest_first_place_streak_by_total(rows, verified_only=True)
+        self.assertEqual(estimate["streak"], 4)
+        self.assertEqual(estimate["inferred_days"], 1)
+        self.assertEqual(verified["streak"], 2)
+        self.assertEqual(verified["inferred_days"], 0)
+
+    async def test_empty_historical_month_does_not_stop_scan(self):
+        old_rows = self.rows({"A": [(1,100)]})
+        async def fetch(circle, year, month, **kwargs):
+            return (old_rows, 10) if (year, month) == (2025, 6) else ([], None)
+        with patch.object(HighscoreService, "_fetch_and_parse_api_month", side_effect=fetch) as mocked:
+            rows, _ = await HighscoreService._fetch_all_months("123")
+        self.assertEqual(rows, old_rows)
+        self.assertEqual(mocked.await_args.args[1:], (2025, 6))
+
+    async def test_parser_keeps_ids_rejects_invalid_rank_and_future_endpoint(self):
+        class Response:
+            status = 200
+            async def __aenter__(self): return self
+            async def __aexit__(self, *_): pass
+            async def json(self):
+                return {"circle": {"monthly_rank": 0}, "members": [
+                    {"viewer_id": 123, "trainer_name": "A", "daily_fans": [100,0,None,200],
+                     "next_month_start": 500},
+                    {"trainer_name": "No ID", "daily_fans": [900]},
+                ]}
+        session = SimpleNamespace(get=lambda url: Response())
+        with patch("services.highscore_service.datetime") as clock:
+            clock.now.return_value = datetime(2026,9,3,tzinfo=timezone.utc)
+            rows, rank = await HighscoreService._fetch_and_parse_api_month("1",2026,9,session=session)
+        self.assertIsNone(rank)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["trainer_id"], "123")
+
+    def test_month_without_baseline_cannot_create_verified_competitor(self):
+        rows = self.rows({"A": [(3,1000),(4,1100)],
+                          "B": [(1,100),(2,200),(3,300),(4,400)]})
+        result = HighscoreService._compute_longest_first_place_streak_by_total(rows)
+        self.assertIsNone(result)
+
+
+class HighscoreCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_report_crosspost_requires_explicit_option(self):
+        from bot.commands.leaderboard import LeaderboardCommands
+        for post in (False, True):
+            with self.subTest(post=post):
+                channel = SimpleNamespace(send=AsyncMock())
+                bot = SimpleNamespace(get_channel=lambda channel_id: channel)
+                cog = LeaderboardCommands(bot)
+                interaction = SimpleNamespace(
+                    guild_id=1, channel_id=2, user="Tester",
+                    response=SimpleNamespace(defer=AsyncMock()),
+                    followup=SimpleNamespace(send=AsyncMock()),
+                )
+                club = SimpleNamespace(club_id=None, club_name="Test", circle_id="123",
+                                       report_channel_id=3, belongs_to_guild=lambda guild: True)
+                with (
+                    patch("bot.commands.leaderboard.Club.get_by_name", new=AsyncMock(return_value=club)),
+                    patch.object(HighscoreService, "generate_highscore_embed", new=AsyncMock(return_value="embed")),
+                ):
+                    await cog.club_highscores.callback(cog, interaction, "Test", post_to_report=post)
+                interaction.followup.send.assert_awaited_once_with(embed="embed")
+                self.assertEqual(channel.send.await_count, int(post))
 
 
 if __name__ == "__main__":

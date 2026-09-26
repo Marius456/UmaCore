@@ -119,11 +119,11 @@ class LeaderboardCommands(ClubAutocompleteMixin, commands.Cog):
 
     @app_commands.command(
         name="club_highscores",
-        description="Show all-time club highscores (best daily gain, monthly total, best rank)",
+        description="Show recorded club highscores with data coverage and inferred-day labels",
     )
     @app_commands.checks.has_permissions(administrator=True)
     async def club_highscores(
-        self, interaction: discord.Interaction, club: str
+        self, interaction: discord.Interaction, club: str, post_to_report: bool = False
     ):
         """
         Generate and post an embed showing all-time historical highscores
@@ -155,7 +155,8 @@ class LeaderboardCommands(ClubAutocompleteMixin, commands.Cog):
 
             # Also post to the club's report channel if configured and different
             if (
-                club_obj.report_channel_id
+                post_to_report
+                and club_obj.report_channel_id
                 and club_obj.report_channel_id != interaction.channel_id
             ):
                 report_channel = self.bot.get_channel(club_obj.report_channel_id)

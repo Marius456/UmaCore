@@ -1,0 +1,200 @@
+    # ── Computation Logic ───────────────────────────────────────────────
+
+    @classmethod
+    def _history(cls, rows):
+        """Index by stable ID and quarantine contradictory lifetime snapshots.
+
+        Name fallback supports legacy callers; API rows always require an ID.
+        A drop is unknown until the last trusted lifetime total is recovered.
+        The first recovery observation cannot create a one-day rebound record.
+        """
+        raw = defaultdict(lambda: defaultdict(list))
+        endpoints = {}
+        names = {}
+        today = datetime.now(timezone.utc).date()
+        for row in sorted(rows, key=lambda r: (r['date'], bool(r.get('is_end_of_month')))):
+            key = str(row.get('trainer_id') or row['trainer_name'])
+            d, fans = row['date'], row['lifetime_fans']
+            if d > today or type(fans) is not int or fans <= 0:
+                continue
+            names[key] = row['trainer_name']
+            if row.get('is_end_of_month'):
+                if (d.year, d.month) < (today.year, today.month):
+                    endpoints[key, d.year, d.month] = fans
+            else:
+                raw[key][d].append(fans)
+        members = {}
+        for key, dates in raw.items():
+            high = 0
+            members[key] = {}
+            for d, values in sorted(dates.items()):
+                if len(set(values)) != 1 or values[0] < high:
+                    continue
+                high = values[0]
+                members[key][d] = high
+        return members, endpoints, names
+
+    @classmethod
+    def _daily_gains(cls, rows):
+        members, _, names = cls._history(rows)
+        gains = defaultdict(dict)
+        for key, dates in members.items():
+            for d, fans in dates.items():
+                previous = dates.get(d - timedelta(days=1))
+                if previous is not None:
+                    gains[d][key] = fans - previous
+        return members, names, gains
+
+    @classmethod
+    def _compute_best_daily_gain(cls, rows):
+        _, names, gains = cls._daily_gains(rows)
+        best = None
+        for d, values in sorted(gains.items()):
+            for key, value in sorted(values.items()):
+                if value > 0 and (best is None or value > best['delta']):
+                    best = dict(name=names[key], delta=value, date=d)
+        return best
+
+    @classmethod
+    def _monthly_history(cls, rows):
+        """Lower bounds count observed membership intervals only.
+
+        Upper bounds include unobserved gains and are used only to avoid false
+        leaders. They are never credited as club contributions. A preceding
+        month's endpoint can restore a missing start-of-month baseline.
+        """
+        members, endpoints, names = cls._history(rows)
+        months = defaultdict(dict)
+        for key, dates in members.items():
+            groups = defaultdict(list)
+            for d, fans in sorted(dates.items()):
+                groups[d.year, d.month].append((d, fans))
+            for (year, month), entries in groups.items():
+                first, first_fans = entries[0]
+                previous_key = cls._prev_month(year, month)
+                endpoint = endpoints.get((key, *previous_key))
+                recovered = first.day > 1 and first.day <= 3 and endpoint is not None
+                baseline = endpoint if recovered else first_fans
+                if baseline > first_fans:
+                    baseline = first_fans
+                    recovered = False
+                partial = first.day > 1
+                total = first_fans - baseline
+                points = {}
+                previous_date, previous_fans = first, first_fans
+                for d, fans in entries:
+                    if d != first:
+                        if d == previous_date + timedelta(days=1):
+                            total += fans - previous_fans
+                        else:
+                            partial = True
+                    points[d] = (total, fans - baseline)
+                    previous_date, previous_fans = d, fans
+                final = endpoints.get((key, year, month))
+                last_day = calendar.monthrange(year, month)[1]
+                if final is not None and final >= previous_fans and previous_date.day == last_day:
+                    total += final - previous_fans
+                else:
+                    partial = True
+                months[year, month][key] = dict(
+                    points=points, baseline=baseline, total=total, partial=partial,
+                    recovered=recovered, first=first,
+                )
+        return members, names, months
+
+    @classmethod
+    def _compute_best_monthly_total(cls, rows):
+        _, names, months = cls._monthly_history(rows)
+        best = None
+        today = datetime.now(timezone.utc).date()
+        for (year, month), entries in sorted(months.items()):
+            for key, entry in sorted(entries.items()):
+                if entry['total'] > 0 and (best is None or entry['total'] > best['total']):
+                    best = dict(name=names[key], total=entry['total'],
+                                month=f'{calendar.month_name[month]} {year}',
+                                incomplete=entry['partial'],
+                                provisional=(year, month) == (today.year, today.month))
+        return best
+
+    @classmethod
+    def _walk_leaders(cls, states, names, max_gap):
+        """Unknown dates are pending; a known defeat always breaks the reign."""
+        best = None
+        current = None
+        start = last = None
+        inferred = 0
+        for d, (leader, defeated) in sorted(states.items()):
+            if current in defeated:
+                current = None
+                last = None
+            if leader is None:
+                continue
+            gap = (d - last).days - 1 if last else 0
+            if leader == current and gap <= max_gap:
+                inferred += gap
+            else:
+                current, start, inferred = leader, d, 0
+            last = d
+            length = (d - start).days + 1
+            if length >= 2 and (best is None or length > best['streak']):
+                best = dict(name=names[leader], streak=length, start_date=start,
+                            end_date=d, inferred_days=inferred)
+        return best
+
+    @classmethod
+    def _compute_longest_first_place_streak(cls, rows):
+        members, names, gains = cls._daily_gains(rows)
+        states = {}
+        for d, values in sorted(gains.items()):
+            # A member already seen this month may still be active during a
+            # trailing outage. Do not silently remove them from competition.
+            expected = {key for key, dates in members.items()
+                        if any((p.year, p.month) == (d.year, d.month) and p <= d
+                               for p in dates)}
+            highest = max(values.values(), default=0)
+            winners = [key for key, gain in values.items() if gain == highest]
+            leader = winners[0] if highest > 0 and len(winners) == 1 and expected <= values.keys() else None
+            states[d] = (leader, set(values) if leader is None else set(values) - {leader})
+        return cls._walk_leaders(states, names, 0)
+
+    @classmethod
+    def _compute_longest_first_place_streak_by_total(cls, rows, *, verified_only=False):
+        members, names, months = cls._monthly_history(rows)
+        dates = [d for values in members.values() for d in values]
+        if not dates:
+            return None
+        states = {}
+        d, end = min(dates), max(dates)
+        while d <= end:
+            bounds = {}
+            for key, entry in months.get((d.year, d.month), {}).items():
+                points = entry['points']
+                if d < entry['first']:
+                    continue
+                if d in points:
+                    bounds[key] = points[d]
+                else:
+                    future = [p for p in points if p > d]
+                    upper = points[min(future)][1] if future else float('inf')
+                    bounds[key] = (0, upper)
+            # Carry prior-month members as unknown at a reset until their first
+            # observation. Absence alone is not evidence of departure.
+            previous = months.get(cls._prev_month(d.year, d.month), {})
+            for key in previous:
+                if key not in bounds and (key not in months.get((d.year, d.month), {})
+                        or d < months[d.year, d.month][key]['first']):
+                    bounds[key] = (0, float('inf'))
+            highest = max((v[0] for v in bounds.values()), default=0)
+            winners = [key for key, (low, _) in bounds.items()
+                       if low > 0 and all(low > upper for other, (_, upper) in bounds.items()
+                                          if other != key)]
+            leader = winners[0] if len(winners) == 1 else None
+            # Even if a third member is unknown, a definite overtake or tie
+            # prevents bridging the previous leader across this date.
+            defeated = {key for key, (_, upper) in bounds.items()
+                        if highest > 0 and any(other != key and low >= upper
+                                               for other, (low, _) in bounds.items())}
+            states[d] = (leader, defeated)
+            d += timedelta(days=1)
+        return cls._walk_leaders(states, names, 0 if verified_only else cls.MAX_REIGN_GAP_DAYS)
+

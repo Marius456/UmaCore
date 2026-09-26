@@ -70,10 +70,10 @@ class ClubRankHistory:
         query = """
             WITH best_ranks AS (
                 SELECT
-                    MIN(club_rank) FILTER (WHERE club_rank IS NOT NULL) AS best_club_rank,
-                    MIN(monthly_rank) FILTER (WHERE monthly_rank IS NOT NULL) AS best_monthly_rank,
-                    MIN(date) FILTER (WHERE club_rank IS NOT NULL) AS club_rank_history_start,
-                    MAX(date) FILTER (WHERE club_rank IS NOT NULL) AS club_rank_history_end
+                    MIN(club_rank) FILTER (WHERE club_rank > 0) AS best_club_rank,
+                    MIN(monthly_rank) FILTER (WHERE monthly_rank > 0) AS best_monthly_rank,
+                    MIN(date) FILTER (WHERE club_rank > 0) AS club_rank_history_start,
+                    MAX(date) FILTER (WHERE club_rank > 0) AS club_rank_history_end
                 FROM club_rank_history
                 WHERE club_id = $1
             )

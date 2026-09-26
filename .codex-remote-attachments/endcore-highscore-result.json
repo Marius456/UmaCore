@@ -1,32 +1,32 @@
 {
   "footer": {
-    "text": "Paragon · Recorded history"
+    "text": "ENDCORE · Recorded history"
   },
   "fields": [
     {
       "inline": false,
       "name": "🔥 Best Single-Day Gain",
-      "value": "**Mariartis** +38.6M fans (achieved July 24, 2026)"
+      "value": "**HSL－** +65.9M fans (achieved January 19, 2026)"
     },
     {
       "inline": false,
       "name": "📅 Best Monthly Total",
-      "value": "**Syluar** 420.3M fans (achieved August 2026)"
+      "value": "**NatsuRegis** 1055.3M fans (achieved August 2026)"
     },
     {
       "inline": false,
       "name": "👑 Best Recorded Club Rank",
-      "value": "**#87** (achieved August 01, 2026)\nRecorded snapshots: May 17, 2026 → September 25, 2026"
+      "value": "**#5** (achieved September 06, 2026)\nRecorded snapshots: September 01, 2026 → September 24, 2026"
     },
     {
       "inline": false,
       "name": "📊 Best Completed-Month Club Rank",
-      "value": "**#116** (achieved July 2026)"
+      "value": "**#2** (achieved June 2026)"
     },
     {
       "inline": false,
       "name": "👑 Longest Top Daily Streak",
-      "value": "**Secretariat** — 3 consecutive days with the highest daily fan gain\n(February 02, 2026 → February 04, 2026)"
+      "value": "**NatsuRegis** — 8 consecutive days with the highest daily fan gain\n(August 12, 2026 → August 19, 2026)"
     },
     {
       "inline": false,
@@ -41,8 +41,8 @@
   ],
   "flags": 0,
   "color": 3447003,
-  "timestamp": "2026-09-26T16:04:26.316561+00:00",
+  "timestamp": "2026-09-26T16:04:28.660251+00:00",
   "type": "rich",
-  "description": "Records from available snapshots for **Paragon**. Daily dates use the source snapshot dates; club rank uses bot-recorded history.",
-  "title": "🏆 Recorded Club Highscores — Paragon"
+  "description": "Records from available snapshots for **ENDCORE**. Daily dates use the source snapshot dates; club rank uses bot-recorded history.",
+  "title": "🏆 Recorded Club Highscores — ENDCORE"
 }
