@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily UmaCore PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+Unit=umacore-postgres-backup.service
+
+[Install]
+WantedBy=timers.target

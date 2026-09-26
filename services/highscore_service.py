@@ -30,6 +30,8 @@ EARLIEST_MONTH = 6
 class HighscoreService:
     """Computes and assembles all-time club highscore data into a Discord embed."""
 
+    MAX_REIGN_GAP_DAYS = 2
+
     # ── Public entry point ──────────────────────────────────────────────
 
     @classmethod
@@ -78,7 +80,10 @@ class HighscoreService:
         # 4. Assemble Embed
         embed = discord.Embed(
             title=f"🏆 All-Time Club Highscores — {club_name}",
-            description=f"Records spanning all available history for **{club_name}**.",
+            description=(
+                f"Records from available snapshots for **{club_name}**. "
+                "Daily dates use the source snapshot dates; club rank uses bot-recorded history."
+            ),
             color=COLOR_INFO,
             timestamp=discord.utils.utcnow(),
         )
@@ -118,11 +123,18 @@ class HighscoreService:
             rank_date = best_rank["best_club_rank_date"]
             date_str = rank_date.strftime("%B %d, %Y") if rank_date else "Unknown"
             club_rank_value = f"**#{best_rank['best_club_rank']}** (achieved {date_str})"
+            history_start = best_rank.get("club_rank_history_start")
+            history_end = best_rank.get("club_rank_history_end")
+            if history_start and history_end:
+                club_rank_value += (
+                    f"\nRecorded snapshots: {history_start:%B %d, %Y}"
+                    f" → {history_end:%B %d, %Y}"
+                )
         else:
             club_rank_value = "_No rank data available._"
         
         embed.add_field(
-            name="👑 Club Rank:",
+            name="👑 Best Recorded Club Rank",
             value=club_rank_value,
             inline=False,
         )
@@ -135,7 +147,7 @@ class HighscoreService:
             monthly_rank_value = "_No rank data available._"
         
         embed.add_field(
-            name="📊 Monthly Club Rank:",
+            name="📊 Best Completed-Month Club Rank",
             value=monthly_rank_value,
             inline=False,
         )
@@ -165,6 +177,12 @@ class HighscoreService:
                 f"**{longest_total_streak['name']}** — {longest_total_streak['streak']} consecutive days in 1st place\n"
                 f"({start_str} → {end_str})"
             )
+            inferred = longest_total_streak.get("inferred_days", 0)
+            if inferred:
+                total_streak_value += (
+                    f"\nIncludes {inferred} inferred day(s) across gaps of at most "
+                    f"{cls.MAX_REIGN_GAP_DAYS} days, with the same leader on both sides."
+                )
         else:
             total_streak_value = "_No streak data available._"
         embed.add_field(
@@ -324,6 +342,8 @@ class HighscoreService:
         """
         member_data: Dict[str, List[Tuple[date, int]]] = defaultdict(list)
         for row in rows:
+            if row.get("is_end_of_month"):
+                continue
             member_data[row["trainer_name"]].append(
                 (row["date"], row["lifetime_fans"])
             )
@@ -355,63 +375,33 @@ class HighscoreService:
     def _compute_best_monthly_total(
         cls, rows: list
     ) -> Optional[Dict[str, Any]]:
+        """Compare gains within each member's month, never across absences.
+
+        The first observed snapshot is the baseline, including for mid-month
+        joins. A synthetic endpoint supplies the final total, not the baseline.
         """
-        Compute the best monthly fan total per member using lifetime values.
-        For each member+month pair, uses the difference between the last
-        day's lifetime value (preferring next_month_start if available)
-        and the previous month's last value.
-        """
-        # Group by trainer_name, then by (year, month)
-        member_data: Dict[str, List[Tuple[date, int]]] = defaultdict(list)
+        monthly_rows = defaultdict(list)
         for row in rows:
-            member_data[row["trainer_name"]].append(
-                (row["date"], row["lifetime_fans"])
+            d = row["date"]
+            monthly_rows[(row["trainer_name"], d.year, d.month)].append(row)
+
+        best = None
+        for (name, year, month), entries in sorted(monthly_rows.items()):
+            regular = sorted(
+                (row for row in entries if not row.get("is_end_of_month")),
+                key=lambda row: row["date"],
             )
-
-        best: Optional[Dict[str, Any]] = None
-
-        for name, entries in member_data.items():
-            # Sort by (date, lifetime_fans) so that for the same date,
-            # the synthetic end-of-month entry (higher fans) comes after
-            # the regular daily entry. This ensures monthly_last picks
-            # next_month_start when available.
-            entries.sort(key=lambda x: (x[0], x[1]))
-
-            # For each month, find the first and last entry's lifetime value.
-            # This allows computing the actual gain within the month.
-            monthly_first: Dict[Tuple[int, int], int] = {}
-            monthly_last: Dict[Tuple[int, int], int] = {}
-            for d, fans in entries:
-                key = (d.year, d.month)
-                if key not in monthly_first:
-                    monthly_first[key] = fans  # first day's value
-                monthly_last[key] = fans       # last entry's value (keeps updating)
-
-            # Compute monthly total = last entry of month - first entry of month
-            # (or last entry of current month - last entry of previous month for
-            #  subsequent months, which is equivalent via transitive subtraction)
-            sorted_keys = sorted(monthly_last.keys())
-            for idx, (year, month) in enumerate(sorted_keys):
-                curr_lifetime = monthly_last[(year, month)]
-
-                if idx == 0:
-                    # First month — subtract the first day's value to strip
-                    # any pre-existing lifetime before this month
-                    month_start = monthly_first[(year, month)]
-                    monthly_total = curr_lifetime - month_start
-                else:
-                    prev_key = sorted_keys[idx - 1]
-                    prev_lifetime = monthly_last[prev_key]
-                    monthly_total = curr_lifetime - prev_lifetime
-
-                if monthly_total > 0 and (best is None or monthly_total > best["total"]):
-                    month_name = calendar.month_name[month]
-                    best = {
-                        "name": name,
-                        "total": monthly_total,
-                        "month": f"{month_name} {year}",
-                    }
-
+            if not regular:
+                continue
+            endpoints = [row for row in entries if row.get("is_end_of_month")]
+            final = endpoints[-1] if endpoints else regular[-1]
+            total = final["lifetime_fans"] - regular[0]["lifetime_fans"]
+            if total > 0 and (best is None or total > best["total"]):
+                best = {
+                    "name": name,
+                    "total": total,
+                    "month": f"{calendar.month_name[month]} {year}",
+                }
         return best
 
     @classmethod
@@ -422,9 +412,8 @@ class HighscoreService:
         Compute the longest consecutive streak of holding 1st place (highest
         daily fan gain) across all dates in the data.
 
-        Uses daily gains (delta between consecutive days' lifetime values)
-        to determine who gained the most fans each day, matching the in-game
-        ranking system.
+        Uses gains between consecutive daily snapshots to determine the leader.
+        Dates refer to those snapshots, not verified in-game earning dates.
 
         Returns a dict with keys:
           - name: the member who held #1
@@ -436,6 +425,8 @@ class HighscoreService:
         # 1. Group rows by member, sorted by date
         member_data: Dict[str, List[Tuple[date, int]]] = defaultdict(list)
         for row in rows:
+            if row.get("is_end_of_month"):
+                continue
             member_data[row["trainer_name"]].append(
                 (row["date"], row["lifetime_fans"])
             )
@@ -456,9 +447,7 @@ class HighscoreService:
 
                 delta = curr_fans - prev_fans
                 if delta > 0:
-                    # If multiple entries exist for the same member on the same
-                    # date (e.g. regular + end-of-month synthetic), keep the
-                    # larger delta (which comes from the later entry)
+                    # Keep the largest observed delta for a member/date.
                     existing = daily_gain[curr_date].get(name, 0)
                     if delta > existing:
                         daily_gain[curr_date][name] = delta
@@ -536,183 +525,78 @@ class HighscoreService:
     def _compute_longest_first_place_streak_by_total(
         cls, rows: list
     ) -> Optional[Dict[str, Any]]:
+        """Bridge short unknown gaps only between matching confirmed leaders.
+
+        Monthly resets and missing snapshots are unknown. Positive-gain ties
+        break a sole-leader reign. Unresolved trailing gaps never extend it.
         """
-        Compute the longest consecutive streak of holding 1st place by cumulative
-        club fan gain within each month.
-
-        For each member, cumulative gain since the start of the current month is
-        calculated as (lifetime_fans on date) - (lifetime_fans at end of previous
-        month). The member with the highest cumulative gain is #1. At month
-        boundaries, cumulative gains reset.
-
-        On the first day of a month (or any day where multiple members have the
-        same cumulative gain), ties are broken by the member's absolute lifetime
-        fans on that date.
-
-        Returns a dict with keys:
-          - name: the member who held #1
-          - streak: number of consecutive days
-          - start_date: first day of the streak
-          - end_date: last day of the streak
-        or None if insufficient data.
-        """
-        # 1. Build member- and date-oriented indexes in one pass. The previous
-        # implementation rescanned every member's full history for every date.
-        member_data: Dict[str, List[Tuple[date, int]]] = defaultdict(list)
-        fans_by_date: Dict[date, Dict[str, int]] = defaultdict(dict)
-        first_fans_by_month: Dict[str, Dict[Tuple[int, int], int]] = defaultdict(dict)
-        next_month_start_map: Dict[str, Dict[Tuple[int, int], int]] = defaultdict(dict)
-        for row in rows:
-            name = row["trainer_name"]
-            row_date = row["date"]
+        fans_by_date = defaultdict(dict)
+        member_dates = defaultdict(list)
+        baselines = {}
+        for row in sorted(rows, key=lambda row: row["date"]):
+            if row.get("is_end_of_month") or row["lifetime_fans"] <= 0:
+                continue
+            d, name = row["date"], row["trainer_name"]
             fans = row["lifetime_fans"]
-            month_key = (row_date.year, row_date.month)
-            member_data[name].append((row_date, fans))
-            # Synthetic month-end rows may share a date with a real daily row;
-            # keep the real row encountered first for daily leader ranking.
-            fans_by_date[row_date].setdefault(name, fans)
-            first_fans_by_month[name].setdefault(month_key, fans)
-            if row.get("is_end_of_month"):
-                next_month_start_map[name][month_key] = fans
-
-        # 2. Determine month_start_lifetime for each member+month.
-        #    month_start = lifetime_fans at end of previous month.
-        #    For the first month a member appears, use their first day's value.
-        member_active_months: Dict[str, List[Tuple[int, int]]] = {}
-        for name, entries in member_data.items():
-            entries.sort(key=lambda item: item[0])
-            member_active_months[name] = sorted(
-                {(d.year, d.month) for d, _ in entries}
-            )
-
-        all_months = sorted({(row["date"].year, row["date"].month) for row in rows})
-        month_start_lifetime: Dict[Tuple[int, int], Dict[str, int]] = {}
-        for year, month in all_months:
-            month_key = (year, month)
-            month_start_lifetime[month_key] = {}
-            for name in member_data:
-                prev_month_key = None
-                for pm in member_active_months[name]:
-                    if pm < month_key:
-                        prev_month_key = pm
-                    else:
-                        break
-                if prev_month_key is not None:
-                    val = next_month_start_map.get(name, {}).get(prev_month_key)
-                    if val is not None:
-                        month_start_lifetime[month_key][name] = val
-                        continue
-                # Fallback: first entry of current month
-                first_fans = first_fans_by_month[name].get(month_key)
-                if first_fans is not None:
-                    month_start_lifetime[month_key][name] = first_fans
-
-        # 3. For every date in the data, compute cumulative gain and leader.
-        all_dates = sorted(fans_by_date)
-        if len(all_dates) < 2:
+            baselines.setdefault((name, d.year, d.month), fans)
+            fans_by_date[d][name] = fans
+            member_dates[name].append(d)
+        if not fans_by_date:
             return None
 
-        current_month = None
-        daily_leader: Dict[date, Optional[str]] = {}
+        # The parser omits zero lifetime values. A short internal hole in a
+        # member's snapshots must not give a competitor a false confirmed win.
+        incomplete_dates = set()
+        for dates in member_dates.values():
+            for before, after in zip(dates, dates[1:]):
+                gap = (after - before).days - 1
+                if 0 < gap <= cls.MAX_REIGN_GAP_DAYS:
+                    incomplete_dates.update(before + timedelta(days=i)
+                                            for i in range(1, gap + 1))
 
-        for d in all_dates:
-            month_key = (d.year, d.month)
-
-            # Track the month boundary for streak segmentation below.
-            if month_key != current_month:
-                current_month = month_key
-
-            # Compute gain for each member on this date:
-            # gain = lifetime_fans_today - month_start_lifetime
-            # This gives the true cumulative gain from month start.
-            today_gains: Dict[str, int] = {}
-            member_fans_today = fans_by_date[d]
-
-            for name, fans_today in member_fans_today.items():
-                start_val = month_start_lifetime.get(month_key, {}).get(name)
-                if start_val is None:
-                    continue
-                gain = fans_today - start_val
-                # Record even if 0 so we can break ties by absolute fans
-                today_gains[name] = gain
-
-            if not today_gains:
-                daily_leader[d] = None
-                continue
-
-            max_cumulative = max(today_gains.values())
-            leaders = [name for name, gain in today_gains.items() if gain == max_cumulative]
-            if len(leaders) == 1:
-                daily_leader[d] = leaders[0]
+        best = None
+        current_name = None
+        current_start = None
+        last_confirmed = None
+        inferred_days = 0
+        d = min(fans_by_date)
+        end = max(fans_by_date)
+        while d <= end:
+            gains = {
+                name: fans - baselines[(name, d.year, d.month)]
+                for name, fans in fans_by_date.get(d, {}).items()
+            }
+            highest = max(gains.values(), default=0)
+            leaders = [name for name, gain in gains.items() if gain == highest]
+            unknown = d in incomplete_dates or not gains or highest <= 0
+            if unknown:
+                # Keep the last confirmed endpoint pending. Only a subsequent
+                # matching leader can add these days to the record.
+                pass
+            elif len(leaders) != 1:
+                current_name = None  # observed positive tie, not missing data
+                last_confirmed = None
             else:
-                # Tie: break by highest absolute lifetime fans today
-                best = None
-                best_fans = -1
-                for name in leaders:
-                    fans = member_fans_today.get(name, 0)
-                    if fans > best_fans:
-                        best_fans = fans
-                        best = name
-                daily_leader[d] = best
-
-        # 4. Walk through dates tracking streaks
-        best_streak = 0
-        best_name: Optional[str] = None
-        best_start: Optional[date] = None
-        best_end: Optional[date] = None
-
-        current_name: Optional[str] = None
-        current_streak = 0
-        current_start: Optional[date] = None
-        previous_streak_date: Optional[date] = None
-
-        for d in all_dates:
-            month_key = (d.year, d.month)
-
-            # Streaks cannot cross month boundaries or missing calendar days.
-            if (
-                month_key != current_month
-                or previous_streak_date is None
-                or d != previous_streak_date + timedelta(days=1)
-            ):
-                current_name = None
-                current_streak = 0
-                current_start = None
-                current_month = month_key
-            previous_streak_date = d
-
-            leader = daily_leader.get(d)
-            if leader is None:
-                # Tie or no data — reset
-                current_name = None
-                current_streak = 0
-                current_start = None
-                continue
-
-            if leader == current_name:
-                # Same leader — extend streak
-                current_streak += 1
-            else:
-                # New leader — start new streak
-                current_name = leader
-                current_streak = 1
-                current_start = d
-
-            if current_streak > best_streak:
-                best_streak = current_streak
-                best_name = current_name
-                best_start = current_start
-                best_end = d
-
-        if best_streak < 2:
-            return None
-
-        return {
-            "name": best_name,
-            "streak": best_streak,
-            "start_date": best_start,
-            "end_date": best_end,
-        }
+                leader = leaders[0]
+                gap = (d - last_confirmed).days - 1 if last_confirmed else 0
+                if leader == current_name and gap <= cls.MAX_REIGN_GAP_DAYS:
+                    inferred_days += gap
+                else:
+                    current_name = leader
+                    current_start = d
+                    inferred_days = 0
+                last_confirmed = d
+                length = (d - current_start).days + 1
+                if length >= 2 and (best is None or length > best["streak"]):
+                    best = {
+                        "name": leader,
+                        "streak": length,
+                        "start_date": current_start,
+                        "end_date": d,
+                        "inferred_days": inferred_days,
+                    }
+            d += timedelta(days=1)
+        return best
 
     # ── Date Helpers ────────────────────────────────────────────────────
 

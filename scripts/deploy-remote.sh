@@ -63,6 +63,14 @@ if [[ ! -f .env ]]; then
     exit 1
 fi
 
+# The database is managed independently of bot image deployments.
+database_network_args=()
+if docker container inspect umacore-postgres >/dev/null 2>&1; then
+    docker exec umacore-postgres pg_isready -U postgres -d umacore >/dev/null
+    docker network inspect umacore-db >/dev/null
+    database_network_args=(--network umacore-db)
+fi
+
 if docker container inspect "$rollback_name" >/dev/null 2>&1; then
     echo "Rollback container already exists: $rollback_name" >&2
     echo "Resolve it manually before deploying again." >&2
@@ -119,6 +127,7 @@ cutover_started=true
 echo "Starting $container_name from $commit_image..."
 docker run -d \
     --name "$container_name" \
+    "${database_network_args[@]}" \
     --env-file .env \
     --restart always \
     "$commit_image" >/dev/null

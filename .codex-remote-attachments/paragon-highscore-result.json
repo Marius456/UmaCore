@@ -1,0 +1,43 @@
+{
+  "footer": {
+    "text": "Paragon · All-Time Records"
+  },
+  "fields": [
+    {
+      "inline": false,
+      "name": "🔥 Best Single-Day Gain",
+      "value": "**Mariartis** +38.6M fans (achieved July 24, 2026)"
+    },
+    {
+      "inline": false,
+      "name": "📅 Best Monthly Total",
+      "value": "**Syluar** 420.3M fans (achieved August 2026)"
+    },
+    {
+      "inline": false,
+      "name": "👑 Best Recorded Club Rank",
+      "value": "**#87** (achieved August 01, 2026)\nRecorded snapshots: May 17, 2026 → September 25, 2026"
+    },
+    {
+      "inline": false,
+      "name": "📊 Best Completed-Month Club Rank",
+      "value": "**#116** (achieved July 2026)"
+    },
+    {
+      "inline": false,
+      "name": "👑 Longest Top Daily Streak",
+      "value": "**RanfeaR** — 6 consecutive days with the highest daily fan gain\n(September 03, 2026 → September 08, 2026)"
+    },
+    {
+      "inline": false,
+      "name": "👑 Longest #1 Reign",
+      "value": "**Dragon** — 29 consecutive days in 1st place\n(December 05, 2025 → January 02, 2026)\nIncludes 2 inferred day(s) across gaps of at most 2 days, with the same leader on both sides."
+    }
+  ],
+  "flags": 0,
+  "color": 3447003,
+  "timestamp": "2026-09-26T15:47:58.671871+00:00",
+  "type": "rich",
+  "description": "Records from available snapshots for **Paragon**. Daily dates use the source snapshot dates; club rank uses bot-recorded history.",
+  "title": "🏆 All-Time Club Highscores — Paragon"
+}

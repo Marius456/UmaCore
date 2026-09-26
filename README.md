@@ -151,6 +151,9 @@ It builds the new image while the current bot is online, verifies the internal
 health endpoint after replacement, and restores the previous container if the
 new version does not become healthy. SSH host-key verification remains enabled.
 
+For the production PostgreSQL migration, backups, and recovery procedures, see
+[PostgreSQL operations](docs/postgresql-operations.md).
+
 For local Docker development:
 
 ```bash
