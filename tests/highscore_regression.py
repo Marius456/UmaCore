@@ -1,5 +1,5 @@
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -280,6 +280,20 @@ class ReignGapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["streak"], 2)
         self.assertEqual(result["start_date"], date(2026, 9, 4))
         self.assertEqual(result["inferred_days"], 0)
+
+    def test_future_snapshot_cannot_extend_reign(self):
+        today = datetime.now(timezone.utc).date()
+        rows = [dict(date=today + timedelta(days=offset), trainer_name="A",
+                     lifetime_fans=100 + (offset + 3) * 100)
+                for offset in (-3, -2, -1, 0, 1)]
+        # Keep this test independent of the calendar month's baseline reset.
+        with patch("services.highscore_service.datetime") as clock:
+            clock.now.return_value = datetime(2026, 9, 26, tzinfo=timezone.utc)
+            for index, row in enumerate(rows):
+                row["date"] = date(2026, 9, 23) + timedelta(days=index)
+            result = HighscoreService._compute_longest_first_place_streak_by_total(rows)
+        self.assertEqual(result["end_date"], date(2026, 9, 26))
+        self.assertEqual(result["streak"], 3)
 
     async def test_embed_labels_inferred_days(self):
         rows = self.rows([

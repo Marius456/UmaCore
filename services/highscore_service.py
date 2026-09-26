@@ -309,6 +309,8 @@ class HighscoreService:
                     continue
 
                 row_date = date(year, month, day_num)
+                if row_date > datetime.now(timezone.utc).date():
+                    continue
                 rows.append({
                     "date": row_date,
                     "lifetime_fans": lifetime_total,
@@ -533,8 +535,10 @@ class HighscoreService:
         fans_by_date = defaultdict(dict)
         member_dates = defaultdict(list)
         baselines = {}
+        today = datetime.now(timezone.utc).date()
         for row in sorted(rows, key=lambda row: row["date"]):
-            if row.get("is_end_of_month") or row["lifetime_fans"] <= 0:
+            if (row.get("is_end_of_month") or row["lifetime_fans"] <= 0
+                    or row["date"] > today):
                 continue
             d, name = row["date"], row["trainer_name"]
             fans = row["lifetime_fans"]
