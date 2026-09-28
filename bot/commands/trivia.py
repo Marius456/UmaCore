@@ -372,12 +372,12 @@ class TriviaCommands(commands.Cog):
     @trivia.command(name="play", description="Start a survival trivia game")
     async def play(self, interaction: discord.Interaction):
         """Start a new survival trivia game"""
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
         await self._start_game(interaction)
 
     @trivia.command(name="horse", description="Guess real racehorses from photos")
     async def horse(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
         try:
             await self._start_game(interaction, horse=True)
         except Exception:

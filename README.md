@@ -86,7 +86,7 @@ After inviting, use `/add_club` with the club's Uma.moe circle ID, then `/set_re
 | `/club_highscores` | Show all-time club records |
 | `/gacha` | Show current GameTora banners |
 | `/trivia play` | Start a survival trivia game |
-| `/trivia horse` | Guess real racehorses from photos in a private survival game |
+| `/trivia horse` | Guess real racehorses from photos in a public survival game |
 | `/trivia horse_leaderboard` | View the separate horse-photo rankings |
 
 Horse-photo trivia includes 20 attributed starter photos, four answer buttons,

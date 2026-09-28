@@ -112,12 +112,12 @@ class HorseGameTests(unittest.IsolatedAsyncioTestCase):
             text_scores.assert_not_awaited()
             return request, photo_scores
 
-    async def test_horse_command_defers_privately(self):
+    async def test_horse_command_defers_publicly(self):
         cog = TriviaCommands(None)
         cog._start_game = AsyncMock()
         request = interaction()
         await TriviaCommands.horse.callback(cog, request)
-        request.response.defer.assert_awaited_once_with(ephemeral=True)
+        request.response.defer.assert_awaited_once_with()
         cog._start_game.assert_awaited_once_with(request, horse=True)
 
     async def test_correct_then_wrong_reveals_answer_and_only_records_photo_score(self):

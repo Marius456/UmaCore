@@ -7,11 +7,12 @@ a three-second reveal. A wrong answer or timeout ends the game and reveals the
 correct name and a source link. Author, license, and modification details are
 kept in the photo manifest and bundled credits rather than the game messages.
 
-Gameplay is private to the player. One game can run per user across text and
-photo trivia. Questions do not repeat until the available photo bank has been
-used, then a new cycle starts. `/trivia horse_leaderboard` publicly shows the
-global top ten by highest streak, then total correct answers. Photo scores and
-personal bests are separate from `/trivia play` and `/trivia leaderboard`.
+Gameplay is visible to the channel, but only the player who started it can use
+its answer buttons. One game can run per user across text and photo trivia.
+Questions do not repeat until the available photo bank has been used, then a new
+cycle starts. `/trivia horse_leaderboard` publicly shows the global top ten by
+highest streak, then total correct answers. Photo scores and personal bests are
+separate from `/trivia play` and `/trivia leaderboard`.
 
 ## Managing the bank
 
@@ -137,9 +138,9 @@ interactions and database connections and require no live credentials.
 
 After deploying to a test Discord server, verify:
 
-1. `/trivia horse` is private, the photo renders, all four buttons work, and
-   the answer and source link appear after answering, without photo-credit or
-   modification text.
+1. `/trivia horse` is visible to the channel, the photo renders, all four buttons
+   work only for the player who started it, and the answer and source link appear
+   after answering, without photo-credit or modification text.
 2. Play multiple starter rounds and an admin URL round; each replaces the prior
    photo without stale attachments. Confirm the timer starts with the new round.
 3. Let a round expire and submit a wrong answer; both reveal the correct name

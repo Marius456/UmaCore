@@ -16,7 +16,7 @@ class FakeInteraction:
 
 
 class FakeMessage:
-    def __init__(self, ephemeral=True):
+    def __init__(self, ephemeral=False):
         self.ephemeral = ephemeral
         self.edit = AsyncMock()
 
@@ -80,7 +80,7 @@ class TriviaQuestionSelectionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class TriviaVisibilityTests(unittest.IsolatedAsyncioTestCase):
-    async def test_play_defers_ephemeral_and_starts_game(self):
+    async def test_play_defers_publicly_and_starts_game(self):
         commands = TriviaCommands(None)
         commands._start_game = AsyncMock()
         interaction = FakeInteraction()
@@ -88,10 +88,10 @@ class TriviaVisibilityTests(unittest.IsolatedAsyncioTestCase):
 
         await TriviaCommands.play.callback(commands, interaction)
 
-        interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+        interaction.response.defer.assert_awaited_once_with()
         commands._start_game.assert_awaited_once_with(interaction)
 
-    async def test_game_uses_one_ephemeral_original_message(self):
+    async def test_game_uses_one_public_original_message(self):
         commands = TriviaCommands(None)
         interaction = FakeInteraction()
         message = FakeMessage()
@@ -105,7 +105,7 @@ class TriviaVisibilityTests(unittest.IsolatedAsyncioTestCase):
         interaction.edit_original_response.assert_awaited_once()
         interaction.followup.send.assert_not_awaited()
         message.edit.assert_awaited_once()
-        self.assertTrue(message.ephemeral)
+        self.assertFalse(message.ephemeral)
 
     async def test_duplicate_session_message_is_ephemeral(self):
         commands = TriviaCommands(None)
