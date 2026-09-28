@@ -22,35 +22,74 @@ def rank(value):
     return f"#{value:,}" if value is not None else "—"
 
 
-def chart_svg(status):
-    width, height = 940, 126
-    points = status.points
-    if not points:
-        return '<svg viewBox="0 0 940 126"><text x="470" y="70" text-anchor="middle" fill="#8c849f" font-size="18">No fan history available</text></svg>'
-    start = status.data_date.replace(day=1)
-    span = max(1, (status.data_date - start).days)
-    maximum = max(1, *(fans for _, fans in points))
-    groups = []
+def daily_gains(points):
+    """Return valid daily gains without bridging gaps or month boundaries."""
+    gains = []
     previous = None
-    for day, fans in points:
-        point = (4 + (day - start).days / span * (width - 8),
-                 height - 2 - max(0, fans) / maximum * (height - 6))
-        if not groups or day - previous != timedelta(days=1):
-            groups.append([])
-        groups[-1].append(point)
-        previous = day
-    paths = ['<path d="M0 4 H940" stroke="#22212a"/>']
-    for group in groups:
-        line = "M" + " L".join(f"{x:.2f},{y:.2f}" for x, y in group)
-        if len(group) > 1:
-            paths.append(f'<path d="{line} L{group[-1][0]:.2f},126 L{group[0][0]:.2f},126 Z" fill="var(--accent)" opacity=".20"/>')
-            paths.append(f'<path d="{line}" fill="none" stroke="var(--accent)" stroke-width="2"/>')
+    for day, fans in sorted(points):
+        if (previous is not None
+                and day - previous[0] == timedelta(days=1)
+                and day.replace(day=1) == previous[0].replace(day=1)
+                and fans >= previous[1]):
+            gains.append((day, fans - previous[1]))
+        previous = (day, fans)
+    return gains
+
+
+def chart_svg(status):
+    gains = daily_gains(status.points)
+    opening = '<svg viewBox="0 0 940 126" role="img" aria-label="Daily fan gains">'
+    if not gains:
+        return (opening + '<text x="470" y="65" text-anchor="middle" fill="#8c849f" '
+                'font-size="18">Not enough daily history</text></svg>')
+
+    plot_left, plot_right = 58, 936
+    plot_top, baseline = 6, 101
+    maximum = max(gain for _, gain in gains)
+    scale_maximum = max(1, maximum)
+    days = max(1, status.data_date.day)
+    slot = (plot_right - plot_left) / days
+    bar_width = min(24, slot * .64)
+    latest_valid = gains[-1][0]
+    elements = []
+
+    for fraction in ((1, .5, 0) if maximum else (0,)):
+        y = baseline - fraction * (baseline - plot_top)
+        value = maximum * fraction
+        elements.append(
+            f'<path d="M{plot_left} {y:.2f} H{plot_right}" stroke="#22212a"/>'
+            f'<text x="50" y="{y + 4:.2f}" text-anchor="end" fill="#625a73" '
+            f'font-size="11">{compact(value)}</text>'
+        )
+
+    for day, gain in gains:
+        x = plot_left + (day.day - .5) * slot - bar_width / 2
+        bar_height = gain / scale_maximum * (baseline - plot_top)
+        highlighted = day == latest_valid
+        opacity = "1" if highlighted else ".48"
+        if gain == 0:
+            elements.append(
+                f'<rect data-date="{day.isoformat()}" data-gain="0" x="{x:.2f}" '
+                f'y="{baseline - 2}" width="{bar_width:.2f}" height="2" rx="1" '
+                f'fill="var(--accent)" opacity="{opacity}"/>'
+            )
         else:
-            x, y = group[0]
-            paths.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="3" fill="var(--accent)"/>')
-    x, y = groups[-1][-1]
-    paths.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="5" fill="var(--accent)"/>')
-    return '<svg viewBox="0 0 940 126" aria-label="Monthly fan progression">' + "".join(paths) + '</svg>'
+            elements.append(
+                f'<rect data-date="{day.isoformat()}" data-gain="{gain}" x="{x:.2f}" '
+                f'y="{baseline - bar_height:.2f}" width="{bar_width:.2f}" '
+                f'height="{bar_height:.2f}" rx="2" fill="var(--accent)" opacity="{opacity}"/>'
+            )
+
+    tick_days = {1, status.data_date.day}
+    tick_days.update(range(5, status.data_date.day, 5))
+    for day_number in sorted(tick_days):
+        x = plot_left + (day_number - .5) * slot
+        anchor = "start" if day_number == 1 else "end" if day_number == days else "middle"
+        elements.append(
+            f'<text x="{x:.2f}" y="122" text-anchor="{anchor}" fill="#625a73" '
+            f'font-size="11">{status.data_date.strftime("%b")} {day_number}</text>'
+        )
+    return opening + "".join(elements) + "</svg>"
 
 
 def card_html(s: MemberStatus) -> str:
@@ -88,6 +127,8 @@ def card_html(s: MemberStatus) -> str:
     profile_date = ("Profile fetched " + s.profile_fetched_at.strftime("%b %d, %Y %H:%M UTC")
                     if s.profile_fetched_at else "Profile data unavailable")
     inactive = " · Manually deactivated" if s.manually_deactivated else ""
+    gains = dict(daily_gains(s.points))
+    latest_gain = gains.get(s.data_date)
     return f'''<!doctype html><html><head><meta charset="utf-8"><style>
 * {{box-sizing:border-box}} body {{margin:0;background:#0c0c0f;color:#e8e5f0;font-family:"DejaVu Sans","Segoe UI",Arial,sans-serif}}
 #card {{width:1024px;height:1010px;--accent:{accent};padding:42px;background:linear-gradient(#131218 0 132px,#0c0c0f 132px)}}
@@ -130,7 +171,7 @@ footer .right {{text-align:right}}
 <section class="tiles">{tiles}</section>
 <section class="quota"><div class="section-line"><label>MONTHLY QUOTA</label><span class="percentage">{percent}</span></div>
 <div class="track"><div class="fill"></div></div><div class="section-line quota-values"><span>{compact(s.fans)} / {compact(s.expected)}</span><span style="color:{delta_color}">{compact(s.surplus, True)}</span></div></section>
-<section class="chart"><div class="section-line"><h2>FAN PROGRESSION</h2><span class="chart-end">{compact(s.fans)} · {s.data_date.strftime('%b %d')}</span></div>{chart_svg(s)}</section>
+<section class="chart"><div class="section-line"><h2>DAILY FAN GAIN</h2><span class="chart-end">{compact(latest_gain)} · {s.data_date.strftime('%b %d')}</span></div>{chart_svg(s)}</section>
 <section class="columns"><div><h2>PERFORMANCE</h2>{performance}</div><div><h2>STANDINGS</h2>{standings}</div></section>
 <section class="stats">{stats}</section><footer><div>Last updated {s.data_date.strftime('%b %d, %Y')}</div><div class="right">Data: uma.moe + UmaCore<br>{profile_date}</div></footer>
 </main></body></html>'''
