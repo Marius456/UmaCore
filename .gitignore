@@ -263,5 +263,6 @@ VPS_SETUP.md
 .umamoe_cookies/
 
 .runtime-deps
+node_modules/
 qna.json
 trivia-sources.md

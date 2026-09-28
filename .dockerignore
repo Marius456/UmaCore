@@ -3,6 +3,7 @@
 .env
 .env.*
 .runtime-deps
+node_modules
 .umamoe_cookies
 .umamusume_cookies
 __pycache__
