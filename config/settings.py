@@ -37,6 +37,11 @@ DAILY_QUOTA = 1_000_000
 # Internal API server (web UI integration)
 BOT_API_PORT = int(os.getenv("BOT_API_PORT", "7890"))
 
+# Optional independent image Worker. Both URL and key are required to enable it.
+HORSE_IMAGE_PROXY_URL = os.getenv("HORSE_IMAGE_PROXY_URL", "")
+HORSE_IMAGE_PROXY_KEY = os.getenv("HORSE_IMAGE_PROXY_KEY", "")
+HORSE_IMAGE_ALLOWED_HOSTS = os.getenv("HORSE_IMAGE_ALLOWED_HOSTS", "upload.wikimedia.org")
+
 # Logging Configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE = "bot.log"

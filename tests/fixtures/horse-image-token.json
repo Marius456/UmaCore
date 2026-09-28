@@ -1,0 +1,7 @@
+{
+  "note": "Public interoperability test vector, never use this key in production.",
+  "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "nonce": "000102030405060708090a0b",
+  "source": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Gold_Ship.jpg",
+  "token": "AAECAwQFBgcICQoLL3aia7bf7TT4Mfvk0I1WGuq97lmVHzYdFgiX4jIeadloYMuYxqA9-xvJEoLm9AdZwTgCoh25z75gxEJwaM2fnpcLjepqmbTkVm5mXb-oPD5_"
+}

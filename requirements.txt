@@ -13,6 +13,7 @@ plotly>=5.18.0,<7
 # Utilities
 python-dotenv>=1.0.0,<2
 pytz>=2023.3
+cryptography>=44,<47
 
 # Table Formatting
 tabulate>=0.10.0,<1

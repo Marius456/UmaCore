@@ -12,8 +12,9 @@ import logging
 from typing import Optional, List
 
 from models.trivia_question import TriviaQuestion
-from models.horse_trivia_question import HorseTriviaQuestion, validate_https_url
+from models.horse_trivia_question import HorseTriviaQuestion
 from models.trivia_leaderboard import TriviaLeaderboardEntry, HorseTriviaLeaderboardEntry
+from services.horse_image_url import image_url_for_game
 
 logger = logging.getLogger(__name__)
 
@@ -314,7 +315,7 @@ class TriviaCommands(commands.Cog):
                     embed.title = f"🐎 Horse #{current_streak + 1}"
                     embed.set_footer(text=f"Current streak: {current_streak} | 20 seconds to choose")
                     try:
-                        embed.set_image(url=validate_https_url(question.image_reference))
+                        embed.set_image(url=image_url_for_game(question.image_reference))
                     except ValueError:
                         logger.warning("Skipping invalid horse photo URL #%s", question.id)
                         unavailable_ids.add(question.id)
@@ -416,6 +417,7 @@ class TriviaCommands(commands.Cog):
     ):
         await interaction.response.defer(ephemeral=True)
         try:
+            image_url_for_game(image_url)
             question = await HorseTriviaQuestion.create(
                 options=[correct_answer, wrong_option_1, wrong_option_2, wrong_option_3],
                 image_url=image_url, source_url=source_url, author=author, license=license,
