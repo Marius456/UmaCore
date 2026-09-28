@@ -12,7 +12,8 @@ import logging
 from typing import Optional, List
 
 from models.trivia_question import TriviaQuestion
-from models.trivia_leaderboard import TriviaLeaderboardEntry
+from models.horse_trivia_question import HorseTriviaQuestion, validate_https_url
+from models.trivia_leaderboard import TriviaLeaderboardEntry, HorseTriviaLeaderboardEntry
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,9 @@ class TriviaButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         """Handle button click: mark answer, style buttons, stop the view"""
         view: TriviaButtonView = self.view
+        if view.is_finished() or view.selected_answer is not None:
+            await interaction.response.defer()
+            return
         view.selected_answer = self.label
         view.is_correct = (self.label == self.correct_answer)
 
@@ -51,7 +55,10 @@ class TriviaButton(discord.ui.Button):
 class TriviaButtonView(discord.ui.View):
     """View containing the 4 answer buttons for a trivia question"""
 
-    def __init__(self, question: TriviaQuestion, author_id: int, timeout: float = QUESTION_TIMEOUT):
+    def __init__(
+        self, question: TriviaQuestion | HorseTriviaQuestion,
+        author_id: int, timeout: float = QUESTION_TIMEOUT,
+    ):
         super().__init__(timeout=timeout)
         self.author_id = author_id
         self.question = question
@@ -75,6 +82,8 @@ class TriviaButtonView(discord.ui.View):
 
     async def on_timeout(self):
         """Handle timeout: disable all buttons"""
+        if self.selected_answer is not None:
+            return
         self.disable_all_buttons()
         self.selected_answer = None
         self.is_correct = False
@@ -103,6 +112,10 @@ class TriviaCommands(commands.Cog):
     async def cog_load(self):
         """Load seed questions when the cog is loaded"""
         await self._load_seed_questions()
+        try:
+            await HorseTriviaQuestion.seed()
+        except Exception:
+            logger.exception("Failed to seed horse-photo trivia")
 
     async def _load_seed_questions(self):
         """Load seed questions from JSON if the trivia_questions table is empty"""
@@ -132,7 +145,9 @@ class TriviaCommands(commands.Cog):
     # ──────────────────────────────────────────────
 
     @staticmethod
-    def _create_question_embed(question: TriviaQuestion, current_streak: int) -> discord.Embed:
+    def _create_question_embed(
+        question: TriviaQuestion | HorseTriviaQuestion, current_streak: int,
+    ) -> discord.Embed:
         """Format a trivia question into an embed"""
         embed = discord.Embed(
             title=f"🎯 Question #{current_streak + 1}",
@@ -213,7 +228,30 @@ class TriviaCommands(commands.Cog):
             used_question_ids.add(question.id)
         return question
 
-    async def _start_game(self, interaction: discord.Interaction):
+    async def _get_next_horse_question(self, used_ids: set[int], unavailable_ids: set[int]):
+        question = await HorseTriviaQuestion.get_random(used_ids | unavailable_ids)
+        if question is None and used_ids:
+            used_ids.clear()
+            question = await HorseTriviaQuestion.get_random(unavailable_ids)
+        if question is not None:
+            used_ids.add(question.id)
+        return question
+
+    @staticmethod
+    def _reveal_horse(embed, question, view):
+        embed = embed.copy()
+        outcome = "Correct!" if view.is_correct else (
+            "Time's up!" if view.selected_answer is None else "Incorrect."
+        )
+        embed.description = f"{outcome} **{discord.utils.escape_markdown(question.correct_answer)}**"
+        embed.description += f"\n\n[Source](<{question.source_url}>)"
+        for button in view.children:
+            button.disabled = True
+            if button.label == question.correct_answer:
+                button.style = discord.ButtonStyle.success
+        return embed
+
+    async def _start_game(self, interaction: discord.Interaction, *, horse: bool = False):
         """Core game loop: fetches questions, handles answers, manages streaks"""
         user_id = interaction.user.id
 
@@ -227,17 +265,43 @@ class TriviaCommands(commands.Cog):
 
         used_question_ids: set[int] = set()
         self.active_sessions[user_id] = used_question_ids
+        unavailable_ids: set[int] = set()
+        current_streak = 0
+        total_correct = 0
+        score_attempted = False
+        view = None
+        score_model = HorseTriviaLeaderboardEntry if horse else TriviaLeaderboardEntry
+
+        async def save_score():
+            nonlocal score_attempted
+            if total_correct and not score_attempted:
+                # Never retry an ambiguous database failure and risk counting twice.
+                score_attempted = True
+                _, is_new = await score_model.record_result(user_id, current_streak, total_correct)
+                return is_new
+            return False
 
         try:
-            current_streak = 0
-            total_correct = 0
             is_first = True
             message = None
 
             while True:
                 # Fetch a random question that has not appeared in this cycle.
-                question = await self._get_next_question(used_question_ids)
+                question = (
+                    await self._get_next_horse_question(used_question_ids, unavailable_ids)
+                    if horse else await self._get_next_question(used_question_ids)
+                )
                 if not question:
+                    if horse:
+                        is_new_record = await save_score()
+                        result = self._create_result_embed(current_streak, is_new_record)
+                        result.description += (
+                            "\nNo usable horse photos remain. Ask an admin to use `/trivia horse_add`."
+                        )
+                        await interaction.edit_original_response(
+                            embed=result, view=None, attachments=[]
+                        )
+                        return
                     await interaction.followup.send(
                         "❌ No trivia questions available! Ask an admin to add some with `/trivia add`.",
                         ephemeral=True
@@ -245,39 +309,60 @@ class TriviaCommands(commands.Cog):
                     return
 
                 embed = self._create_question_embed(question, current_streak)
-                view = TriviaButtonView(question, user_id, timeout=QUESTION_TIMEOUT)
+                edits = {}
+                if horse:
+                    embed.title = f"🐎 Horse #{current_streak + 1}"
+                    embed.set_footer(text=f"Current streak: {current_streak} | 20 seconds to choose")
+                    try:
+                        embed.set_image(url=validate_https_url(question.image_reference))
+                    except ValueError:
+                        logger.warning("Skipping invalid horse photo URL #%s", question.id)
+                        unavailable_ids.add(question.id)
+                        continue
+                    edits["attachments"] = []
 
+                if not is_first:
+                    await asyncio.sleep(3.0 if horse else 1.5)
+                view = TriviaButtonView(question, user_id, timeout=QUESTION_TIMEOUT)
                 if is_first:
                     is_first = False
-                    await interaction.edit_original_response(embed=embed, view=view)
+                    await interaction.edit_original_response(embed=embed, view=view, **edits)
                     message = await interaction.original_response()
                 else:
-                    # Brief pause before showing the next question
-                    await asyncio.sleep(1.5)
-                    await message.edit(embed=embed, view=view)
+                    await message.edit(embed=embed, view=view, **edits)
 
                 # Wait for the user to answer (or timeout)
                 await view.wait()
 
+                if horse:
+                    embed = self._reveal_horse(embed, question, view)
+
                 if view.is_correct:
                     current_streak += 1
                     total_correct += 1
+                    if horse:
+                        embed.set_footer(text=f"Current streak: {current_streak} | Next photo shortly")
+                        await message.edit(embed=embed, view=view)
                 else:
                     # Game over — update leaderboard and show result
-                    if current_streak > 0:
-                        _, is_new_record = await TriviaLeaderboardEntry.record_result(
-                            user_id, current_streak, total_correct
-                        )
-                    else:
-                        is_new_record = False
-
+                    is_new_record = await save_score()
                     result_embed = self._create_result_embed(current_streak, is_new_record)
+                    if horse:
+                        result_embed.description += f"\n\n{embed.description}"
+                        result_embed.set_image(url=embed.image.url)
                     await message.edit(embed=result_embed, view=view)
                     return
 
         finally:
-            # Clean up session
-            self.active_sessions.pop(user_id, None)
+            try:
+                if view is not None:
+                    view.disable_all_buttons()
+                    view.stop()
+                # Preserve earned photo points if fetching/sending the next round fails.
+                if horse:
+                    await save_score()
+            finally:
+                self.active_sessions.pop(user_id, None)
 
     # ──────────────────────────────────────────────
     #  Slash commands
@@ -288,6 +373,105 @@ class TriviaCommands(commands.Cog):
         """Start a new survival trivia game"""
         await interaction.response.defer(ephemeral=True)
         await self._start_game(interaction)
+
+    @trivia.command(name="horse", description="Guess real racehorses from photos")
+    async def horse(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await self._start_game(interaction, horse=True)
+        except Exception:
+            logger.exception("Horse-photo game failed")
+            await interaction.followup.send(
+                "The photo game could not continue. Please try again later.", ephemeral=True
+            )
+
+    @trivia.command(name="horse_leaderboard", description="View the horse-photo trivia leaderboard")
+    async def horse_leaderboard(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        try:
+            entries = await HorseTriviaLeaderboardEntry.get_top(10)
+            embed = self._create_leaderboard_embed(entries)
+            embed.title = "🐎 Horse Photo Leaderboard"
+            embed.set_footer(text="Play with /trivia horse to get on the leaderboard!")
+            if not entries:
+                embed.description = "No one has played yet! Be the first with `/trivia horse`!"
+            await interaction.followup.send(embed=embed)
+        except Exception:
+            logger.exception("Unable to fetch horse-photo leaderboard")
+            await interaction.followup.send("Unable to fetch horse-photo scores. Please try again later.")
+
+    @trivia.command(name="horse_add", description="Add a horse photo and four answers (Admin only)")
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.describe(
+        image_url="Stable, public HTTPS image URL (not an expiring attachment link)",
+        source_url="HTTPS source page for identity and attribution",
+        author="Photographer or rights holder", license="Reuse license, e.g. CC BY-SA 4.0",
+        correct_answer="Correct horse name", wrong_option_1="First wrong horse name",
+        wrong_option_2="Second wrong horse name", wrong_option_3="Third wrong horse name",
+    )
+    async def horse_add(
+        self, interaction: discord.Interaction, image_url: str, source_url: str,
+        author: str, license: str, correct_answer: str,
+        wrong_option_1: str, wrong_option_2: str, wrong_option_3: str,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            question = await HorseTriviaQuestion.create(
+                options=[correct_answer, wrong_option_1, wrong_option_2, wrong_option_3],
+                image_url=image_url, source_url=source_url, author=author, license=license,
+            )
+            await interaction.followup.send(f"Horse photo added (ID: {question.id}).", ephemeral=True)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+        except Exception:
+            logger.exception("Unable to add horse photo")
+            await interaction.followup.send("Unable to add the photo. Please try again later.", ephemeral=True)
+
+    @trivia.command(name="horse_list", description="List horse photos and answers (Admin only)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def horse_list(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            questions = await HorseTriviaQuestion.get_all()
+            if not questions:
+                await interaction.followup.send("No horse photos found.", ephemeral=True)
+            for start in range(0, len(questions), 5):
+                embed = discord.Embed(title="Horse Photo Questions", color=discord.Color.blue())
+                for question in questions[start:start + 5]:
+                    choices = ", ".join(discord.utils.escape_markdown(x) for x in question.options)
+                    embed.add_field(
+                        name=f"#{question.id} — {question.correct_answer}",
+                        value=f"{choices}\n[Source](<{question.source_url}>)", inline=False,
+                    )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception:
+            logger.exception("Unable to list horse photos")
+            await interaction.followup.send("Unable to list horse photos. Please try again later.", ephemeral=True)
+
+    @trivia.command(name="horse_delete", description="Delete a horse photo (Admin only)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def horse_delete(self, interaction: discord.Interaction, question_id: int):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            deleted = await HorseTriviaQuestion.delete(question_id)
+            text = f"Horse photo #{question_id} deleted." if deleted else "No horse photo found with that ID."
+            await interaction.followup.send(text, ephemeral=True)
+        except Exception:
+            logger.exception("Unable to delete horse photo")
+            await interaction.followup.send("Unable to delete the photo. Please try again later.", ephemeral=True)
+
+    @horse_add.error
+    @horse_list.error
+    @horse_delete.error
+    async def horse_admin_error(self, interaction, error):
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message(
+                "You need administrator permissions to manage horse photos.", ephemeral=True
+            )
+        else:
+            logger.error("Horse admin command failed: %s", error, exc_info=error)
+            sender = interaction.followup.send if interaction.response.is_done() else interaction.response.send_message
+            await sender("Unable to manage horse photos. Please try again later.", ephemeral=True)
 
     @trivia.command(name="leaderboard", description="View the trivia leaderboard")
     async def leaderboard(self, interaction: discord.Interaction):

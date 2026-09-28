@@ -2,7 +2,7 @@
 Trivia leaderboard data model
 """
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import ClassVar, Optional, List
 from datetime import datetime
 import logging
 
@@ -18,13 +18,15 @@ class TriviaLeaderboardEntry:
     highest_streak: int
     total_correct: int
     last_played: datetime
+    # Fixed class constants only; never accept SQL identifiers from user input.
+    table: ClassVar[str] = "trivia_leaderboard"
 
     @classmethod
     async def get_by_user(cls, user_id: int) -> Optional['TriviaLeaderboardEntry']:
         """Fetch a user's leaderboard entry"""
-        query = """
+        query = f"""
             SELECT user_id, highest_streak, total_correct, last_played
-            FROM trivia_leaderboard
+            FROM {cls.table}
             WHERE user_id = $1
         """
         row = await db.fetchrow(query, user_id)
@@ -43,13 +45,13 @@ class TriviaLeaderboardEntry:
         cls, user_id: int, streak: int, total_correct: int
     ) -> tuple['TriviaLeaderboardEntry', bool]:
         """Atomically update stats and report whether the streak beat the old PB."""
-        query = """
-            INSERT INTO trivia_leaderboard
+        query = f"""
+            INSERT INTO {cls.table}
                 (user_id, highest_streak, total_correct, last_played)
             VALUES ($1, $2, $3, NOW())
             ON CONFLICT (user_id) DO UPDATE
-            SET highest_streak = GREATEST(trivia_leaderboard.highest_streak, $2),
-                total_correct = trivia_leaderboard.total_correct + $3,
+            SET highest_streak = GREATEST({cls.table}.highest_streak, $2),
+                total_correct = {cls.table}.total_correct + $3,
                 last_played = NOW()
             RETURNING user_id, highest_streak, total_correct, last_played
         """
@@ -58,7 +60,7 @@ class TriviaLeaderboardEntry:
             # covers both first insert and subsequent updates for this user.
             await conn.execute("SELECT pg_advisory_xact_lock($1)", user_id)
             previous = await conn.fetchval(
-                "SELECT highest_streak FROM trivia_leaderboard WHERE user_id = $1",
+                f"SELECT highest_streak FROM {cls.table} WHERE user_id = $1",
                 user_id,
             )
             row = await conn.fetchrow(query, user_id, streak, total_correct)
@@ -73,11 +75,16 @@ class TriviaLeaderboardEntry:
     @classmethod
     async def get_top(cls, n: int = 10) -> List['TriviaLeaderboardEntry']:
         """Fetch the top N users by highest_streak descending"""
-        query = """
+        query = f"""
             SELECT user_id, highest_streak, total_correct, last_played
-            FROM trivia_leaderboard
+            FROM {cls.table}
             ORDER BY highest_streak DESC, total_correct DESC
             LIMIT $1
         """
         rows = await db.fetch(query, n)
         return [cls(**dict(row)) for row in rows]
+
+
+class HorseTriviaLeaderboardEntry(TriviaLeaderboardEntry):
+    """Photo-game scores use the same atomic updates in their own table."""
+    table = "horse_trivia_leaderboard"
