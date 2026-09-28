@@ -54,7 +54,12 @@ available. Ambiguous database failures are not retried to avoid double scoring.
 
 ## Starter pack and deployment
 
-The repository includes metadata for 20 starter photos in `assets/horse_trivia/`.
+The repository includes metadata for 116 real-horse photos in
+`assets/horse_trivia/`, covering every horse in the reviewed 136-character
+GameTora support-card roster for which a reusable real photograph could be
+verified. The remaining 20 roster entries have no verified reusable horse photo
+in Wikimedia or Openverse as of 2026-09-28 and are recorded as unavailable in
+[`gametora_support_roster.json`](../assets/horse_trivia/gametora_support_roster.json).
 No image files are stored in the repository or Docker image. The
 [manifest](../assets/horse_trivia/manifest.json) records names, distractors,
 sources, authors, licenses, and modifications. See the
@@ -68,7 +73,8 @@ On normal startup the bot creates `horse_trivia_questions` and
 seeds the pack transactionally using stable `seed_key` values and
 `ON CONFLICT DO NOTHING`. Deletion sets `deleted_at` and preserves the seed key,
 so restart neither duplicates nor resurrects questions. Do not physically delete
-starter rows to remove them from play. Startup also migrates legacy starter
+starter rows to remove them from play. Newly added roster photos use stable seed
+keys based on GameTora character IDs. Startup also migrates legacy starter
 filenames such as `001.jpg` to their image URLs and updates the related photo
 metadata. This preserves row IDs, answers, deletion markers, and scores, and
 does not overwrite existing custom image URLs.

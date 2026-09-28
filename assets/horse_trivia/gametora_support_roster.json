@@ -1,0 +1,960 @@
+{
+  "source": "https://gametora.com/umamusume/supports",
+  "data_manifest_hash": "88dea522",
+  "reviewed_on": "2026-09-28",
+  "selection": "Unique real-horse characters with char_id below 9000; group card titles excluded.",
+  "horses": [
+    {
+      "char_id": 1001,
+      "name": "Special Week",
+      "name_jp": "スペシャルウィーク",
+      "wikidata_id": "Q11312941",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1002,
+      "name": "Silence Suzuka",
+      "name_jp": "サイレンススズカ",
+      "wikidata_id": "Q7514393",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1003,
+      "name": "Tokai Teio",
+      "name_jp": "トウカイテイオー",
+      "wikidata_id": "Q11321082",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1004,
+      "name": "Maruzensky",
+      "name_jp": "マルゼンスキー",
+      "wikidata_id": "Q11341313",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1005,
+      "name": "Fuji Kiseki",
+      "name_jp": "フジキセキ",
+      "wikidata_id": "Q11333106",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1006,
+      "name": "Oguri Cap",
+      "name_jp": "オグリキャップ",
+      "wikidata_id": "Q7080301",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1007,
+      "name": "Gold Ship",
+      "name_jp": "ゴールドシップ",
+      "wikidata_id": "Q4309285",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1008,
+      "name": "Vodka",
+      "name_jp": "ウオッカ",
+      "wikidata_id": "Q7939315",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1009,
+      "name": "Daiwa Scarlet",
+      "name_jp": "ダイワスカーレット",
+      "wikidata_id": "Q5209832",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1010,
+      "name": "Taiki Shuttle",
+      "name_jp": "タイキシャトル",
+      "wikidata_id": "Q7676023",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1011,
+      "name": "Grass Wonder",
+      "name_jp": "グラスワンダー",
+      "wikidata_id": "Q11300176",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1012,
+      "name": "Hishi Amazon",
+      "name_jp": "ヒシアマゾン",
+      "wikidata_id": "Q11330007",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1013,
+      "name": "Mejiro McQueen",
+      "name_jp": "メジロマックイーン",
+      "wikidata_id": "Q6810492",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1014,
+      "name": "El Condor Pasa",
+      "name_jp": "エルコンドルパサー",
+      "wikidata_id": "Q5351060",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1015,
+      "name": "T M Opera O",
+      "name_jp": "テイエムオペラオー",
+      "wikidata_id": "Q11319077",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1016,
+      "name": "Narita Brian",
+      "name_jp": "ナリタブライアン",
+      "wikidata_id": "Q6965984",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1017,
+      "name": "Symboli Rudolf",
+      "name_jp": "シンボリルドルフ",
+      "wikidata_id": "Q11308703",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1018,
+      "name": "Air Groove",
+      "name_jp": "エアグルーヴ",
+      "wikidata_id": "Q11289428",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1019,
+      "name": "Agnes Digital",
+      "name_jp": "アグネスデジタル",
+      "wikidata_id": "Q11283071",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1020,
+      "name": "Seiun Sky",
+      "name_jp": "セイウンスカイ",
+      "wikidata_id": "Q11314114",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1021,
+      "name": "Tamamo Cross",
+      "name_jp": "タマモクロス",
+      "wikidata_id": "Q11316319",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1022,
+      "name": "Fine Motion",
+      "name_jp": "ファインモーション",
+      "wikidata_id": "Q11331935",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1023,
+      "name": "Biwa Hayahide",
+      "name_jp": "ビワハヤヒデ",
+      "wikidata_id": "Q11331057",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1024,
+      "name": "Mayano Top Gun",
+      "name_jp": "マヤノトップガン",
+      "wikidata_id": "Q6796863",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1025,
+      "name": "Manhattan Cafe",
+      "name_jp": "マンハッタンカフェ",
+      "wikidata_id": "Q11341616",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1026,
+      "name": "Mihono Bourbon",
+      "name_jp": "ミホノブルボン",
+      "wikidata_id": "Q11342502",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1027,
+      "name": "Mejiro Ryan",
+      "name_jp": "メジロライアン",
+      "wikidata_id": "Q11343621",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1028,
+      "name": "Hishi Akebono",
+      "name_jp": "ヒシアケボノ",
+      "wikidata_id": "Q11330003",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1029,
+      "name": "Yukino Bijin",
+      "name_jp": "ユキノビジン",
+      "wikidata_id": "Q11345568",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1030,
+      "name": "Rice Shower",
+      "name_jp": "ライスシャワー",
+      "wikidata_id": "Q11346365",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1031,
+      "name": "Ines Fujin",
+      "name_jp": "アイネスフウジン",
+      "wikidata_id": "Q11282362",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1032,
+      "name": "Agnes Tachyon",
+      "name_jp": "アグネスタキオン",
+      "wikidata_id": "Q4693122",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1033,
+      "name": "Admire Vega",
+      "name_jp": "アドマイヤベガ",
+      "wikidata_id": "Q17221619",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1034,
+      "name": "Inari One",
+      "name_jp": "イナリワン",
+      "wikidata_id": "Q11286896",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1035,
+      "name": "Winning Ticket",
+      "name_jp": "ウイニングチケット",
+      "wikidata_id": "Q11288343",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1036,
+      "name": "Air Shakur",
+      "name_jp": "エアシャカール",
+      "wikidata_id": "Q11289434",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1037,
+      "name": "Eishin Flash",
+      "name_jp": "エイシンフラッシュ",
+      "wikidata_id": "Q11289562",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1038,
+      "name": "Curren Chan",
+      "name_jp": "カレンチャン",
+      "wikidata_id": "Q11295262",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1039,
+      "name": "Kawakami Princess",
+      "name_jp": "カワカミプリンセス",
+      "wikidata_id": "Q11295327",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1040,
+      "name": "Gold City",
+      "name_jp": "ゴールドシチー",
+      "wikidata_id": "Q11303936",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1041,
+      "name": "Sakura Bakushin O",
+      "name_jp": "サクラバクシンオー",
+      "wikidata_id": "Q11304520",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1042,
+      "name": "Seeking the Pearl",
+      "name_jp": "シーキングザパール",
+      "wikidata_id": "Q11308764",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1043,
+      "name": "Shinko Windy",
+      "name_jp": "シンコウウインディ",
+      "wikidata_id": "Q11308583",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1044,
+      "name": "Sweep Tosho",
+      "name_jp": "スイープトウショウ",
+      "wikidata_id": "Q11311170",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1045,
+      "name": "Super Creek",
+      "name_jp": "スーパークリーク",
+      "wikidata_id": "Q11313702",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1046,
+      "name": "Smart Falcon",
+      "name_jp": "スマートファルコン",
+      "wikidata_id": "Q11313287",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1047,
+      "name": "Zenno Rob Roy",
+      "name_jp": "ゼンノロブロイ",
+      "wikidata_id": "Q8069153",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1048,
+      "name": "Tosen Jordan",
+      "name_jp": "トーセンジョーダン",
+      "wikidata_id": "Q11322361",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1049,
+      "name": "Nakayama Festa",
+      "name_jp": "ナカヤマフェスタ",
+      "wikidata_id": "Q6960385",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1050,
+      "name": "Narita Taishin",
+      "name_jp": "ナリタタイシン",
+      "wikidata_id": "Q11324059",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1051,
+      "name": "Nishino Flower",
+      "name_jp": "ニシノフラワー",
+      "wikidata_id": "Q11324330",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1052,
+      "name": "Haru Urara",
+      "name_jp": "ハルウララ",
+      "wikidata_id": "Q1587832",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1053,
+      "name": "Bamboo Memory",
+      "name_jp": "バンブーメモリー",
+      "wikidata_id": "Q11328460",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1054,
+      "name": "Biko Pegasus",
+      "name_jp": "ビコーペガサス",
+      "wikidata_id": "Q11330524",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1055,
+      "name": "Marvelous Sunday",
+      "name_jp": "マーベラスサンデー",
+      "wikidata_id": "Q11341810",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1056,
+      "name": "Matikanefukukitaru",
+      "name_jp": "マチカネフクキタル",
+      "wikidata_id": "Q11340387",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1057,
+      "name": "Mr. C.B.",
+      "name_jp": "ミスターシービー",
+      "wikidata_id": "Q107204699",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1058,
+      "name": "Meisho Doto",
+      "name_jp": "メイショウドトウ",
+      "wikidata_id": "Q11343351",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1059,
+      "name": "Mejiro Dober",
+      "name_jp": "メジロドーベル",
+      "wikidata_id": "Q11343610",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1060,
+      "name": "Nice Nature",
+      "name_jp": "ナイスネイチャ",
+      "wikidata_id": "Q11323568",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1061,
+      "name": "King Halo",
+      "name_jp": "キングヘイロー",
+      "wikidata_id": "Q11297913",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1062,
+      "name": "Matikanetannhauser",
+      "name_jp": "マチカネタンホイザ",
+      "wikidata_id": "Q11340385",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1063,
+      "name": "Ikuno Dictus",
+      "name_jp": "イクノディクタス",
+      "wikidata_id": "Q11286426",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1064,
+      "name": "Mejiro Palmer",
+      "name_jp": "メジロパーマー",
+      "wikidata_id": "Q11343609",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1065,
+      "name": "Daitaku Helios",
+      "name_jp": "ダイタクヘリオス",
+      "wikidata_id": "Q11316796",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1066,
+      "name": "Twin Turbo",
+      "name_jp": "ツインターボ",
+      "wikidata_id": "Q11318680",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1067,
+      "name": "Satono Diamond",
+      "name_jp": "サトノダイヤモンド",
+      "wikidata_id": "Q24876319",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1068,
+      "name": "Kitasan Black",
+      "name_jp": "キタサンブラック",
+      "wikidata_id": "Q22006995",
+      "photo_status": "existing"
+    },
+    {
+      "char_id": 1069,
+      "name": "Sakura Chiyono O",
+      "name_jp": "サクラチヨノオー",
+      "wikidata_id": "Q11304516",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1070,
+      "name": "Sirius Symboli",
+      "name_jp": "シリウスシンボリ",
+      "wikidata_id": "Q11308300",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1071,
+      "name": "Mejiro Ardan",
+      "name_jp": "メジロアルダン",
+      "wikidata_id": "Q11343602",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1072,
+      "name": "Yaeno Muteki",
+      "name_jp": "ヤエノムテキ",
+      "wikidata_id": "Q11344960",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1073,
+      "name": "Tsurumaru Tsuyoshi",
+      "name_jp": "ツルマルツヨシ",
+      "wikidata_id": "Q11318830",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1074,
+      "name": "Mejiro Bright",
+      "name_jp": "メジロブライト",
+      "wikidata_id": "Q11343613",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1075,
+      "name": "Daring Tact",
+      "name_jp": "デアリングタクト",
+      "wikidata_id": "Q92866902",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1076,
+      "name": "Sakura Laurel",
+      "name_jp": "サクラローレル",
+      "wikidata_id": "Q11304534",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1077,
+      "name": "Narita Top Road",
+      "name_jp": "ナリタトップロード",
+      "wikidata_id": "Q11324060",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1078,
+      "name": "Yamanin Zephyr",
+      "name_jp": "ヤマニンゼファー",
+      "wikidata_id": "Q11345211",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1080,
+      "name": "Transcend",
+      "name_jp": "トランセンド",
+      "wikidata_id": "Q11321903",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1081,
+      "name": "Espoir City",
+      "name_jp": "エスポワールシチー",
+      "wikidata_id": "Q17221932",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1082,
+      "name": "North Flight",
+      "name_jp": "ノースフライト",
+      "wikidata_id": "Q11325871",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1083,
+      "name": "Symboli Kris S",
+      "name_jp": "シンボリクリスエス",
+      "wikidata_id": "Q7661156",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1084,
+      "name": "Tanino Gimlet",
+      "name_jp": "タニノギムレット",
+      "wikidata_id": "Q11316237",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1085,
+      "name": "Daiichi Ruby",
+      "name_jp": "ダイイチルビー",
+      "wikidata_id": "Q11316636",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1086,
+      "name": "Mejiro Ramonu",
+      "name_jp": "メジロラモーヌ",
+      "wikidata_id": "Q11343622",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1087,
+      "name": "Aston Machan",
+      "name_jp": "アストンマーチャン",
+      "wikidata_id": "Q11283546",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1089,
+      "name": "Cheval Grand",
+      "name_jp": "シュヴァルグラン",
+      "wikidata_id": "Q47469480",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1090,
+      "name": "Verxina",
+      "name_jp": "ヴィルシーナ",
+      "wikidata_id": "Q11352062",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1091,
+      "name": "Vivlos",
+      "name_jp": "ヴィブロス",
+      "wikidata_id": "Q27920862",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1092,
+      "name": "Dantsu Flame",
+      "name_jp": "ダンツフレーム",
+      "wikidata_id": "Q11317516",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1093,
+      "name": "K.S.Miracle",
+      "name_jp": "ケイエスミラクル",
+      "wikidata_id": "Q11300988",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1094,
+      "name": "Jungle Pocket",
+      "name_jp": "ジャングルポケット",
+      "wikidata_id": "Q11310148",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1096,
+      "name": "No Reason",
+      "name_jp": "ノーリーズン",
+      "wikidata_id": "Q11325940",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1097,
+      "name": "Still in Love",
+      "name_jp": "スティルインラブ",
+      "wikidata_id": "Q17223334",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1098,
+      "name": "Copano Rickey",
+      "name_jp": "コパノリッキー",
+      "wikidata_id": "Q17222744",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1099,
+      "name": "Hokko Tarumae",
+      "name_jp": "ホッコータルマエ",
+      "wikidata_id": "Q11337753",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1100,
+      "name": "Wonder Acute",
+      "name_jp": "ワンダーアキュート",
+      "wikidata_id": "Q11351547",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1101,
+      "name": "Samson Big",
+      "name_jp": "サムソンビッグ",
+      "wikidata_id": "Q11305171",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1102,
+      "name": "Sounds of Earth",
+      "name_jp": "サウンズオブアース",
+      "wikidata_id": "Q28689144",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1103,
+      "name": "Royce and Royce",
+      "name_jp": "ロイスアンドロイス",
+      "wikidata_id": "Q11350110",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1104,
+      "name": "Katsuragi Ace",
+      "name_jp": "カツラギエース",
+      "wikidata_id": "Q11294327",
+      "photo_status": "unavailable"
+    },
+    {
+      "char_id": 1105,
+      "name": "Neo Universe",
+      "name_jp": "ネオユニヴァース",
+      "wikidata_id": "Q11325271",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1106,
+      "name": "Hishi Miracle",
+      "name_jp": "ヒシミラクル",
+      "wikidata_id": "Q11330014",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1107,
+      "name": "Tap Dance City",
+      "name_jp": "タップダンスシチー",
+      "wikidata_id": "Q11316184",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1108,
+      "name": "Duramente",
+      "name_jp": "ドゥラメンテ",
+      "wikidata_id": "Q20047186",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1109,
+      "name": "Rhein Kraft",
+      "name_jp": "ラインクラフト",
+      "wikidata_id": "Q11346589",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1110,
+      "name": "Cesario",
+      "name_jp": "シーザリオ",
+      "wikidata_id": "Q11308798",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1111,
+      "name": "Air Messiah",
+      "name_jp": "エアメサイア",
+      "wikidata_id": "Q11289486",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1112,
+      "name": "Daring Heart",
+      "name_jp": "デアリングハート",
+      "wikidata_id": "Q11319948",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1113,
+      "name": "Fusaichi Pandora",
+      "name_jp": "フサイチパンドラ",
+      "wikidata_id": "Q11333082",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1114,
+      "name": "Buena Vista",
+      "name_jp": "ブエナビスタ",
+      "wikidata_id": "Q4309308",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1115,
+      "name": "Orfevre",
+      "name_jp": "オルフェーヴル",
+      "wikidata_id": "Q7101712",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1116,
+      "name": "Gentildonna",
+      "name_jp": "ジェンティルドンナ",
+      "wikidata_id": "Q4309296",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1117,
+      "name": "Win Variation",
+      "name_jp": "ウインバリアシオン",
+      "wikidata_id": "Q11288444",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1118,
+      "name": "Admire Groove",
+      "name_jp": "アドマイヤグルーヴ",
+      "wikidata_id": "Q11284092",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1119,
+      "name": "Dream Journey",
+      "name_jp": "ドリームジャーニー",
+      "wikidata_id": "Q11323248",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1120,
+      "name": "Calstone Light O",
+      "name_jp": "カルストンライトオ",
+      "wikidata_id": "Q11041122",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1121,
+      "name": "Durandal",
+      "name_jp": "デュランダル",
+      "wikidata_id": "Q10932646",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1124,
+      "name": "Bubble Gum Fellow",
+      "name_jp": "バブルガムフェロー",
+      "wikidata_id": "Q11328013",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1126,
+      "name": "Sakura Chitose O",
+      "name_jp": "サクラチトセオー",
+      "wikidata_id": "Q11304515",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1127,
+      "name": "Fenomeno",
+      "name_jp": "フェノーメノ",
+      "wikidata_id": "Q11332700",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1128,
+      "name": "Blast Onepiece",
+      "name_jp": "ブラストワンピース",
+      "wikidata_id": "Q52319651",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1129,
+      "name": "Almond Eye",
+      "name_jp": "アーモンドアイ",
+      "wikidata_id": "Q51914025",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1130,
+      "name": "Lucky Lilac",
+      "name_jp": "ラッキーライラック",
+      "wikidata_id": "Q47469474",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1131,
+      "name": "Gran Alegria",
+      "name_jp": "グランアレグリア",
+      "wikidata_id": "Q57313819",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1133,
+      "name": "Chrono Genesis",
+      "name_jp": "クロノジェネシス",
+      "wikidata_id": "Q61787371",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1134,
+      "name": "Curren Bouquetd'or",
+      "name_jp": "カレンブーケドール",
+      "wikidata_id": "Q76958236",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1135,
+      "name": "Stay Gold",
+      "name_jp": "ステイゴールド",
+      "wikidata_id": "Q11312249",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1136,
+      "name": "Red Desire",
+      "name_jp": "レッドディザイア",
+      "wikidata_id": "Q11349753",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1137,
+      "name": "Kiseki",
+      "name_jp": "キセキ",
+      "wikidata_id": "Q47469473",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1138,
+      "name": "Forever Young",
+      "name_jp": "フォーエバーヤング",
+      "wikidata_id": "Q123408146",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1139,
+      "name": "Casino Drive",
+      "name_jp": "カジノドライヴ",
+      "wikidata_id": "Q5048852",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1140,
+      "name": "Marche Lorraine",
+      "name_jp": "マルシュロレーヌ",
+      "wikidata_id": "Q105817223",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1143,
+      "name": "Victoire Pisa",
+      "name_jp": "ヴィクトワールピサ",
+      "wikidata_id": "Q7925631",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1145,
+      "name": "Rulership",
+      "name_jp": "ルーラーシップ",
+      "wikidata_id": "Q11349271",
+      "photo_status": "available"
+    },
+    {
+      "char_id": 1146,
+      "name": "Efforia",
+      "name_jp": "エフフォーリア",
+      "wikidata_id": "Q105669684",
+      "photo_status": "available"
+    }
+  ]
+}

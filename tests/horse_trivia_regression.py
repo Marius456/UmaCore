@@ -66,9 +66,16 @@ def test_invalid_answer_options(options):
 
 def test_starter_pack_is_complete_and_uses_image_urls():
     entries = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-    assert len(entries) == 20
-    assert len({entry["seed_key"] for entry in entries}) == 20
-    assert len({entry["correct_answer"] for entry in entries}) == 20
+    roster = json.loads((ASSET_DIR / "gametora_support_roster.json").read_text(encoding="utf-8"))
+    available = {
+        horse["name"] for horse in roster["horses"]
+        if horse["photo_status"] != "unavailable"
+    }
+    assert len(roster["horses"]) == 136
+    assert len(available) == 116
+    assert len(entries) == 116
+    assert len({entry["seed_key"] for entry in entries}) == 116
+    assert {entry["correct_answer"] for entry in entries} == available
     assert not list(ASSET_DIR.glob("*.jpg"))
     for entry in entries:
         validate_question(entry["options"], entry["author"], entry["license"])
@@ -76,6 +83,7 @@ def test_starter_pack_is_complete_and_uses_image_urls():
         assert entry["options"].count(entry["correct_answer"]) == 1
         validate_https_url(entry["image_reference"])
         assert entry["image_reference"].startswith("https://upload.wikimedia.org/")
+        assert "crop" not in entry["image_reference"].casefold()
         assert entry["modifications"]
         if entry["license"].startswith("CC"):
             assert entry["license_url"].startswith("https://creativecommons.org/")
@@ -277,7 +285,8 @@ class HorseStorageTests(unittest.IsolatedAsyncioTestCase):
             first_key = next(iter(rows))
             rows[first_key]["deleted"] = True
             await HorseTriviaQuestion.seed()
-        self.assertEqual(len(rows), 20)
+        expected = len(json.loads(MANIFEST_PATH.read_text(encoding="utf-8")))
+        self.assertEqual(len(rows), expected)
         self.assertTrue(rows[first_key]["deleted"])
 
     async def test_delete_soft_deletes_and_queries_exclude_tombstones(self):
@@ -346,7 +355,7 @@ class HorseStorageTests(unittest.IsolatedAsyncioTestCase):
         with patch("models.horse_trivia_question.db.transaction", transaction):
             await HorseTriviaQuestion.seed()
             await HorseTriviaQuestion.seed()
-        self.assertEqual(len(rows), 20)
+        self.assertEqual(len(rows), len(entries))
         self.assertEqual(rows[entries[0]["seed_key"]]["image"], entries[0]["image_reference"])
         self.assertEqual(rows[entries[1]["seed_key"]]["image"], entries[1]["image_reference"])
         self.assertTrue(rows[entries[1]["seed_key"]]["deleted"])
