@@ -317,6 +317,10 @@ class HorseStorageTests(unittest.IsolatedAsyncioTestCase):
             entries[0]["seed_key"]: {"image": "001.jpg", "deleted": False},
             entries[1]["seed_key"]: {"image": "002.jpg", "deleted": True},
             entries[2]["seed_key"]: {"image": "https://example.org/custom.jpg", "deleted": False},
+            "horse-photo-v1-005": {
+                "image": "https://upload.wikimedia.org/wikipedia/commons/f/f8/Gold_Ship_Arima_kinen_2015%28IMG1%29.jpg",
+                "deleted": True,
+            },
         }
         async def execute(query, *args):
             if "INSERT INTO" in query:
@@ -339,6 +343,9 @@ class HorseStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[entries[1]["seed_key"]]["image"], entries[1]["image_reference"])
         self.assertTrue(rows[entries[1]["seed_key"]]["deleted"])
         self.assertEqual(rows[entries[2]["seed_key"]]["image"], "https://example.org/custom.jpg")
+        gold_ship = next(entry for entry in entries if entry["seed_key"] == "horse-photo-v1-005")
+        self.assertEqual(rows[gold_ship["seed_key"]]["image"], gold_ship["image_reference"])
+        self.assertTrue(rows[gold_ship["seed_key"]]["deleted"])
 
 
 class HorseCommandTests(unittest.IsolatedAsyncioTestCase):

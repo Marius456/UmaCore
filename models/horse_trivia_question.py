@@ -8,6 +8,12 @@ from config.database import db
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "horse_trivia"
 MANIFEST_PATH = ASSET_DIR / "manifest.json"
+# Only replace known retired starter URLs; preserve administrator overrides.
+RETIRED_IMAGE_URLS = {
+    "horse-photo-v1-005": (
+        "https://upload.wikimedia.org/wikipedia/commons/f/f8/Gold_Ship_Arima_kinen_2015%28IMG1%29.jpg",
+    ),
+}
 
 
 def validate_https_url(value: str) -> str:
@@ -127,14 +133,19 @@ class HorseTriviaQuestion:
                     entry["image_reference"], entry["source_url"], entry["author"],
                     entry["license"], entry["license_url"], entry["modifications"],
                 )
-                # Upgrade only the old bundled-file reference for this seed. Keep
-                # IDs, options, custom URLs, scores, and deletion tombstones intact.
-                await conn.execute(
-                    """UPDATE horse_trivia_questions
-                       SET image_reference = $2, source_url = $3, author = $4,
-                           license = $5, license_url = $6, modifications = $7
-                       WHERE seed_key = $1 AND image_reference = $8""",
-                    entry["seed_key"], entry["image_reference"], entry["source_url"],
-                    entry["author"], entry["license"], entry["license_url"],
-                    entry["modifications"], entry["seed_key"].rsplit("-", 1)[-1] + ".jpg",
+                # Migrate known starter images only. Keep IDs, answers, custom
+                # URLs, scores, and deletion tombstones intact.
+                previous_references = (
+                    entry["seed_key"].rsplit("-", 1)[-1] + ".jpg",
+                    *RETIRED_IMAGE_URLS.get(entry["seed_key"], ()),
                 )
+                for previous_reference in previous_references:
+                    await conn.execute(
+                        """UPDATE horse_trivia_questions
+                           SET image_reference = $2, source_url = $3, author = $4,
+                               license = $5, license_url = $6, modifications = $7
+                           WHERE seed_key = $1 AND image_reference = $8""",
+                        entry["seed_key"], entry["image_reference"], entry["source_url"],
+                        entry["author"], entry["license"], entry["license_url"],
+                        entry["modifications"], previous_reference,
+                    )

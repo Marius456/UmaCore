@@ -46,13 +46,13 @@ The game embeds the original image URLs directly. No photo files are bundled, do
 
 ## Gold Ship
 
-- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/f/f8/Gold_Ship_Arima_kinen_2015%28IMG1%29.jpg)
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/4/44/Gold_Ship_%28June_23%2C_2013._54th_Takarazuka_Kinen%29_%289132935181%29.jpg)
 
-- Source: [File:Gold Ship Arima kinen 2015(IMG1).jpg](https://commons.wikimedia.org/wiki/File:Gold_Ship_Arima_kinen_2015(IMG1).jpg)
-- Author: Nadaraikon
-- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Source: [File:Gold Ship (June 23, 2013. 54th Takarazuka Kinen) (9132935181).jpg](https://commons.wikimedia.org/wiki/File:Gold_Ship_(June_23,_2013._54th_Takarazuka_Kinen)_(9132935181).jpg)
+- Author: Ogiyoshisan from Japan
+- License: [CC BY 2.0](https://creativecommons.org/licenses/by/2.0)
 - Changes: None.
-- Original SHA-256: `4d925770a58a5d8d9081155ccc83b26fa78cbf763476032ee411da3142d2113c`
+- Reviewed directly from the source image; no local photo file is stored.
 
 ## Grass Wonder
 
