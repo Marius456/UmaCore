@@ -37,7 +37,7 @@ No parameters.
 
 ## /my_status
 
-View your own status as a public image card with quota progress, monthly fan history,
+View your own status as a public image card with quota progress, daily fan gains,
 performance, and trainer rankings. Requires being linked via `/link_trainer`.
 
 Quota progress compares stored monthly fans with the requirement through the displayed

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from bot.commands.member import MemberCommands
 from models.member import Member
 from models.user_link import UserLink
-from services.member_status_card import card_html, chart_svg, compact, render_card
+from services.member_status_card import card_html, chart_svg, compact, daily_gains, render_card
 from services.member_status_service import build_status, load_member_status
 from services.trainer_profile_service import (
     TrainerProfile, TrainerProfileClient, portrait_url, profile_portrait_url,
@@ -82,8 +82,47 @@ class StatusDataTests(unittest.TestCase):
         self.assertEqual(status.days_active, 5)
         self.assertEqual(status.average, 105 / 4)
         self.assertEqual(len(status.points), 3)
+        self.assertEqual(daily_gains(status.points), [(date(2026, 9, 4), 5)])
+
+    def test_daily_gain_chart_handles_gaps_resets_corrections_and_zero(self):
+        points = [
+            (date(2026, 8, 31), 90),
+            (date(2026, 9, 1), 10),       # monthly reset: unplotted
+            (date(2026, 9, 2), 25),       # consecutive gain
+            (date(2026, 9, 4), 50),       # missing Sep 3: unplotted
+            (date(2026, 9, 5), 45),       # negative correction: unplotted
+            (date(2026, 9, 6), 45),       # genuine zero gain
+            (date(2026, 9, 7), 70),       # consecutive gain
+        ]
+        self.assertEqual(daily_gains(points), [
+            (date(2026, 9, 2), 15),
+            (date(2026, 9, 6), 0),
+            (date(2026, 9, 7), 25),
+        ])
+        status = replace(sample_status(), data_date=date(2026, 9, 7), points=points)
         svg = chart_svg(status)
-        self.assertEqual(svg.count('opacity=".20"'), 1)  # only Sep 3–4 are connected
+        self.assertIn('aria-label="Daily fan gains"', svg)
+        self.assertEqual(svg.count("<rect"), 3)
+        self.assertIn('data-date="2026-09-06" data-gain="0"', svg)
+        self.assertIn('data-date="2026-09-07" data-gain="25"', svg)
+        self.assertIn(">25<", svg)  # compact maximum axis label
+        self.assertIn(">Sep 5<", svg)  # sparse date label
+
+    def test_daily_gain_chart_empty_state_for_single_observation(self):
+        status = replace(sample_status(), points=[(date(2026, 9, 13), 100)])
+        self.assertEqual(daily_gains(status.points), [])
+        self.assertIn("Not enough daily history", chart_svg(status))
+
+    def test_all_zero_daily_gains_render_as_baseline_markers(self):
+        status = replace(sample_status(), points=[
+            (date(2026, 9, 11), 100),
+            (date(2026, 9, 12), 100),
+            (date(2026, 9, 13), 100),
+        ])
+        svg = chart_svg(status)
+        self.assertNotIn("Not enough daily history", svg)
+        self.assertEqual(svg.count('data-gain="0"'), 2)
+        self.assertEqual(svg.count("<path"), 1)
 
     def test_midmonth_join_and_zero_target(self):
         person = member()
@@ -94,8 +133,8 @@ class StatusDataTests(unittest.TestCase):
         self.assertIsNone(status.percent)
         self.assertIsNone(status.best_day)
         self.assertEqual(status.badge, "NO QUOTA")
-        self.assertIn("circle", chart_svg(status))
-        self.assertIn("No fan history", chart_svg(replace(status, points=[])))
+        self.assertIn("Not enough daily history", chart_svg(status))
+        self.assertIn("Not enough daily history", chart_svg(replace(status, points=[])))
 
     def test_quota_periods_and_inactive_state(self):
         for period, label in (("weekly", "Weekly Quota"), ("biweekly", "Biweekly Quota")):
@@ -116,9 +155,18 @@ class StatusDataTests(unittest.TestCase):
         self.assertIn("A&amp;B", html)
         self.assertIn("width:100%", html)
         self.assertIn("268%", html)
+        self.assertIn("DAILY FAN GAIN", html)
+        self.assertIn("21.5M · Sep 13", html)
+        self.assertNotIn("279.5M · Sep 13", html)
         self.assertEqual(compact(8000000), "8M")
         self.assertEqual(compact(-175500000, True), "−175.5M")
         self.assertEqual(compact(None), "—")
+
+    def test_heading_has_no_gain_when_data_date_is_not_a_valid_interval(self):
+        status = replace(sample_status(), points=[
+            (date(2026, 9, 10), 100), (date(2026, 9, 12), 150),
+        ])
+        self.assertIn("— · Sep 13", card_html(status))
 
 
 class ProfileClientTests(unittest.IsolatedAsyncioTestCase):
