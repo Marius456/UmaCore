@@ -50,6 +50,11 @@ LOG_LEVEL=INFO
 OFFICIAL_EVENTS_PROXY=http://proxy-host:8888
 ```
 
+To hide answer-bearing source filenames in horse trivia, deploy the optional
+Cloudflare Worker and add `HORSE_IMAGE_PROXY_URL`, `HORSE_IMAGE_PROXY_KEY`, and
+`HORSE_IMAGE_ALLOWED_HOSTS` as described in the
+[horse-photo trivia guide](horse-trivia.md#neutral-image-urls).
+
 ### 6. Run the bot
 
 ```bash

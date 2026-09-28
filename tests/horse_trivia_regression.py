@@ -12,11 +12,19 @@ from discord import app_commands
 import pytest
 
 from bot.commands.trivia import TriviaButtonView, TriviaCommands
+from config import settings
 from config.database import Database
 from models.horse_trivia_question import (
     ASSET_DIR, MANIFEST_PATH, HorseTriviaQuestion, validate_https_url, validate_question,
 )
 from models.trivia_leaderboard import HorseTriviaLeaderboardEntry, TriviaLeaderboardEntry
+
+
+@pytest.fixture(autouse=True)
+def direct_image_mode(monkeypatch):
+    """Keep this module independent of a developer's local proxy configuration."""
+    monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_URL", "")
+    monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_KEY", "")
 
 
 def question(number=1, image="https://example.org/photo.jpg"):

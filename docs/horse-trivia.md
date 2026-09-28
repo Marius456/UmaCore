@@ -73,14 +73,66 @@ metadata. This preserves row IDs, answers, deletion markers, and scores, and
 does not overwrite existing custom image URLs.
 An unavailable manifest is logged without preventing text trivia from loading.
 
-The bot makes no runtime requests to Commons; Discord fetches the embedded URLs.
-There are no new runtime dependencies.
+The bot makes no runtime image requests; Discord fetches the embedded URLs.
+
+## Neutral image URLs
+
+Direct Commons URLs contain the original filename and can reveal the answer when
+a player hovers the image. The optional Worker in `workers/horse-images/` fixes
+that without storing photos in the bot. The bot encrypts each source URL into an
+authenticated opaque path such as `https://<worker>/h/v1/<token>.jpg`. The
+Worker decrypts it, fetches only an explicitly allowed HTTPS host, strips all
+origin metadata, streams the image, and caches the origin response at
+Cloudflare's edge. It never redirects the player to the source URL.
+
+Deploy it from `workers/horse-images/`:
+
+```powershell
+npm install
+npm test
+npx wrangler login
+npx wrangler deploy
+```
+
+Generate one 32-byte key and save the same value in the Worker secret and the
+bot's protected `.env`. Do not commit it or put it in `wrangler.toml`:
+
+```powershell
+$key = python -c "import secrets; print(secrets.token_hex(32))"
+$key | npx wrangler secret put HORSE_IMAGE_PROXY_KEY
+```
+
+Then configure the bot and restart it:
+
+```env
+HORSE_IMAGE_PROXY_URL=https://umacore-horse-images.<account>.workers.dev
+HORSE_IMAGE_PROXY_KEY=<the same 64-character key>
+HORSE_IMAGE_ALLOWED_HOSTS=upload.wikimedia.org
+```
+
+Configure a custom domain such as `images.umacore.app` in Cloudflare if desired,
+then use that HTTPS origin for `HORSE_IMAGE_PROXY_URL`. The bot accepts only a
+bare HTTPS origin; paths, query strings, credentials, fragments, and non-default
+ports are rejected. If either proxy setting is missing or malformed, partial
+configuration fails closed instead of exposing the source URL. When both are
+unset, direct URLs remain available for local development.
+
+Administrator-added images must use a host present in
+`HORSE_IMAGE_ALLOWED_HOSTS` on both the bot and Worker. Keep this list narrow to
+prevent the Worker from becoming an open proxy. Rotate the key by updating the
+Worker secret and bot environment together; old opaque links then stop working.
+
+The Worker has no image files, database, cookies, or access to UmaCore's private
+API. Its tests verify cross-language encryption, tamper rejection, host and
+protocol restrictions, response-header stripping, content types, size limits,
+and generic errors that do not expose the decrypted URL.
 Commands register through the bot's existing startup command sync. This change
 does not deploy or restart the running bot.
 
 ## Verification
 
-Run `ruff check .` and `pytest -q`. The horse regression tests use fake Discord
+Run `ruff check .`, `pytest -q`, and `npm test` inside
+`workers/horse-images/`. The horse regression tests use fake Discord
 interactions and database connections and require no live credentials.
 
 After deploying to a test Discord server, verify:

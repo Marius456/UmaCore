@@ -93,6 +93,7 @@ Horse-photo trivia includes 20 attributed starter photos, four answer buttons,
 and 20 seconds per round. Administrators can manage the shared photo bank with
 `/trivia horse_add`, `/trivia horse_list`, and `/trivia horse_delete`.
 See the [horse-photo guide](docs/horse-trivia.md) for image requirements and credits.
+The optional Cloudflare image Worker provides cached, answer-safe image URLs.
 
 ---
 
