@@ -5,6 +5,6 @@ workers_dev = true
 preview_urls = false
 
 [vars]
-HORSE_IMAGE_ALLOWED_HOSTS = "upload.wikimedia.org"
+HORSE_IMAGE_ALLOWED_HOSTS = "assets.st-note.com,cdn.netkeiba.com,dir.netkeiba.com,i.daily.jp,jbpress.ismcdn.jp,jra-van.jp,jra.jp,meiba.jp,number.ismcdn.jp,pbs.twimg.com,stat.ameba.jp,static.wikia.nocookie.net,tospo-keiba.jp,uma-furi.com,upload.wikimedia.org,www.meiba.jp"
 
 # Set HORSE_IMAGE_PROXY_KEY using `wrangler secret put`, never here.

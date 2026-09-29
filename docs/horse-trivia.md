@@ -33,9 +33,10 @@ When adding a question:
   form; it cannot confirm that Discord successfully rendered a remote image.
 - `source_url` is an HTTPS source page, at most 300 characters, documenting the
   photograph and identity. It appears after the answer is revealed.
-- Supply the photographer in `author` (up to 200 characters), and the reuse
-  license in `license` (up to 120). Ensure the image may be reused, and include
-  the applicable license information on the source page.
+- Supply the photographer in `author` (up to 200 characters), and the license or
+  rights status in `license` (up to 120). Ensure the intended deployment is
+  permitted to display the image, and include the applicable rights information
+  on the source page.
 - Use four distinct names of 1–80 characters. Leading/trailing whitespace is
   removed; names differing only by case are rejected. The first name,
   `correct_answer`, is the correct answer.
@@ -54,19 +55,21 @@ available. Ambiguous database failures are not retried to avoid double scoring.
 
 ## Starter pack and deployment
 
-The repository includes metadata for 116 real-horse photos in
-`assets/horse_trivia/`, covering every horse in the reviewed 136-character
-GameTora support-card roster for which a reusable real photograph could be
-verified. The remaining 20 roster entries have no verified reusable horse photo
-in Wikimedia or Openverse as of 2026-09-28 and are recorded as unavailable in
+The repository includes metadata for 278 real-horse photos in
+`assets/horse_trivia/`, covering 133 horses in the reviewed 136-character
+GameTora support-card roster. Covered horses can have several distinct photos.
+The remaining three roster entries have no suitable photo without a legible
+horse-name label in the reviewed archives as of 2026-09-29 and are recorded as
+unavailable in
 [`gametora_support_roster.json`](../assets/horse_trivia/gametora_support_roster.json).
 No image files are stored in the repository or Docker image. The
 [manifest](../assets/horse_trivia/manifest.json) records names, distractors,
 sources, authors, licenses, and modifications. See the
-[individual photo credits](../assets/horse_trivia/CREDITS.md) for license links,
-and original-image hashes. The image URLs point to the complete original images
-without cropping or resizing. The photo licenses are separate from the
-repository's MIT license. Some historic photographs have lower resolution.
+[individual photo credits](../assets/horse_trivia/CREDITS.md) for rights and
+source links. The bot never crops or transforms the remote images. The photo licenses and rights statuses
+are separate from the repository's MIT license. JRA gallery photos are marked
+`Copyrighted - private use only`; JRA requires permission for broader secondary
+use. Some historic photographs have lower resolution.
 
 On normal startup the bot creates `horse_trivia_questions` and
 `horse_trivia_leaderboard` without changing the existing trivia tables. The cog
@@ -74,13 +77,14 @@ seeds the pack transactionally using stable `seed_key` values and
 `ON CONFLICT DO NOTHING`. Deletion sets `deleted_at` and preserves the seed key,
 so restart neither duplicates nor resurrects questions. Do not physically delete
 starter rows to remove them from play. Newly added roster photos use stable seed
-keys based on GameTora character IDs. Startup also migrates legacy starter
-filenames such as `001.jpg` to their image URLs and updates the related photo
+keys based on GameTora character IDs and image URLs. Startup also migrates legacy
+starter filenames such as `001.jpg` to their image URLs and updates the related photo
 metadata. This preserves row IDs, answers, deletion markers, and scores, and
 does not overwrite existing custom image URLs.
 An unavailable manifest is logged without preventing text trivia from loading.
 
-The bot makes no runtime image requests; Discord fetches the embedded URLs.
+The bot does not download or store the photos. Discord fetches the embedded URL;
+when the optional proxy is enabled, the Worker retrieves and caches the origin.
 
 ## Neutral image URLs
 
@@ -114,7 +118,7 @@ Then configure the bot and restart it:
 ```env
 HORSE_IMAGE_PROXY_URL=https://umacore-horse-images.<account>.workers.dev
 HORSE_IMAGE_PROXY_KEY=<the same 64-character key>
-HORSE_IMAGE_ALLOWED_HOSTS=upload.wikimedia.org
+HORSE_IMAGE_ALLOWED_HOSTS=assets.st-note.com,cdn.netkeiba.com,dir.netkeiba.com,i.daily.jp,jbpress.ismcdn.jp,jra-van.jp,jra.jp,meiba.jp,number.ismcdn.jp,pbs.twimg.com,stat.ameba.jp,static.wikia.nocookie.net,tospo-keiba.jp,uma-furi.com,upload.wikimedia.org,www.meiba.jp
 ```
 
 Configure a custom domain such as `images.umacore.app` in Cloudflare if desired,
@@ -128,6 +132,8 @@ Administrator-added images must use a host present in
 `HORSE_IMAGE_ALLOWED_HOSTS` on both the bot and Worker. Keep this list narrow to
 prevent the Worker from becoming an open proxy. Rotate the key by updating the
 Worker secret and bot environment together; old opaque links then stop working.
+Deploy the Worker configuration after changing its allowlist; the committed
+configuration permits the bundled Commons, JRA, and historic racing-archive URLs.
 
 The Worker has no image files, database, cookies, or access to UmaCore's private
 API. Its tests verify cross-language encryption, tamper rejection, host and

@@ -89,10 +89,12 @@ After inviting, use `/add_club` with the club's Uma.moe circle ID, then `/set_re
 | `/trivia horse` | Guess real racehorses from photos in a public survival game |
 | `/trivia horse_leaderboard` | View the separate horse-photo rankings |
 
-Horse-photo trivia includes 116 attributed real-horse photos from the 136 unique
-horse characters represented by current GameTora support cards, four answer
-buttons, and 20 seconds per round. Administrators can manage the shared photo bank with
-`/trivia horse_add`, `/trivia horse_list`, and `/trivia horse_delete`.
+Horse-photo trivia includes 278 attributed real-horse photos covering 133 of the
+136 unique horse characters represented by current GameTora support cards, with
+multiple photos per horse where verified sources are available, four answer
+buttons, and 20 seconds per round.
+Administrators can manage the shared photo bank with `/trivia horse_add`,
+`/trivia horse_list`, and `/trivia horse_delete`.
 See the [horse-photo guide](docs/horse-trivia.md) for image requirements and credits.
 The optional Cloudflare image Worker provides cached, answer-safe image URLs.
 

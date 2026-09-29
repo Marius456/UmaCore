@@ -13,6 +13,8 @@ from services.horse_image_url import (
 
 TEST_KEY = bytes(range(32)).hex()
 SOURCE = "https://upload.wikimedia.org/wikipedia/commons/a/ab/Gold_Ship.jpg"
+JRA_SOURCE = "https://jra.jp/gallery/3minmeiba/horse9/img/pic_gallery_1.jpg"
+ARCHIVE_SOURCE = "https://assets.st-note.com/img/example.jpg?width=1200"
 
 
 @pytest.fixture(autouse=True)
@@ -44,6 +46,20 @@ def test_disabled_proxy_keeps_existing_direct_url_mode(monkeypatch):
     monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_URL", "")
     monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_KEY", "")
     assert image_url_for_game(SOURCE) == SOURCE
+
+
+def test_private_use_jra_gallery_host_can_be_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "HORSE_IMAGE_ALLOWED_HOSTS", "upload.wikimedia.org,jra.jp")
+    result = image_url_for_game(JRA_SOURCE)
+    assert result.startswith("https://photos.example.org/h/v1/")
+    assert "jra" not in result and "horse9" not in result
+
+
+def test_private_use_archive_host_can_be_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "HORSE_IMAGE_ALLOWED_HOSTS", "assets.st-note.com")
+    result = image_url_for_game(ARCHIVE_SOURCE)
+    assert result.startswith("https://photos.example.org/h/v1/")
+    assert "st-note" not in result and "width" not in result
 
 
 @pytest.mark.parametrize("base,key", [

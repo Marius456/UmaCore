@@ -40,7 +40,13 @@ BOT_API_PORT = int(os.getenv("BOT_API_PORT", "7890"))
 # Optional independent image Worker. Both URL and key are required to enable it.
 HORSE_IMAGE_PROXY_URL = os.getenv("HORSE_IMAGE_PROXY_URL", "")
 HORSE_IMAGE_PROXY_KEY = os.getenv("HORSE_IMAGE_PROXY_KEY", "")
-HORSE_IMAGE_ALLOWED_HOSTS = os.getenv("HORSE_IMAGE_ALLOWED_HOSTS", "upload.wikimedia.org")
+HORSE_IMAGE_ALLOWED_HOSTS = os.getenv(
+    "HORSE_IMAGE_ALLOWED_HOSTS",
+    "assets.st-note.com,cdn.netkeiba.com,dir.netkeiba.com,i.daily.jp,"
+    "jbpress.ismcdn.jp,jra-van.jp,jra.jp,meiba.jp,number.ismcdn.jp,"
+    "pbs.twimg.com,stat.ameba.jp,static.wikia.nocookie.net,tospo-keiba.jp,"
+    "uma-furi.com,upload.wikimedia.org,www.meiba.jp",
+)
 
 # Logging Configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

@@ -54,6 +54,43 @@ test("HEAD returns no body and retains neutral headers", async () => {
   assert.equal(await response.text(), "");
 });
 
+test("allows the configured private-use JRA gallery host", async () => {
+  const source = "https://jra.jp/gallery/3minmeiba/horse9/img/pic_gallery_1.jpg";
+  const token = await tokenFor(source);
+  const request = new Request(`https://photos.example.org/h/v1/${token}.jpg`);
+  const jraEnv = { ...env, HORSE_IMAGE_ALLOWED_HOSTS: "upload.wikimedia.org,jra.jp" };
+  const response = await serveImage(request, jraEnv, async (received) => {
+    assert.equal(received, source);
+    return new Response(new Uint8Array([255, 216, 255]), {
+      headers: { "Content-Type": "image/jpeg" },
+    });
+  });
+  assert.equal(response.status, 200);
+});
+
+test("sniffs safe image bytes from archive CDNs with generic content types", async () => {
+  for (const genericType of ["application/octet-stream", "binary/octet-stream", ""]) {
+    const headers = genericType ? { "Content-Type": genericType } : {};
+    const response = await serveImage(new Request(url), env, async () => new Response(
+      new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), { headers },
+    ));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "image/jpeg");
+  }
+  const rejected = await serveImage(new Request(url), env, async () => new Response(
+    new TextEncoder().encode("not an image"), { headers: { "Content-Type": "application/octet-stream" } },
+  ));
+  assert.equal(rejected.status, 502);
+});
+
+test("normalizes the nonstandard image/jpg type used by archive CDNs", async () => {
+  const response = await serveImage(new Request(url), env, async () => new Response(
+    new Uint8Array([0xff, 0xd8, 0xff]), { headers: { "Content-Type": "image/jpg" } },
+  ));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "image/jpeg");
+});
+
 test("bad paths, tokens, methods and missing secrets never fetch", async () => {
   const noFetch = () => { throw new Error("Must not fetch"); };
   for (const path of ["/", "/h/v1/Gold_Ship.jpg", `/h/v1/${"x".repeat(90)}.jpg`, `/h/v1/${vector.token}.jpg?url=secret`]) {

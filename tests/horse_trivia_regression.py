@@ -1,11 +1,13 @@
 """Photo gameplay and storage regressions; no live Discord or database credentials needed."""
 import asyncio
+from collections import Counter
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlsplit
 
 import discord
 from discord import app_commands
@@ -72,21 +74,29 @@ def test_starter_pack_is_complete_and_uses_image_urls():
         if horse["photo_status"] != "unavailable"
     }
     assert len(roster["horses"]) == 136
-    assert len(available) == 116
-    assert len(entries) == 116
-    assert len({entry["seed_key"] for entry in entries}) == 116
+    assert len(available) == 133
+    assert len(entries) == 278
+    assert len({entry["seed_key"] for entry in entries}) == 278
+    assert len({entry["image_reference"] for entry in entries}) == 278
     assert {entry["correct_answer"] for entry in entries} == available
+    assert Counter(Counter(entry["correct_answer"] for entry in entries).values()) == {
+        1: 54, 2: 14, 3: 64, 4: 1,
+    }
     assert not list(ASSET_DIR.glob("*.jpg"))
     for entry in entries:
         validate_question(entry["options"], entry["author"], entry["license"])
         validate_https_url(entry["source_url"])
         assert entry["options"].count(entry["correct_answer"]) == 1
         validate_https_url(entry["image_reference"])
-        assert entry["image_reference"].startswith("https://upload.wikimedia.org/")
+        allowed_hosts = set(settings.HORSE_IMAGE_ALLOWED_HOSTS.split(","))
+        assert urlsplit(entry["image_reference"]).hostname in allowed_hosts
         assert "crop" not in entry["image_reference"].casefold()
         assert entry["modifications"]
         if entry["license"].startswith("CC"):
             assert entry["license_url"].startswith("https://creativecommons.org/")
+        if entry["license"] == "Copyrighted - private use only":
+            assert entry["author"]
+            validate_https_url(entry["license_url"])
 
 
 class HorseGameTests(unittest.IsolatedAsyncioTestCase):

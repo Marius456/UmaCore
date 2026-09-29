@@ -1,8 +1,10 @@
 # Horse photo credits
 
-These photographs are separately licensed; the repository MIT license does not replace their licenses. Sources and identities were reviewed on 2026-09-28. All photographs preserve their full source framing and original resolution, including any visible labels. No cropping or retouching is applied.
+These photographs have separate licenses or rights statuses; the repository MIT license does not replace them. Sources and identities were reviewed on 2026-09-29. All photographs preserve their full source framing as served. No cropping or retouching is applied, and photos with a legible horse-name label are excluded.
 
-The game embeds the original image URLs directly. No photo files are bundled, downloaded, or uploaded by the bot. Where shown, hashes identify the reviewed source images.
+JRA and historic racing-archive photographs marked `Copyrighted - private use only` are included for this private-use deployment. Their linked usage terms apply, and broader secondary use may require permission from the rights holder.
+
+The manifest stores the original image URLs. The optional image Worker serves them through neutral cached URLs during play. No photo files are bundled, downloaded, or uploaded by the bot. Where shown, hashes identify reviewed source images.
 
 ## Agnes Digital
 
@@ -972,5 +974,1332 @@ These additional file pages and identities were individually checked on 2026-09-
 - Source: [File:Zenno Rob Roy 20041031.jpg](https://commons.wikimedia.org/wiki/File:Zenno_Rob_Roy_20041031.jpg)
 - Author: Goki ( talk )
 - License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Additional photo variants
+
+### Oguri Cap
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/5/5e/Oguri_Cap_20081109P1.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Oguri_Cap_20081109P1.jpg](https://commons.wikimedia.org/wiki/File:Oguri_Cap_20081109P1.jpg)
+- Author: Goki ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Gold Ship
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/7/73/%E3%82%B4%E3%83%BC%E3%83%AB%E3%83%89%E3%82%B7%E3%83%83%E3%83%97_-_%E7%AC%AC62%E5%9B%9E%E9%98%AA%E7%A5%9E%E5%A4%A7%E8%B3%9E%E5%85%B8_-_Gold_Ship_-_Hanshin_Racecourse_%2813757213563%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:%E3%82%B4%E3%83%BC%E3%83%AB%E3%83%89%E3%82%B7%E3%83%83%E3%83%97_-_%E7%AC%AC62%E5%9B%9E%E9%98%AA%E7%A5%9E%E5%A4%A7%E8%B3%9E%E5%85%B8_-_Gold_Ship_-_Hanshin_Racecourse_(13757213563).jpg](https://commons.wikimedia.org/wiki/File:%E3%82%B4%E3%83%BC%E3%83%AB%E3%83%89%E3%82%B7%E3%83%83%E3%83%97_-_%E7%AC%AC62%E5%9B%9E%E9%98%AA%E7%A5%9E%E5%A4%A7%E8%B3%9E%E5%85%B8_-_Gold_Ship_-_Hanshin_Racecourse_(13757213563).jpg)
+- Author: Ogiyoshisan from Japan
+- License: [CC BY 2.0](https://creativecommons.org/licenses/by/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Gold Ship
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/0/0c/Gold_Ship_%28June_23%2C_2013._54th_Takarazuka_Kinen%29_%289135155316%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Gold_Ship_(June_23,_2013._54th_Takarazuka_Kinen)_(9135155316).jpg](https://commons.wikimedia.org/wiki/File:Gold_Ship_(June_23,_2013._54th_Takarazuka_Kinen)_(9135155316).jpg)
+- Author: Ogiyoshisan from Japan
+- License: [CC BY 2.0](https://creativecommons.org/licenses/by/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Vodka
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/5/50/Vodka%28horse%29_20070608a.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Vodka(horse)_20070608a.jpg](https://commons.wikimedia.org/wiki/File:Vodka(horse)_20070608a.jpg)
+- Author: Flickr user kanagen
+- License: [CC BY 2.0](https://creativecommons.org/licenses/by/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Vodka
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/d/dc/Vodka%28horse%29_20070608R1.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Vodka(horse)_20070608R1.jpg](https://commons.wikimedia.org/wiki/File:Vodka(horse)_20070608R1.jpg)
+- Author: Goki ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Mejiro McQueen
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/8/8f/Mejiro_McQueen_20020722.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Mejiro_McQueen_20020722.jpg](https://commons.wikimedia.org/wiki/File:Mejiro_McQueen_20020722.jpg)
+- Author: dora1977
+- License: Public domain
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Symboli Rudolf
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/8/8d/Symboli_rudolf.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Symboli_rudolf.jpg](https://commons.wikimedia.org/wiki/File:Symboli_rudolf.jpg)
+- Author: もがみますみ。投稿者により誘導馬騎乗者、厩務員の顔部分にぼかし処理
+- License: Copyrighted free use
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Agnes Digital
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/7/73/AgnesDigital-2000-11-19.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:AgnesDigital-2000-11-19.jpg](https://commons.wikimedia.org/wiki/File:AgnesDigital-2000-11-19.jpg)
+- Author: TRJN
+- License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Mayano Top Gun
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/0/0a/MayanoTopGun-1997-11-30i.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:MayanoTopGun-1997-11-30i.jpg](https://commons.wikimedia.org/wiki/File:MayanoTopGun-1997-11-30i.jpg)
+- Author: TRJN
+- License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Mayano Top Gun
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/3/37/MayanoTopGun-1997-4-27sa.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:MayanoTopGun-1997-4-27sa.jpg](https://commons.wikimedia.org/wiki/File:MayanoTopGun-1997-4-27sa.jpg)
+- Author: TRJN
+- License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Eishin Flash
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/e/e1/Eishin-Flash20100418.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Eishin-Flash20100418.jpg](https://commons.wikimedia.org/wiki/File:Eishin-Flash20100418.jpg)
+- Author: Cake6 ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Curren Chan
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/f/fc/Curren-Chan20120325%282%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Curren-Chan20120325(2).jpg](https://commons.wikimedia.org/wiki/File:Curren-Chan20120325(2).jpg)
+- Author: Cake6 ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Curren Chan
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/8/8d/Curren-Chan20111002%282%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Curren-Chan20111002(2).jpg](https://commons.wikimedia.org/wiki/File:Curren-Chan20111002(2).jpg)
+- Author: Cake6 ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Kawakami Princess
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/a/ae/Kawakami_Princess_DSCN2849_20061015.JPG)
+- Source: [https://commons.wikimedia.org/wiki/File:Kawakami_Princess_DSCN2849_20061015.JPG](https://commons.wikimedia.org/wiki/File:Kawakami_Princess_DSCN2849_20061015.JPG)
+- Author: Ogiyoshisan
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Kawakami Princess
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/2/29/Kawakami_Princess_DSCN2952_20061112.JPG)
+- Source: [https://commons.wikimedia.org/wiki/File:Kawakami_Princess_DSCN2952_20061112.JPG](https://commons.wikimedia.org/wiki/File:Kawakami_Princess_DSCN2952_20061112.JPG)
+- Author: Ogiyoshisan
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Tosen Jordan
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/1/17/Tosen_Jordan_20121125a.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Tosen_Jordan_20121125a.jpg](https://commons.wikimedia.org/wiki/File:Tosen_Jordan_20121125a.jpg)
+- Author: Flickr user urasimaru
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Tosen Jordan
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/e/e7/Tosen_Jordan_IMG_9770_20140607.JPG)
+- Source: [https://commons.wikimedia.org/wiki/File:Tosen_Jordan_IMG_9770_20140607.JPG](https://commons.wikimedia.org/wiki/File:Tosen_Jordan_IMG_9770_20140607.JPG)
+- Author: Ogiyoshisan
+- License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Nakayama Festa
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/4/46/%E3%83%8A%E3%82%AB%E3%83%A4%E3%83%9E%E3%83%95%E3%82%A7%E3%82%B9%E3%82%BF_%E3%81%86%E3%82%89%E3%81%8B%E3%82%8F%E5%84%AA%E9%A7%BF%E3%83%93%E3%83%AC%E3%83%83%E3%82%B8%E3%82%A2%E3%82%A8%E3%83%AB%E3%81%AB%E3%81%A6%E3%80%82%282024.02%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:%E3%83%8A%E3%82%AB%E3%83%A4%E3%83%9E%E3%83%95%E3%82%A7%E3%82%B9%E3%82%BF_%E3%81%86%E3%82%89%E3%81%8B%E3%82%8F%E5%84%AA%E9%A7%BF%E3%83%93%E3%83%AC%E3%83%83%E3%82%B8%E3%82%A2%E3%82%A8%E3%83%AB%E3%81%AB%E3%81%A6%E3%80%82(2024.02).jpg](https://commons.wikimedia.org/wiki/File:%E3%83%8A%E3%82%AB%E3%83%A4%E3%83%9E%E3%83%95%E3%82%A7%E3%82%B9%E3%82%BF_%E3%81%86%E3%82%89%E3%81%8B%E3%82%8F%E5%84%AA%E9%A7%BF%E3%83%93%E3%83%AC%E3%83%83%E3%82%B8%E3%82%A2%E3%82%A8%E3%83%AB%E3%81%AB%E3%81%A6%E3%80%82(2024.02).jpg)
+- Author: Hatomizinko
+- License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Nakayama Festa
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/9/9e/Nakayama-Festa.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Nakayama-Festa.jpg](https://commons.wikimedia.org/wiki/File:Nakayama-Festa.jpg)
+- Author: 計記録
+- License: [CC BY 3.0](https://creativecommons.org/licenses/by/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Haru Urara
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/d/d9/Haru_Urara_20210518_1.JPG)
+- Source: [https://commons.wikimedia.org/wiki/File:Haru_Urara_20210518_1.JPG](https://commons.wikimedia.org/wiki/File:Haru_Urara_20210518_1.JPG)
+- Author: Own work
+- License: Public domain
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Marvelous Sunday
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/d/d7/MarvelousSunday-1997-4-27d.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:MarvelousSunday-1997-4-27d.jpg](https://commons.wikimedia.org/wiki/File:MarvelousSunday-1997-4-27d.jpg)
+- Author: TRJN
+- License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Matikanefukukitaru
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/c/ce/Matikanefukukitaru-1997-11-2.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Matikanefukukitaru-1997-11-2.jpg](https://commons.wikimedia.org/wiki/File:Matikanefukukitaru-1997-11-2.jpg)
+- Author: TRJN
+- License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Satono Diamond
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/c/cd/Satono_Diamond_Kikuka_Sho_2016%28IMG2%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Satono_Diamond_Kikuka_Sho_2016(IMG2).jpg](https://commons.wikimedia.org/wiki/File:Satono_Diamond_Kikuka_Sho_2016(IMG2).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Satono Diamond
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/f/f9/Satono_Diamond_Kobe_Shimbun_Hai_2016%28IMG1%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Satono_Diamond_Kobe_Shimbun_Hai_2016(IMG1).jpg](https://commons.wikimedia.org/wiki/File:Satono_Diamond_Kobe_Shimbun_Hai_2016(IMG1).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Kitasan Black
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/9/9c/Japan_Cup_Kitasan_Black_%2826948578249%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Japan_Cup_Kitasan_Black_(26948578249).jpg](https://commons.wikimedia.org/wiki/File:Japan_Cup_Kitasan_Black_(26948578249).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Kitasan Black
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/1/1d/Kitasan_Black_Japan_Cup_%2826948462229%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Kitasan_Black_Japan_Cup_(26948462229).jpg](https://commons.wikimedia.org/wiki/File:Kitasan_Black_Japan_Cup_(26948462229).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Sakura Laurel
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/2/28/SakuraLaurel-1997-4--27s.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:SakuraLaurel-1997-4--27s.jpg](https://commons.wikimedia.org/wiki/File:SakuraLaurel-1997-4--27s.jpg)
+- Author: TRJN
+- License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Sakura Laurel
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/1/1b/SakuraLaurel-1997-4--27s2.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:SakuraLaurel-1997-4--27s2.jpg](https://commons.wikimedia.org/wiki/File:SakuraLaurel-1997-4--27s2.jpg)
+- Author: TRJN
+- License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Transcend
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/e/e3/Transcend-2011nambuhai-tokyorc-002.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Transcend-2011nambuhai-tokyorc-002.jpg](https://commons.wikimedia.org/wiki/File:Transcend-2011nambuhai-tokyorc-002.jpg)
+- Author: Chabata k
+- License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Transcend
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/1/1e/Transcend-horse20101107.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Transcend-horse20101107.jpg](https://commons.wikimedia.org/wiki/File:Transcend-horse20101107.jpg)
+- Author: Cake6 ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Espoir City
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/2/25/Espoir-city_JBC-Classic_2013%28IMG1%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Espoir-city_JBC-Classic_2013(IMG1).jpg](https://commons.wikimedia.org/wiki/File:Espoir-city_JBC-Classic_2013(IMG1).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Espoir City
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/5/51/Espoir_City_20090505P1.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Espoir_City_20090505P1.jpg](https://commons.wikimedia.org/wiki/File:Espoir_City_20090505P1.jpg)
+- Author: Goki ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Symboli Kris S
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/d/d2/%E3%82%B7%E3%83%B3%E3%83%9C%E3%83%AA%E3%82%AF%E3%83%AA%E3%82%B9%E3%82%A8%E3%82%B9_%284412939%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:%E3%82%B7%E3%83%B3%E3%83%9C%E3%83%AA%E3%82%AF%E3%83%AA%E3%82%B9%E3%82%A8%E3%82%B9_(4412939).jpg](https://commons.wikimedia.org/wiki/File:%E3%82%B7%E3%83%B3%E3%83%9C%E3%83%AA%E3%82%AF%E3%83%AA%E3%82%B9%E3%82%A8%E3%82%B9_(4412939).jpg)
+- Author: hibino from Kanagawa, Japan
+- License: [CC BY 2.0](https://creativecommons.org/licenses/by/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Tanino Gimlet
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/6/66/Tanino_Gimlet_at_Versailles_Resort_Farm%2C_2026.webp)
+- Source: [https://commons.wikimedia.org/wiki/File:Tanino_Gimlet_at_Versailles_Resort_Farm,_2026.webp](https://commons.wikimedia.org/wiki/File:Tanino_Gimlet_at_Versailles_Resort_Farm,_2026.webp)
+- Author: Reddit user: AgentH8voc
+- License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Aston Machan
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/3/32/Aston_Machan_in_Ohkasho_DSCN3626_20070408.JPG)
+- Source: [https://commons.wikimedia.org/wiki/File:Aston_Machan_in_Ohkasho_DSCN3626_20070408.JPG](https://commons.wikimedia.org/wiki/File:Aston_Machan_in_Ohkasho_DSCN3626_20070408.JPG)
+- Author: Ogiyoshisan
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Cheval Grand
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/4/4e/Cheval_Grand_Hanshin_Daishoten_2016%28IMG2%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Cheval_Grand_Hanshin_Daishoten_2016(IMG2).jpg](https://commons.wikimedia.org/wiki/File:Cheval_Grand_Hanshin_Daishoten_2016(IMG2).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Cheval Grand
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/8/83/Cheval_Grand_Japan_Cup_%2826885953229%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Cheval_Grand_Japan_Cup_(26885953229).jpg](https://commons.wikimedia.org/wiki/File:Cheval_Grand_Japan_Cup_(26885953229).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Verxina
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/8/80/Verxina20120408.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Verxina20120408.jpg](https://commons.wikimedia.org/wiki/File:Verxina20120408.jpg)
+- Author: Cake6 ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Verxina
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/f/f8/Verxina20111211.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Verxina20111211.jpg](https://commons.wikimedia.org/wiki/File:Verxina20111211.jpg)
+- Author: Cake6 ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Copano Rickey
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/2/2b/Copano_Rickey_in_Tokyo_Daishoten_Day_at_Oi_racecourse_%2831836210752%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Copano_Rickey_in_Tokyo_Daishoten_Day_at_Oi_racecourse_(31836210752).jpg](https://commons.wikimedia.org/wiki/File:Copano_Rickey_in_Tokyo_Daishoten_Day_at_Oi_racecourse_(31836210752).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Copano Rickey
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/c/cc/Copano_Rickey_in_Tokyo_Daishoten_Day_at_Oi_racecourse_%2831144000084%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Copano_Rickey_in_Tokyo_Daishoten_Day_at_Oi_racecourse_(31144000084).jpg](https://commons.wikimedia.org/wiki/File:Copano_Rickey_in_Tokyo_Daishoten_Day_at_Oi_racecourse_(31144000084).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Hokko Tarumae
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/7/7d/Tokyo_Daishoten_20141229_Hokko_Tarumae.JPG)
+- Source: [https://commons.wikimedia.org/wiki/File:Tokyo_Daishoten_20141229_Hokko_Tarumae.JPG](https://commons.wikimedia.org/wiki/File:Tokyo_Daishoten_20141229_Hokko_Tarumae.JPG)
+- Author: 馬面長伊奈 This photo was taken with Nikon D7100 and AF-S DX Nikkor 18-200mm/3.5-5.6G ED VR II
+- License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Hokko Tarumae
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/7/71/Hokko_Tarumae_2015_Kawasaki_Kinen.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Hokko_Tarumae_2015_Kawasaki_Kinen.jpg](https://commons.wikimedia.org/wiki/File:Hokko_Tarumae_2015_Kawasaki_Kinen.jpg)
+- Author: nakashi
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Wonder Acute
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/b/b4/Tokyo_Daishoten_20141229_Wonder_Acute.JPG)
+- Source: [https://commons.wikimedia.org/wiki/File:Tokyo_Daishoten_20141229_Wonder_Acute.JPG](https://commons.wikimedia.org/wiki/File:Tokyo_Daishoten_20141229_Wonder_Acute.JPG)
+- Author: 馬面長伊奈
+- License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Wonder Acute
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/8/8a/Wonder-Acute.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Wonder-Acute.jpg](https://commons.wikimedia.org/wiki/File:Wonder-Acute.jpg)
+- Author: 計記録
+- License: [CC BY 3.0](https://creativecommons.org/licenses/by/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Sounds of Earth
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/1/19/Sounds_of_earth%2C_Paddock_Japan_Cup_%2845322350384%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Sounds_of_earth,_Paddock_Japan_Cup_(45322350384).jpg](https://commons.wikimedia.org/wiki/File:Sounds_of_earth,_Paddock_Japan_Cup_(45322350384).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Sounds of Earth
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/b/b0/Sounds_of_earth%2C_Paddock_Japan_Cup_%2845322365554%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Sounds_of_earth,_Paddock_Japan_Cup_(45322365554).jpg](https://commons.wikimedia.org/wiki/File:Sounds_of_earth,_Paddock_Japan_Cup_(45322365554).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Hishi Miracle
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/f/f5/%E3%83%92%E3%82%B7%E3%83%9F%E3%83%A9%E3%82%AF%E3%83%AB.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:%E3%83%92%E3%82%B7%E3%83%9F%E3%83%A9%E3%82%AF%E3%83%AB.jpg](https://commons.wikimedia.org/wiki/File:%E3%83%92%E3%82%B7%E3%83%9F%E3%83%A9%E3%82%AF%E3%83%AB.jpg)
+- Author: ROG
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Duramente
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/c/ca/Duramente_%28The_82th_Tokyo_Yushun%29.JPG)
+- Source: [https://commons.wikimedia.org/wiki/File:Duramente_(The_82th_Tokyo_Yushun).JPG](https://commons.wikimedia.org/wiki/File:Duramente_(The_82th_Tokyo_Yushun).JPG)
+- Author: Wushi
+- License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Duramente
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/5/51/Duramente_Tokyo_Yushun_2015%28IMG2%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Duramente_Tokyo_Yushun_2015(IMG2).jpg](https://commons.wikimedia.org/wiki/File:Duramente_Tokyo_Yushun_2015(IMG2).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Buena Vista
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/c/c7/2011Japan_cup_Buena_Vista_%284%EF%BC%9A3%29.JPG)
+- Source: [https://commons.wikimedia.org/wiki/File:2011Japan_cup_Buena_Vista_(4%EF%BC%9A3).JPG](https://commons.wikimedia.org/wiki/File:2011Japan_cup_Buena_Vista_(4%EF%BC%9A3).JPG)
+- Author: つる１２１４
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Buena Vista
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/6/66/Buena-Vista-horse20100220.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Buena-Vista-horse20100220.jpg](https://commons.wikimedia.org/wiki/File:Buena-Vista-horse20100220.jpg)
+- Author: Cake6 ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Orfevre
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/1/15/Orfevre_%28March_31%2C_2013_Hanshin_Racecourse%29_%288948786604%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Orfevre_(March_31,_2013_Hanshin_Racecourse)_(8948786604).jpg](https://commons.wikimedia.org/wiki/File:Orfevre_(March_31,_2013_Hanshin_Racecourse)_(8948786604).jpg)
+- Author: Ogiyoshisan from Japan
+- License: [CC BY 2.0](https://creativecommons.org/licenses/by/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Orfevre
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/7/7e/Orfevre_2012.JPG)
+- Source: [https://commons.wikimedia.org/wiki/File:Orfevre_2012.JPG](https://commons.wikimedia.org/wiki/File:Orfevre_2012.JPG)
+- Author: Hide4307
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Gentildonna
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/0/05/%E3%82%B8%E3%83%A3%E3%83%91%E3%83%B3%E3%82%AB%E3%83%83%E3%83%97_%E3%82%B8%E3%82%A7%E3%83%B3%E3%83%86%E3%82%A3%E3%83%AB%E3%83%89%E3%83%B3%E3%83%8A.JPG)
+- Source: [https://commons.wikimedia.org/wiki/File:%E3%82%B8%E3%83%A3%E3%83%91%E3%83%B3%E3%82%AB%E3%83%83%E3%83%97_%E3%82%B8%E3%82%A7%E3%83%B3%E3%83%86%E3%82%A3%E3%83%AB%E3%83%89%E3%83%B3%E3%83%8A.JPG](https://commons.wikimedia.org/wiki/File:%E3%82%B8%E3%83%A3%E3%83%91%E3%83%B3%E3%82%AB%E3%83%83%E3%83%97_%E3%82%B8%E3%82%A7%E3%83%B3%E3%83%86%E3%82%A3%E3%83%AB%E3%83%89%E3%83%B3%E3%83%8A.JPG)
+- Author: 藤崎優希
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Gentildonna
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/2/23/Gentildonna_Japan_Cup_2013%28IMG2%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Gentildonna_Japan_Cup_2013(IMG2).jpg](https://commons.wikimedia.org/wiki/File:Gentildonna_Japan_Cup_2013(IMG2).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Win Variation
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/3/38/Win_Variation_Nikkei_Sho_2014%28IMG2%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Win_Variation_Nikkei_Sho_2014(IMG2).jpg](https://commons.wikimedia.org/wiki/File:Win_Variation_Nikkei_Sho_2014(IMG2).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Win Variation
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/0/02/Win_Variation_Nikkei_Sho_2014%28IMG1%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Win_Variation_Nikkei_Sho_2014(IMG1).jpg](https://commons.wikimedia.org/wiki/File:Win_Variation_Nikkei_Sho_2014(IMG1).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Fenomeno
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/4/48/Fenomeno_2013.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Fenomeno_2013.jpg](https://commons.wikimedia.org/wiki/File:Fenomeno_2013.jpg)
+- Author: nakashi
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Fenomeno
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/e/ed/Fenomeno_2012_Japanese_Derby.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Fenomeno_2012_Japanese_Derby.jpg](https://commons.wikimedia.org/wiki/File:Fenomeno_2012_Japanese_Derby.jpg)
+- Author: nakashi
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Blast Onepiece
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/3/3b/Blast_Onepiece_10R_Tokyo_Yushun_%28Japanese_Derby%29_%2840695818800%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Blast_Onepiece_10R_Tokyo_Yushun_(Japanese_Derby)_(40695818800).jpg](https://commons.wikimedia.org/wiki/File:Blast_Onepiece_10R_Tokyo_Yushun_(Japanese_Derby)_(40695818800).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Blast Onepiece
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/3/36/Blast_Onepiece%2C_ikezoe_10R_Tokyo_Yushun_%28Japanese_Derby%29_%2827632948827%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Blast_Onepiece,_ikezoe_10R_Tokyo_Yushun_(Japanese_Derby)_(27632948827).jpg](https://commons.wikimedia.org/wiki/File:Blast_Onepiece,_ikezoe_10R_Tokyo_Yushun_(Japanese_Derby)_(27632948827).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Almond Eye
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/d/dd/Almond_Eye%2C_Paddock_Japan_Cup_%2845134776695%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Almond_Eye,_Paddock_Japan_Cup_(45134776695).jpg](https://commons.wikimedia.org/wiki/File:Almond_Eye,_Paddock_Japan_Cup_(45134776695).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Almond Eye
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/5/51/Almond_Eye%2C_Paddock_Japan_Cup_%2845134778585%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Almond_Eye,_Paddock_Japan_Cup_(45134778585).jpg](https://commons.wikimedia.org/wiki/File:Almond_Eye,_Paddock_Japan_Cup_(45134778585).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Lucky Lilac
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/f/f3/Lucky_Lilac_Tulip_syo_2018%28IMG2%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Lucky_Lilac_Tulip_syo_2018(IMG2).jpg](https://commons.wikimedia.org/wiki/File:Lucky_Lilac_Tulip_syo_2018(IMG2).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Lucky Lilac
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/1/1a/Lucky_Lilac_Hanshin_Juvenile_Fillies_2017%28IMG1%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Lucky_Lilac_Hanshin_Juvenile_Fillies_2017(IMG1).jpg](https://commons.wikimedia.org/wiki/File:Lucky_Lilac_Hanshin_Juvenile_Fillies_2017(IMG1).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Gran Alegria
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/9/9a/Gran_Alegria_Ouka_Syo_2019.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Gran_Alegria_Ouka_Syo_2019.jpg](https://commons.wikimedia.org/wiki/File:Gran_Alegria_Ouka_Syo_2019.jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Gran Alegria
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/9/9c/Gran_Alegria_Victoria_Mile_2021.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Gran_Alegria_Victoria_Mile_2021.jpg](https://commons.wikimedia.org/wiki/File:Gran_Alegria_Victoria_Mile_2021.jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Chrono Genesis
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/c/c2/Chrono_Genesis_Shukasho_2019%28IMG4%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Chrono_Genesis_Shukasho_2019(IMG4).jpg](https://commons.wikimedia.org/wiki/File:Chrono_Genesis_Shukasho_2019(IMG4).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Chrono Genesis
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/c/cc/Chrono_Genesis_Shukasho_2019%28IMG2%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Chrono_Genesis_Shukasho_2019(IMG2).jpg](https://commons.wikimedia.org/wiki/File:Chrono_Genesis_Shukasho_2019(IMG2).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Stay Gold
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/e/ec/Staygold.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Staygold.jpg](https://commons.wikimedia.org/wiki/File:Staygold.jpg)
+- Author: Topgun1997
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Kiseki
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/2/25/Kiseki%2C_Paddock_Japan_Cup_%2845322366534%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Kiseki,_Paddock_Japan_Cup_(45322366534).jpg](https://commons.wikimedia.org/wiki/File:Kiseki,_Paddock_Japan_Cup_(45322366534).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Kiseki
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/6/6f/Kiseki%2C_Paddock_Japan_Cup_%2845322370344%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Kiseki,_Paddock_Japan_Cup_(45322370344).jpg](https://commons.wikimedia.org/wiki/File:Kiseki,_Paddock_Japan_Cup_(45322370344).jpg)
+- Author: nakashi from Chofu, Tokyo, JAPAN
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Forever Young
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/f/fb/Forever_Young_2024_Japan_Dirt_Classic.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Forever_Young_2024_Japan_Dirt_Classic.jpg](https://commons.wikimedia.org/wiki/File:Forever_Young_2024_Japan_Dirt_Classic.jpg)
+- Author: nakashi
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Forever Young
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/7/7b/Ryusei_Sakai_with_Forever_Young_2024_Japan_Dirt_Classic.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Ryusei_Sakai_with_Forever_Young_2024_Japan_Dirt_Classic.jpg](https://commons.wikimedia.org/wiki/File:Ryusei_Sakai_with_Forever_Young_2024_Japan_Dirt_Classic.jpg)
+- Author: nakashi
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Victoire Pisa
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/4/4a/Victoire-Pisa20100418%282%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Victoire-Pisa20100418(2).jpg](https://commons.wikimedia.org/wiki/File:Victoire-Pisa20100418(2).jpg)
+- Author: Cake6 ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Victoire Pisa
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/0/08/Victoire-Pisa20091226.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Victoire-Pisa20091226.jpg](https://commons.wikimedia.org/wiki/File:Victoire-Pisa20091226.jpg)
+- Author: Cake6 ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Rulership
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/5/5c/Rulership_20121125a.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Rulership_20121125a.jpg](https://commons.wikimedia.org/wiki/File:Rulership_20121125a.jpg)
+- Author: Flickr user urasimaru
+- License: [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Rulership
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/2/25/Rulership20110116.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Rulership20110116.jpg](https://commons.wikimedia.org/wiki/File:Rulership20110116.jpg)
+- Author: Cake6 ( talk )
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Efforia
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/9/9e/Efforia_Satsuki_Sho_2021%28IMG1%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Efforia_Satsuki_Sho_2021(IMG1).jpg](https://commons.wikimedia.org/wiki/File:Efforia_Satsuki_Sho_2021(IMG1).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Efforia
+- Image: [Original photograph](https://upload.wikimedia.org/wikipedia/commons/5/53/Efforia_Satsuki_Sho_2021%28IMG2%29.jpg)
+- Source: [https://commons.wikimedia.org/wiki/File:Efforia_Satsuki_Sho_2021(IMG2).jpg](https://commons.wikimedia.org/wiki/File:Efforia_Satsuki_Sho_2021(IMG2).jpg)
+- Author: Nadaraikon
+- License: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Special Week
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse9/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse9/](https://jra.jp/gallery/3minmeiba/horse9/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Special Week
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse9/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse9/](https://jra.jp/gallery/3minmeiba/horse9/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Silence Suzuka
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse25/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse25/](https://jra.jp/gallery/3minmeiba/horse25/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Silence Suzuka
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse25/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse25/](https://jra.jp/gallery/3minmeiba/horse25/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Tokai Teio
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse35/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse35/](https://jra.jp/gallery/3minmeiba/horse35/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Tokai Teio
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse35/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse35/](https://jra.jp/gallery/3minmeiba/horse35/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Oguri Cap
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse13/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse13/](https://jra.jp/gallery/3minmeiba/horse13/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Daiwa Scarlet
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse29/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse29/](https://jra.jp/gallery/3minmeiba/horse29/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Daiwa Scarlet
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse29/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse29/](https://jra.jp/gallery/3minmeiba/horse29/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Taiki Shuttle
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse8/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse8/](https://jra.jp/gallery/3minmeiba/horse8/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Taiki Shuttle
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse8/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse8/](https://jra.jp/gallery/3minmeiba/horse8/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Grass Wonder
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse12/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse12/](https://jra.jp/gallery/3minmeiba/horse12/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Grass Wonder
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse12/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse12/](https://jra.jp/gallery/3minmeiba/horse12/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Hishi Amazon
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse33/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse33/](https://jra.jp/gallery/3minmeiba/horse33/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Hishi Amazon
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse33/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse33/](https://jra.jp/gallery/3minmeiba/horse33/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Mejiro McQueen
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse41/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse41/](https://jra.jp/gallery/3minmeiba/horse41/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### El Condor Pasa
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse2/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse2/](https://jra.jp/gallery/3minmeiba/horse2/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### El Condor Pasa
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse2/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse2/](https://jra.jp/gallery/3minmeiba/horse2/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### T M Opera O
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse5/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse5/](https://jra.jp/gallery/3minmeiba/horse5/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### T M Opera O
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse5/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse5/](https://jra.jp/gallery/3minmeiba/horse5/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Narita Brian
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse17/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse17/](https://jra.jp/gallery/3minmeiba/horse17/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Narita Brian
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse17/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse17/](https://jra.jp/gallery/3minmeiba/horse17/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Symboli Rudolf
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse22/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse22/](https://jra.jp/gallery/3minmeiba/horse22/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Air Groove
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse21/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse21/](https://jra.jp/gallery/3minmeiba/horse21/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Air Groove
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse21/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse21/](https://jra.jp/gallery/3minmeiba/horse21/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Agnes Digital
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse23/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse23/](https://jra.jp/gallery/3minmeiba/horse23/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Seiun Sky
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse39/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse39/](https://jra.jp/gallery/3minmeiba/horse39/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Seiun Sky
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse39/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse39/](https://jra.jp/gallery/3minmeiba/horse39/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Biwa Hayahide
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse4/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse4/](https://jra.jp/gallery/3minmeiba/horse4/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Biwa Hayahide
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse4/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse4/](https://jra.jp/gallery/3minmeiba/horse4/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Mihono Bourbon
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse34/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse34/](https://jra.jp/gallery/3minmeiba/horse34/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Mihono Bourbon
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse34/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse34/](https://jra.jp/gallery/3minmeiba/horse34/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Mihono Bourbon
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse34/img/pic_gallery_5.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse34/](https://jra.jp/gallery/3minmeiba/horse34/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Rice Shower
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse18/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse18/](https://jra.jp/gallery/3minmeiba/horse18/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Rice Shower
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse18/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse18/](https://jra.jp/gallery/3minmeiba/horse18/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Eishin Flash
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse28/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse28/](https://jra.jp/gallery/3minmeiba/horse28/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Sakura Bakushin O
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse24/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse24/](https://jra.jp/gallery/3minmeiba/horse24/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Sakura Bakushin O
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse24/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse24/](https://jra.jp/gallery/3minmeiba/horse24/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Sweep Tosho
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse3/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse3/](https://jra.jp/gallery/3minmeiba/horse3/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Sweep Tosho
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse3/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse3/](https://jra.jp/gallery/3minmeiba/horse3/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Nishino Flower
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse16/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse16/](https://jra.jp/gallery/3minmeiba/horse16/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Nishino Flower
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse16/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse16/](https://jra.jp/gallery/3minmeiba/horse16/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Nishino Flower
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse16/img/pic_gallery_7.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse16/](https://jra.jp/gallery/3minmeiba/horse16/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Mejiro Dober
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse7/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse7/](https://jra.jp/gallery/3minmeiba/horse7/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Mejiro Dober
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse7/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse7/](https://jra.jp/gallery/3minmeiba/horse7/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### King Halo
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse14/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse14/](https://jra.jp/gallery/3minmeiba/horse14/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### King Halo
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse14/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse14/](https://jra.jp/gallery/3minmeiba/horse14/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Tanino Gimlet
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse42/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse42/](https://jra.jp/gallery/3minmeiba/horse42/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Mejiro Ramonu
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse44/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse44/](https://jra.jp/gallery/3minmeiba/horse44/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Mejiro Ramonu
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse44/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse44/](https://jra.jp/gallery/3minmeiba/horse44/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Durandal
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse30/img/pic_gallery_1.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse30/](https://jra.jp/gallery/3minmeiba/horse30/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+### Durandal
+- Image: [Original photograph](https://jra.jp/gallery/3minmeiba/horse30/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/3minmeiba/horse30/](https://jra.jp/gallery/3minmeiba/horse30/)
+- Author: Japan Racing Association (JRA)
+- License: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Yukino Bijin
+
+- Image: [Original photograph](https://assets.st-note.com/img/1703406248663-sZUdyv8UYu.jpg?fit=bounds&height=2000&quality=85&width=2000)
+- Source: [https://note.com/jing_boe_quing/n/nef7fbb9da928](https://note.com/jing_boe_quing/n/nef7fbb9da928)
+- Author: Jinbo Kinji / netkeiba archive
+- Rights: [Copyrighted - private use only](https://note.com/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Yukino Bijin
+
+- Image: [Original photograph](https://number.ismcdn.jp/mwimgs/c/d/750wm/img_cd0a2409e1309f002ba82de0a3e3896c4381320.jpg)
+- Source: [https://number.bunshun.jp/articles/-/855791?page=4](https://number.bunshun.jp/articles/-/855791?page=4)
+- Author: Keiji Ishikawa / Number Web
+- Rights: [Copyrighted - private use only](https://number.bunshun.jp/list/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Ines Fujin
+
+- Image: [Original photograph](https://tospo-keiba.jp/images/article/thumbnail/20260209/163906/%E3%82%A2%E3%82%A4%E3%83%8D%E3%82%B9%E3%83%95%E3%82%A6%E3%82%B8%E3%83%B3.jpg)
+- Source: [https://tospo-keiba.jp/forecast/68242](https://tospo-keiba.jp/forecast/68242)
+- Author: Tokyo Sports Press Co., Ltd.
+- Rights: [Copyrighted - private use only](https://www.tokyo-sports.co.jp/terms/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Ines Fujin
+
+- Image: [Original photograph](https://dir.netkeiba.com/PhotoExhibition/photodetail/img/cate_02_detail_01.jpg)
+- Source: [https://dir.netkeiba.com/PhotoExhibition/photodetail/cate_02_detail_01.html](https://dir.netkeiba.com/PhotoExhibition/photodetail/cate_02_detail_01.html)
+- Author: Net Dreamers Co., Ltd. / netkeiba
+- Rights: [Copyrighted - private use only](https://www.netdreamers.co.jp/corporate/terms.html)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Inari One
+
+- Image: [Original photograph](https://www.meiba.jp/img/horse/7434/1984106229_01.jpg)
+- Source: [https://www.meiba.jp/horses/view/1984106229/news/3](https://www.meiba.jp/horses/view/1984106229/news/3)
+- Author: Japan Racing Association (JRA) via meiba.jp
+- Rights: [Copyrighted - private use only](https://www.meiba.jp/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Inari One
+
+- Image: [Original photograph](https://www.meiba.jp/img/horse/7435/1984106229_02.jpg)
+- Source: [https://www.meiba.jp/horses/view/1984106229/news/3](https://www.meiba.jp/horses/view/1984106229/news/3)
+- Author: JAIRS via meiba.jp
+- Rights: [Copyrighted - private use only](https://www.meiba.jp/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Inari One
+
+- Image: [Original photograph](https://assets.st-note.com/img/1656825521274-AYhifVj0Yu.jpg?width=1200)
+- Source: [https://note.tokyo-sports.co.jp/n/n36a8ee9743c0](https://note.tokyo-sports.co.jp/n/n36a8ee9743c0)
+- Author: Tokyo Sports Press Co., Ltd.
+- Rights: [Copyrighted - private use only](https://note.com/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Bamboo Memory
+
+- Image: [Original photograph](https://www.meiba.jp/img/horse/151/85104122_01_01.jpg)
+- Source: [https://www.meiba.jp/horses/view/1985104122/news/5](https://www.meiba.jp/horses/view/1985104122/news/5)
+- Author: Japan Racing Association (JRA) via meiba.jp
+- Rights: [Copyrighted - private use only](https://www.meiba.jp/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Bamboo Memory
+
+- Image: [Original photograph](https://meiba.jp/img/horse/152/85104122_01_02.jpg)
+- Source: [https://meiba.jp/horses/view/1985104122](https://meiba.jp/horses/view/1985104122)
+- Author: JAIRS via meiba.jp
+- Rights: [Copyrighted - private use only](https://meiba.jp/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Bamboo Memory
+
+- Image: [Original photograph](https://jra-van.jp/fun/memorial/img/horses/l_1985104122.jpg)
+- Source: [https://jra-van.jp/fun/memorial/1985104122.html](https://jra-van.jp/fun/memorial/1985104122.html)
+- Author: JRA-VAN
+- Rights: [Copyrighted - private use only](https://jra-van.jp/info/rule.html)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Mr. C.B.
+
+- Image: [Original photograph](https://jra.jp/gallery/dendo/horse13/img/pic_gallery_2.jpg)
+- Source: [https://jra.jp/gallery/dendo/horse13/](https://jra.jp/gallery/dendo/horse13/)
+- Author: Japan Racing Association (JRA)
+- Rights: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Mr. C.B.
+
+- Image: [Original photograph](https://jra.jp/gallery/dendo/horse13/img/pic_gallery_3.jpg)
+- Source: [https://jra.jp/gallery/dendo/horse13/](https://jra.jp/gallery/dendo/horse13/)
+- Author: Japan Racing Association (JRA)
+- Rights: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Mr. C.B.
+
+- Image: [Original photograph](https://jra.jp/gallery/dendo/horse13/img/pic_gallery_4.jpg)
+- Source: [https://jra.jp/gallery/dendo/horse13/](https://jra.jp/gallery/dendo/horse13/)
+- Author: Japan Racing Association (JRA)
+- Rights: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Mr. C.B.
+
+- Image: [Original photograph](https://jra.jp/gallery/dendo/horse13/img/pic_gallery_5.jpg)
+- Source: [https://jra.jp/gallery/dendo/horse13/](https://jra.jp/gallery/dendo/horse13/)
+- Author: Japan Racing Association (JRA)
+- Rights: [Copyrighted - private use only](https://jra.jp/use/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Ikuno Dictus
+
+- Image: [Original photograph](https://i.daily.jp/horse/2019/02/08/Images/d_12046952.jpg)
+- Source: [https://www.daily.co.jp/horse/2019/02/08/0012046951.shtml](https://www.daily.co.jp/horse/2019/02/08/0012046951.shtml)
+- Author: Daily Sports
+- Rights: [Copyrighted - private use only](https://www.daily.co.jp/information/copyright.shtml)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Ikuno Dictus
+
+- Image: [Original photograph](https://assets.st-note.com/img/1765533857-0pvU5wP1rRe3DG6onMEIQZTs.jpg?width=1200)
+- Source: [https://note.com/quick_lemur6432/n/ne1695ce01a23](https://note.com/quick_lemur6432/n/ne1695ce01a23)
+- Author: quick_lemur6432 / source photographer
+- Rights: [Copyrighted - private use only](https://note.com/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Twin Turbo
+
+- Image: [Original photograph](https://assets.st-note.com/img/1767525981-ZsPGjMmzcED1UFAQBkdJSNn4.jpg?fit=bounds&height=2000&quality=85&width=2000)
+- Source: [https://note.com/quick_lemur6432/n/n076d1c864434](https://note.com/quick_lemur6432/n/n076d1c864434)
+- Author: quick_lemur6432 / source photographer
+- Rights: [Copyrighted - private use only](https://note.com/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Sakura Chiyono O
+
+- Image: [Original photograph](https://static.wikia.nocookie.net/umamusume/images/5/51/IRL_Sakura_Chiyono_O.jpg/revision/latest?cb=20240726235107)
+- Source: [https://umamusume.fandom.com/wiki/Sakura_Chiyono_O/Real_Life](https://umamusume.fandom.com/wiki/Sakura_Chiyono_O/Real_Life)
+- Author: Uma Musume Wiki contributor / source photographer
+- Rights: [Copyrighted - private use only](https://www.fandom.com/terms-of-use)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Sirius Symboli
+
+- Image: [Original photograph](https://static.wikia.nocookie.net/umamusume/images/0/00/IRL_Sirius_Symboli.jpg/revision/latest?cb=20240727000208)
+- Source: [https://umamusume.fandom.com/wiki/Sirius_Symboli/Real_Life](https://umamusume.fandom.com/wiki/Sirius_Symboli/Real_Life)
+- Author: Uma Musume Wiki contributor / source photographer
+- Rights: [Copyrighted - private use only](https://www.fandom.com/terms-of-use)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Sirius Symboli
+
+- Image: [Original photograph](https://stat.ameba.jp/user_images/20230520/22/yumio431215/2e/30/j/o1437094215287064275.jpg)
+- Source: [https://ameblo.jp/yumio431215/entry-12803865563.html](https://ameblo.jp/yumio431215/entry-12803865563.html)
+- Author: Masachan
+- Rights: [Copyrighted - private use only](https://helps.ameba.jp/rules/post_104.html)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Mejiro Ardan
+
+- Image: [Original photograph](https://pbs.twimg.com/media/FK9u9LWaMAUdVJh.png)
+- Source: [https://x.com/keiba_info_club/status/1490532376132616196](https://x.com/keiba_info_club/status/1490532376132616196)
+- Author: Keiba Information Club / source photographer
+- Rights: [Copyrighted - private use only](https://x.com/en/tos)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Yaeno Muteki
+
+- Image: [Original photograph](https://www.meiba.jp/img/horse/414/85104215_01_01.jpg)
+- Source: [https://www.meiba.jp/horses/view/1985104215/news/8](https://www.meiba.jp/horses/view/1985104215/news/8)
+- Author: Japan Racing Association (JRA) via meiba.jp
+- Rights: [Copyrighted - private use only](https://www.meiba.jp/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Yaeno Muteki
+
+- Image: [Original photograph](https://uma-furi.com/wp-content/uploads/2023/10/92680029.jpg)
+- Source: [https://uma-furi.com/yaeno-muteki/](https://uma-furi.com/yaeno-muteki/)
+- Author: Uma-furi / source photographer
+- Rights: [Copyrighted - private use only](https://uma-furi.com/terms/)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Yamanin Zephyr
+
+- Image: [Original photograph](https://meiba.jp/img/horse/131/88101069_01_01.jpg)
+- Source: [https://meiba.jp/horses/view/1988101069](https://meiba.jp/horses/view/1988101069)
+- Author: Japan Racing Association (JRA) via meiba.jp
+- Rights: [Copyrighted - private use only](https://meiba.jp/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Yamanin Zephyr
+
+- Image: [Original photograph](https://assets.st-note.com/img/1675479360571-2NQjkEAeRk.jpg?fit=bounds&height=2000&quality=85&width=2000)
+- Source: [https://note.tokyo-sports.co.jp/n/na915f0ecd2b3](https://note.tokyo-sports.co.jp/n/na915f0ecd2b3)
+- Author: Tokyo Sports Press Co., Ltd.
+- Rights: [Copyrighted - private use only](https://note.com/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Daiichi Ruby
+
+- Image: [Original photograph](https://assets.st-note.com/img/1674274244972-DJQrqvkjl2.jpg?fit=bounds&height=2000&quality=85&width=2000)
+- Source: [https://note.tokyo-sports.co.jp/n/n86bba9cfde18](https://note.tokyo-sports.co.jp/n/n86bba9cfde18)
+- Author: Tokyo Sports Press Co., Ltd.
+- Rights: [Copyrighted - private use only](https://note.com/terms)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## K.S.Miracle
+
+- Image: [Original photograph](https://cdn.netkeiba.com/img.dir/keibamatome/image.php?id=3353)
+- Source: [https://dir.netkeiba.com/keibamatome/detail.html?no=2664](https://dir.netkeiba.com/keibamatome/detail.html?no=2664)
+- Author: Net Dreamers Co., Ltd. / netkeiba
+- Rights: [Copyrighted - private use only](https://www.netdreamers.co.jp/corporate/terms.html)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Katsuragi Ace
+
+- Image: [Original photograph](https://jra-van.jp/fun/memorial/img/horses/l_1980101425.jpg)
+- Source: [https://jra-van.jp/fun/memorial/1980101425.html](https://jra-van.jp/fun/memorial/1980101425.html)
+- Author: JRA-VAN
+- Rights: [Copyrighted - private use only](https://jra-van.jp/info/rule.html)
+- Changes: None.
+- Reviewed directly from the source image; no local photo file is stored.
+
+## Katsuragi Ace
+
+- Image: [Original photograph](https://jbpress.ismcdn.jp/mwimgs/a/0/1200mw/img_a0c55fd9083ac4f8ad728ef53ca1c03e659761.jpg)
+- Source: [https://jbpress.ismedia.jp/articles/gallery/85434](https://jbpress.ismedia.jp/articles/gallery/85434)
+- Author: JBpress / source photographer
+- Rights: [Copyrighted - private use only](https://jbpress.ismedia.jp/list/terms)
 - Changes: None.
 - Reviewed directly from the source image; no local photo file is stored.

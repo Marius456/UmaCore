@@ -1,6 +1,8 @@
 const CONTEXT = new TextEncoder().encode("umacore-horse-image-v1");
 const TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]);
+const GENERIC_TYPES = new Set(["", "application/octet-stream", "binary/octet-stream"]);
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const DEFAULT_HOSTS = "assets.st-note.com,cdn.netkeiba.com,dir.netkeiba.com,i.daily.jp,jbpress.ismcdn.jp,jra-van.jp,jra.jp,meiba.jp,number.ismcdn.jp,pbs.twimg.com,stat.ameba.jp,static.wikia.nocookie.net,tospo-keiba.jp,uma-furi.com,upload.wikimedia.org,www.meiba.jp";
 
 function error(status) {
   return new Response("Image unavailable", {
@@ -25,7 +27,8 @@ export async function decryptSource(token, keyHex) {
 
 function validateSource(value, hosts) {
   const url = new URL(value);
-  const allowed = new Set((hosts || "upload.wikimedia.org").split(",").map(host => host.trim().toLowerCase()));
+  const configuredHosts = hosts || DEFAULT_HOSTS;
+  const allowed = new Set(configuredHosts.split(",").map(host => host.trim().toLowerCase()));
   if (url.protocol !== "https:" || url.username || url.password || url.port || url.hash ||
       !allowed.has(url.hostname) || /[\s<>\\]/.test(value)) {
     throw new Error("Invalid source");
@@ -36,6 +39,15 @@ function validateSource(value, hosts) {
     throw new Error("Invalid source");
   }
   return url.href;
+}
+
+function sniffImageType(bytes) {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.length >= 8 && bytes.slice(0, 8).every((value, index) => value === [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a][index])) return "image/png";
+  if (bytes.length >= 6 && new TextDecoder().decode(bytes.slice(0, 6)).match(/^GIF8[79]a$/)) return "image/gif";
+  if (bytes.length >= 12 && new TextDecoder().decode(bytes.slice(0, 4)) === "RIFF" && new TextDecoder().decode(bytes.slice(8, 12)) === "WEBP") return "image/webp";
+  if (bytes.length >= 12 && new TextDecoder().decode(bytes.slice(4, 12)).match(/^ftyp(?:avif|avis)$/)) return "image/avif";
+  return null;
 }
 
 export async function serveImage(request, env, upstreamFetch = fetch) {
@@ -59,11 +71,20 @@ export async function serveImage(request, env, upstreamFetch = fetch) {
       headers: { "User-Agent": "UmaCore-Horse-Images/1.0 (https://github.com/oHaruki/UmaCore)" },
       cf: { cacheEverything: true, cacheTtlByStatus: { "200": 86400, "201-599": -1 } },
     });
-    const type = (upstream.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase();
+    let type = (upstream.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase();
+    if (type === "image/jpg") type = "image/jpeg";
     const length = Number(upstream.headers.get("Content-Length"));
-    if (upstream.status !== 200 || !TYPES.has(type) || length > MAX_IMAGE_BYTES) {
+    if (upstream.status !== 200 || (!TYPES.has(type) && !GENERIC_TYPES.has(type)) || length > MAX_IMAGE_BYTES) {
       await upstream.body?.cancel();
       return error(502);
+    }
+    let body = upstream.body;
+    let buffered = false;
+    if (!TYPES.has(type)) {
+      const bytes = new Uint8Array(await upstream.arrayBuffer());
+      if (bytes.byteLength > MAX_IMAGE_BYTES || !(type = sniffImageType(bytes))) return error(502);
+      body = bytes;
+      buffered = true;
     }
     // Deliberately do not forward Location, Content-Disposition, Link, cookies,
     // or any other origin metadata which may contain the source filename.
@@ -75,9 +96,10 @@ export async function serveImage(request, env, upstreamFetch = fetch) {
       "Referrer-Policy": "no-referrer",
     };
     if (request.method === "HEAD") {
-      await upstream.body?.cancel();
+      if (!buffered) await upstream.body?.cancel();
       return new Response(null, { headers });
     }
+    if (buffered) return new Response(body, { headers });
     let received = 0;
     const bounded = new TransformStream({
       transform(chunk, controller) {
@@ -86,7 +108,7 @@ export async function serveImage(request, env, upstreamFetch = fetch) {
         controller.enqueue(chunk);
       },
     });
-    return new Response(upstream.body.pipeThrough(bounded), { headers });
+    return new Response(body.pipeThrough(bounded), { headers });
   } catch {
     // Errors must not echo the decrypted URL or any upstream response body.
     return error(502);
