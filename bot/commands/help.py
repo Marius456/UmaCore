@@ -49,7 +49,7 @@ class HelpCommands(commands.Cog):
                 "`/gacha` — Show current GameTora gacha banners.\n"
                 "`/trivia play` — Start a survival trivia game.\n"
                 "`/trivia leaderboard` — View the top trivia players.\n"
-                "`/trivia horse` — Guess real racehorses from photos.\n"
+                "`/trivia horse <mode>` — Guess Global or Japanese-version horses from photos.\n"
                 "`/trivia horse_leaderboard` — View the top horse-photo players."
             ),
             inline=False,

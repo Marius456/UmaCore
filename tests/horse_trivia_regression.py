@@ -17,7 +17,8 @@ from bot.commands.trivia import TriviaButtonView, TriviaCommands
 from config import settings
 from config.database import Database
 from models.horse_trivia_question import (
-    ASSET_DIR, MANIFEST_PATH, HorseTriviaQuestion, validate_https_url, validate_question,
+    ASSET_DIR, GLOBAL_AVAILABILITY_PATH, MANIFEST_PATH, HorseTriviaQuestion,
+    global_horse_names, validate_https_url, validate_question,
 )
 from models.trivia_leaderboard import HorseTriviaLeaderboardEntry, TriviaLeaderboardEntry
 
@@ -29,11 +30,11 @@ def direct_image_mode(monkeypatch):
     monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_KEY", "")
 
 
-def question(number=1, image="https://example.org/photo.jpg"):
+def question(number=1, image="https://example.org/photo.jpg", *, global_available=True):
     return HorseTriviaQuestion(
         number, ["Gold Ship", "Oguri Cap", "Mejiro McQueen", "Biwa Hayahide"],
         "Gold Ship", image, "https://example.org/source", "Photographer", "CC BY-SA 4.0",
-        "https://creativecommons.org/licenses/by-sa/4.0/", "Cropped.",
+        "https://creativecommons.org/licenses/by-sa/4.0/", "Cropped.", global_available,
     )
 
 
@@ -103,8 +104,24 @@ def test_starter_pack_is_complete_and_uses_image_urls():
             validate_https_url(entry["license_url"])
 
 
+def test_global_availability_snapshot_covers_only_canonical_horses():
+    snapshot = json.loads(GLOBAL_AVAILABILITY_PATH.read_text(encoding="utf-8"))
+    roster = json.loads((ASSET_DIR / "gametora_support_roster.json").read_text(encoding="utf-8"))
+    roster_names = {horse["name"] for horse in roster["horses"]}
+    assert snapshot["reviewed_on"] == "2026-09-29"
+    assert snapshot["source_manifest_hash"] == "c6676539"
+    assert len(snapshot["global_horses"]) == 84
+    assert global_horse_names() == frozenset(snapshot["global_horses"])
+    assert global_horse_names() < roster_names
+    manifest_answers = {
+        entry["correct_answer"]
+        for entry in json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    }
+    assert len(global_horse_names() & manifest_answers) == 82
+
+
 class HorseGameTests(unittest.IsolatedAsyncioTestCase):
-    async def run_game(self, questions, outcomes, *, send_error=None):
+    async def run_game(self, questions, outcomes, *, send_error=None, mode="japanese"):
         cog = TriviaCommands(None)
         request = interaction()
         if send_error:
@@ -121,12 +138,15 @@ class HorseGameTests(unittest.IsolatedAsyncioTestCase):
             view.stop()
 
         with patch.object(cog, "_get_next_horse_question", new=AsyncMock(side_effect=questions)), \
+             patch.object(HorseTriviaQuestion, "get_global_answer_names", new=AsyncMock(return_value={
+                 "Gold Ship", "Oguri Cap", "Mejiro McQueen", "Biwa Hayahide",
+             })), \
              patch.object(TriviaButtonView, "wait", new=wait), \
              patch("bot.commands.trivia.asyncio.sleep", new=AsyncMock()), \
              patch.object(HorseTriviaLeaderboardEntry, "record_result", new=AsyncMock(return_value=(None, True))) as photo_scores, \
              patch.object(TriviaLeaderboardEntry, "record_result", new=AsyncMock()) as text_scores:
             try:
-                await cog._start_game(request, horse=True)
+                await cog._start_game(request, horse=True, horse_mode=mode)
             except RuntimeError:
                 if not send_error:
                     raise
@@ -138,13 +158,21 @@ class HorseGameTests(unittest.IsolatedAsyncioTestCase):
         cog = TriviaCommands(None)
         cog._start_game = AsyncMock()
         request = interaction()
-        await TriviaCommands.horse.callback(cog, request)
+        mode = app_commands.Choice(name="Global", value="global")
+        await TriviaCommands.horse.callback(cog, request, mode)
         request.response.defer.assert_awaited_once_with()
-        cog._start_game.assert_awaited_once_with(request, horse=True)
+        cog._start_game.assert_awaited_once_with(
+            request, horse=True, horse_mode="global",
+        )
+        parameter = next(
+            item for item in TriviaCommands.horse.parameters if item.name == "mode"
+        )
+        self.assertTrue(parameter.required)
+        self.assertEqual({choice.value for choice in parameter.choices}, {"global", "japanese"})
 
     async def test_correct_then_wrong_reveals_answer_and_only_records_photo_score(self):
         request, scores = await self.run_game([question(), question(2)], [True, False])
-        scores.assert_awaited_once_with(123, 1, 1)
+        scores.assert_awaited_once_with(123, 1, 1, "japanese")
         first = request.edit_original_response.await_args.kwargs
         self.assertEqual(first["embed"].description, "Which horse is this?")
         self.assertEqual(first["view"].timeout, 20)
@@ -158,6 +186,25 @@ class HorseGameTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Incorrect. **Gold Ship**", final["embed"].description)
         self.assertIn("1** question", final["embed"].description)
         self.assertTrue(all(button.disabled for button in final["view"].children))
+
+    async def test_global_game_labels_mode_and_uses_only_global_choices(self):
+        first = HorseTriviaQuestion(
+            1, ["Gold Ship", "Daring Tact", "Oguri Cap", "Orfevre"],
+            "Gold Ship", "https://example.org/photo.jpg", "https://example.org/source",
+            "Photographer", "Copyrighted", global_available=True,
+        )
+        request, scores = await self.run_game(
+            [first, question(2)], [True, False], mode="global",
+        )
+        opening = request.edit_original_response.await_args.kwargs
+        self.assertEqual(opening["embed"].title, "🐎 Global Horse #1")
+        self.assertEqual(
+            {button.label for button in opening["view"].children},
+            {"Gold Ship", "Oguri Cap", "Mejiro McQueen", "Biwa Hayahide"},
+        )
+        scores.assert_awaited_once_with(123, 1, 1, "global")
+        final = request.original_response.return_value.edit.await_args.kwargs["embed"]
+        self.assertIn("Mode: **Global**", final.description)
 
     async def test_timeout_reveals_correct_name_and_button_without_awarding_points(self):
         request, scores = await self.run_game([question()], [None])
@@ -187,7 +234,7 @@ class HorseGameTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bank_disappearing_preserves_earned_points(self):
         request, scores = await self.run_game([question(), None], [True])
-        scores.assert_awaited_once_with(123, 1, 1)
+        scores.assert_awaited_once_with(123, 1, 1, "japanese")
         self.assertIn("No usable horse photos", request.edit_original_response.await_args.kwargs["embed"].description)
 
     async def test_invalid_image_url_skipped_without_penalty_or_infinite_loop(self):
@@ -202,7 +249,7 @@ class HorseGameTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(TriviaButtonView, "wait", new=wait), \
                  patch.object(HorseTriviaLeaderboardEntry, "record_result", new=AsyncMock(return_value=(None, True))) as scores:
                 await cog._start_game(request, horse=True)
-            scores.assert_awaited_once_with(123, 1, 1)
+            scores.assert_awaited_once_with(123, 1, 1, "japanese")
             self.assertEqual(select.await_args_list[1].args[0], {1})
             self.assertEqual(select.await_args_list[-1].args[0], {1})
             self.assertEqual(cog.active_sessions, {})
@@ -214,7 +261,7 @@ class HorseGameTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_send_failure_preserves_earned_points(self):
         _, scores = await self.run_game([question()], [True], send_error=RuntimeError("Discord unavailable"))
-        scores.assert_awaited_once_with(123, 1, 1)
+        scores.assert_awaited_once_with(123, 1, 1, "japanese")
 
     async def test_selection_cycles_without_repeating_until_exhausted(self):
         cog = TriviaCommands(None)
@@ -223,6 +270,25 @@ class HorseGameTests(unittest.IsolatedAsyncioTestCase):
             for expected in [1, 2, 1]:
                 self.assertEqual((await cog._get_next_horse_question(used, unavailable)).id, expected)
         self.assertEqual([call.args[0] for call in select.await_args_list], [{99}, {1, 99}, {1, 2, 99}, {99}])
+        self.assertTrue(all(call.kwargs["mode"] == "japanese" for call in select.await_args_list))
+
+    async def test_global_options_exclude_japanese_only_names_without_mutation(self):
+        q = HorseTriviaQuestion(
+            1, ["Gold Ship", "Daring Tact", "Oguri Cap", "Orfevre"],
+            "Gold Ship", "https://example.org/photo.jpg", "https://example.org/source",
+            "Photographer", "Copyrighted", global_available=True,
+        )
+        global_answers = {"Gold Ship", "Oguri Cap", "Mejiro McQueen", "Biwa Hayahide"}
+        with patch(
+            "bot.commands.trivia.random.sample",
+            return_value=["Biwa Hayahide", "Mejiro McQueen"],
+        ):
+            adjusted = TriviaCommands._with_global_options(q, global_answers)
+        self.assertEqual(
+            adjusted.options,
+            ["Gold Ship", "Oguri Cap", "Biwa Hayahide", "Mejiro McQueen"],
+        )
+        self.assertEqual(q.options[1], "Daring Tact")
 
     async def test_modes_share_duplicate_session_guard(self):
         cog = TriviaCommands(None)
@@ -276,9 +342,11 @@ class HorseStorageTests(unittest.IsolatedAsyncioTestCase):
                 options=[" Gold Ship ", "Oguri Cap", "Mejiro McQueen", "Biwa Hayahide"],
                 image_url=row["image_reference"], source_url=row["source_url"],
                 author=row["author"], license=row["license"],
+                global_available=True,
             )
         self.assertEqual(fetch.await_args.args[1][0], "Gold Ship")
         self.assertEqual(fetch.await_args.args[2], "Gold Ship")
+        self.assertTrue(fetch.await_args.args[7])
         self.assertIn("INSERT INTO horse_trivia_questions", fetch.await_args.args[0])
 
     async def test_deleted_seed_is_not_recreated_on_restart(self):
@@ -286,7 +354,9 @@ class HorseStorageTests(unittest.IsolatedAsyncioTestCase):
         async def execute(query, *args):
             if "INSERT INTO" in query:
                 self.assertIn("ON CONFLICT (seed_key) DO NOTHING", query)
-                rows.setdefault(args[0], {"deleted": False})
+                rows.setdefault(args[0], {"deleted": False, "global": args[9]})
+            elif "SET global_available" in query:
+                rows[args[0]]["global"] = args[1]
             else:
                 self.assertNotIn("deleted_at =", query)
                 self.assertIn("AND image_reference = $8", query)
@@ -312,21 +382,60 @@ class HorseStorageTests(unittest.IsolatedAsyncioTestCase):
             await HorseTriviaQuestion.get_random({7})
             self.assertIn("deleted_at IS NULL", fetch.await_args.args[0])
             self.assertEqual(fetch.await_args.args[1], [7])
+            self.assertFalse(fetch.await_args.args[2])
+
+    async def test_question_selection_filters_global_and_japanese_modes(self):
+        with patch(
+            "models.horse_trivia_question.db.fetchrow", new=AsyncMock(return_value=None),
+        ) as fetch:
+            await HorseTriviaQuestion.get_random({3}, mode="global")
+            self.assertEqual(fetch.await_args.args[1:], ([3], True))
+            await HorseTriviaQuestion.get_random({3}, mode="japanese")
+            self.assertEqual(fetch.await_args.args[1:], ([3], False))
+        with self.assertRaises(ValueError):
+            await HorseTriviaQuestion.get_random(mode="invalid")
 
     async def test_photo_score_upsert_and_personal_best_use_separate_table(self):
-        row = dict(user_id=123, highest_streak=5, total_correct=12, last_played=None)
+        row = dict(
+            user_id=123, highest_streak=5, total_correct=12,
+            last_played=None, best_mode="japanese",
+        )
         conn = SimpleNamespace(execute=AsyncMock(), fetchval=AsyncMock(return_value=5), fetchrow=AsyncMock(return_value=row))
         @asynccontextmanager
         async def transaction():
             yield conn
         with patch("models.trivia_leaderboard.db.transaction", transaction):
-            entry, is_new = await HorseTriviaLeaderboardEntry.record_result(123, 5, 5)
+            entry, is_new = await HorseTriviaLeaderboardEntry.record_result(
+                123, 5, 5, "global",
+            )
         self.assertIsInstance(entry, HorseTriviaLeaderboardEntry)
         self.assertFalse(is_new)
         conn.execute.assert_awaited_once_with("SELECT pg_advisory_xact_lock($1)", 123)
         self.assertIn("FROM horse_trivia_leaderboard", conn.fetchval.await_args.args[0])
         self.assertIn("INSERT INTO horse_trivia_leaderboard", conn.fetchrow.await_args.args[0])
+        self.assertIn("WHEN $2 > horse_trivia_leaderboard.highest_streak", conn.fetchrow.await_args.args[0])
+        self.assertEqual(conn.fetchrow.await_args.args[4], "global")
+        self.assertEqual(entry.best_mode, "japanese")
         self.assertEqual(TriviaLeaderboardEntry.table, "trivia_leaderboard")
+
+    async def test_strictly_higher_photo_score_changes_best_mode(self):
+        row = dict(
+            user_id=123, highest_streak=6, total_correct=15,
+            last_played=None, best_mode="global",
+        )
+        conn = SimpleNamespace(
+            execute=AsyncMock(), fetchval=AsyncMock(return_value=5),
+            fetchrow=AsyncMock(return_value=row),
+        )
+        @asynccontextmanager
+        async def transaction():
+            yield conn
+        with patch("models.trivia_leaderboard.db.transaction", transaction):
+            entry, is_new = await HorseTriviaLeaderboardEntry.record_result(
+                123, 6, 3, "global",
+            )
+        self.assertTrue(is_new)
+        self.assertEqual(entry.best_mode, "global")
 
     async def test_schema_is_additive_for_existing_trivia(self):
         conn = SimpleNamespace(execute=AsyncMock())
@@ -340,7 +449,10 @@ class HorseStorageTests(unittest.IsolatedAsyncioTestCase):
         for table in ["horse_trivia_questions", "horse_trivia_leaderboard", "trivia_questions", "trivia_leaderboard"]:
             self.assertIn(f"CREATE TABLE IF NOT EXISTS {table}", sql)
             self.assertNotIn(f"DROP TABLE {table}", sql)
-            self.assertNotIn(f"ALTER TABLE {table}", sql)
+        self.assertIn("ADD COLUMN IF NOT EXISTS global_available", sql)
+        self.assertIn("ADD COLUMN IF NOT EXISTS best_mode", sql)
+        self.assertNotIn("ALTER TABLE trivia_questions", sql)
+        self.assertNotIn("ALTER TABLE trivia_leaderboard", sql)
 
     async def test_seed_migrates_legacy_references_without_overwriting_custom_urls(self):
         entries = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -363,7 +475,11 @@ class HorseStorageTests(unittest.IsolatedAsyncioTestCase):
         }
         async def execute(query, *args):
             if "INSERT INTO" in query:
-                rows.setdefault(args[0], {"image": args[3], "deleted": False})
+                rows.setdefault(
+                    args[0], {"image": args[3], "deleted": False, "global": args[9]},
+                )
+            elif "SET global_available" in query:
+                rows[args[0]]["global"] = args[1]
             else:
                 self.assertIn("WHERE seed_key = $1 AND image_reference = $8", query)
                 self.assertNotIn("deleted_at =", query)
@@ -382,6 +498,10 @@ class HorseStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[entries[1]["seed_key"]]["image"], entries[1]["image_reference"])
         self.assertTrue(rows[entries[1]["seed_key"]]["deleted"])
         self.assertEqual(rows[entries[2]["seed_key"]]["image"], "https://example.org/custom.jpg")
+        self.assertEqual(
+            rows[entries[0]["seed_key"]]["global"],
+            entries[0]["correct_answer"] in global_horse_names(),
+        )
         gold_ship = next(entry for entry in entries if entry["seed_key"] == "horse-photo-v1-005")
         self.assertEqual(rows[gold_ship["seed_key"]]["image"], gold_ship["image_reference"])
         self.assertTrue(rows[gold_ship["seed_key"]]["deleted"])
@@ -410,10 +530,43 @@ class HorseCommandTests(unittest.IsolatedAsyncioTestCase):
         request = interaction()
         await TriviaCommands.horse_add.callback(
             TriviaCommands(None), request, "http://example.org/a.jpg", "https://example.org/source",
-            "Author", "CC BY 4.0", "A", "B", "C", "D",
+            "Author", "CC BY 4.0", app_commands.Choice(name="Japanese only", value="japanese"),
+            "A", "B", "C", "D",
         )
         self.assertIn("HTTPS", request.followup.send.await_args.args[0])
         self.assertTrue(request.followup.send.await_args.kwargs["ephemeral"])
+
+    async def test_admin_availability_is_required_and_stored(self):
+        request = interaction()
+        created = question()
+        with patch.object(
+            HorseTriviaQuestion, "create", new=AsyncMock(return_value=created),
+        ) as create:
+            await TriviaCommands.horse_add.callback(
+                TriviaCommands(None), request,
+                "https://upload.wikimedia.org/photo.jpg", "https://example.org/source",
+                "Author", "CC BY 4.0",
+                app_commands.Choice(name="Global + Japanese", value="global"),
+                "Gold Ship", "Oguri Cap", "Mejiro McQueen", "Biwa Hayahide",
+            )
+        self.assertTrue(create.await_args.kwargs["global_available"])
+        availability = next(
+            parameter for parameter in TriviaCommands.horse_add.parameters
+            if parameter.name == "availability"
+        )
+        self.assertTrue(availability.required)
+
+    async def test_admin_list_shows_mode_availability(self):
+        request = interaction()
+        japanese = question(2, global_available=False)
+        with patch.object(
+            HorseTriviaQuestion, "get_all",
+            new=AsyncMock(return_value=[question(), japanese]),
+        ):
+            await TriviaCommands.horse_list.callback(TriviaCommands(None), request)
+        embed = request.followup.send.await_args.kwargs["embed"]
+        self.assertIn("Global + Japanese", embed.fields[0].value)
+        self.assertIn("Japanese only", embed.fields[1].value)
 
     async def test_photo_leaderboard_is_public_and_separate(self):
         request = interaction()
@@ -426,3 +579,14 @@ class HorseCommandTests(unittest.IsolatedAsyncioTestCase):
         embed = request.followup.send.await_args.kwargs["embed"]
         self.assertIn("Horse Photo", embed.title)
         self.assertIn("/trivia horse", embed.description)
+
+    async def test_photo_leaderboard_labels_personal_best_mode(self):
+        request = interaction()
+        entries = [HorseTriviaLeaderboardEntry(123, 8, 20, None, "global")]
+        with patch.object(
+            HorseTriviaLeaderboardEntry, "get_top", new=AsyncMock(return_value=entries),
+        ):
+            await TriviaCommands.horse_leaderboard.callback(TriviaCommands(None), request)
+        embed = request.followup.send.await_args.kwargs["embed"]
+        self.assertIn("**8** streak (Global)", embed.description)
+        self.assertIn("20 total correct", embed.description)

@@ -1,6 +1,8 @@
 # Horse-photo trivia
 
-Use `/trivia horse` to identify real racehorses associated with Uma Musume.
+Use `/trivia horse mode:Global` to identify real racehorses that have appeared
+in released Global game content, or `/trivia horse mode:Japanese` for the full
+Japanese-version bank. The mode is required for every new game.
 Each round displays a photograph and four shuffled name buttons. You have 20
 seconds to answer; a correct answer adds one point and continues the game after
 a three-second reveal. A wrong answer or timeout ends the game and reveals the
@@ -10,9 +12,11 @@ kept in the photo manifest and bundled credits rather than the game messages.
 Gameplay is visible to the channel, but only the player who started it can use
 its answer buttons. One game can run per user across text and photo trivia.
 Questions do not repeat until the available photo bank has been used, then a new
-cycle starts. `/trivia horse_leaderboard` publicly shows the global top ten by
-highest streak, then total correct answers. Photo scores and personal bests are
-separate from `/trivia play` and `/trivia leaderboard`.
+cycle starts. Global rounds also restrict all distractor names to the Global
+pool. `/trivia horse_leaderboard` publicly shows the combined top ten by highest
+streak, then total correct answers, and labels the mode where each personal best
+was first achieved. Equal streaks retain the original mode label. Photo scores
+and personal bests are separate from `/trivia play` and `/trivia leaderboard`.
 
 ## Managing the bank
 
@@ -21,8 +25,8 @@ across servers, matching the existing text-trivia bank.
 
 | Command | Purpose |
 | --- | --- |
-| `/trivia horse_add` | Add an image, correct name, three distractors, source, author, and license |
-| `/trivia horse_list` | Privately list question IDs, answers, choices, and source pages |
+| `/trivia horse_add` | Add an image, availability, correct name, three distractors, source, author, and license |
+| `/trivia horse_list` | Privately list question IDs, mode availability, answers, choices, and source pages |
 | `/trivia horse_delete question_id:123` | Remove a question; deleted starter photos stay deleted after restarts |
 
 When adding a question:
@@ -40,6 +44,10 @@ When adding a question:
 - Use four distinct names of 1–80 characters. Leading/trailing whitespace is
   removed; names differing only by case are rejected. The first name,
   `correct_answer`, is the correct answer.
+- Choose `Global + Japanese` only after confirming the horse appears in released
+  Global client content. Other additions remain Japanese-only. Global rounds
+  replace any Japanese-only stored distractors with names from the active Global
+  question bank.
 - Use full, uncropped photographs with an identifiable horse. Photos are
   displayed as provided, including any visible labels. Use neutral image
   filenames where possible.
@@ -62,6 +70,13 @@ The remaining three roster entries have no suitable photo without a legible
 horse-name label in the reviewed archives as of 2026-09-29 and are recorded as
 unavailable in
 [`gametora_support_roster.json`](../assets/horse_trivia/gametora_support_roster.json).
+The dated [`global_availability.json`](../assets/horse_trivia/global_availability.json)
+snapshot records the canonical Global subset. It uses released Global game data,
+including identifiable trainee, support-card, story, event, and named NPC
+appearances; promotional-only appearances do not qualify. Update and review this
+tracked snapshot as Global content is released. The bot performs no runtime
+roster scraping. The 2026-09-29 snapshot marks 84 horses as Global-active, 82
+of which currently have photos in the starter bank.
 No image files are stored in the repository or Docker image. The
 [manifest](../assets/horse_trivia/manifest.json) records names, distractors,
 sources, authors, licenses, and modifications. See the
@@ -72,7 +87,11 @@ are separate from the repository's MIT license. JRA gallery photos are marked
 use. Some historic photographs have lower resolution.
 
 On normal startup the bot creates `horse_trivia_questions` and
-`horse_trivia_leaderboard` without changing the existing trivia tables. The cog
+`horse_trivia_leaderboard` without changing the existing text-trivia tables.
+Existing photo questions gain Japanese-only availability by default, while
+seeded rows are synchronized from the tracked Global snapshot. Existing photo
+leaderboard records are labeled Japanese because they were earned against the
+previous full bank. The cog
 seeds the pack transactionally using stable `seed_key` values and
 `ON CONFLICT DO NOTHING`. Deletion sets `deleted_at` and preserves the seed key,
 so restart neither duplicates nor resurrects questions. Do not physically delete
@@ -154,14 +173,15 @@ interactions and database connections and require no live credentials.
 
 After deploying to a test Discord server, verify:
 
-1. `/trivia horse` is visible to the channel, the photo renders, all four buttons
-   work only for the player who started it, and the answer and source link appear
-   after answering, without photo-credit or modification text.
+1. Both `/trivia horse mode:Global` and `mode:Japanese` are visible to the
+   channel, photos render, and all four buttons work only for the player who
+   started the game. Confirm Global never shows a Japanese-only answer name.
 2. Play multiple starter rounds and an admin URL round; each replaces the prior
    photo without stale attachments. Confirm the timer starts with the new round.
 3. Let a round expire and submit a wrong answer; both reveal the correct name
    and disable the buttons. Correct answers increase the final streak.
-4. Confirm `/trivia horse_leaderboard` is public and separate from the text board.
+4. Confirm `/trivia horse_leaderboard` is public, separate from the text board,
+   and labels the mode that first established each personal best.
 5. Confirm administrators can add/list/delete photos, non-admins cannot, and a
    deleted starter question stays deleted after a test restart.
 

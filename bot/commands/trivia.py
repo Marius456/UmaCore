@@ -8,11 +8,14 @@ import json
 import os
 import random
 import asyncio
+from dataclasses import replace
 import logging
 from typing import Optional, List
 
 from models.trivia_question import TriviaQuestion
-from models.horse_trivia_question import HorseTriviaQuestion
+from models.horse_trivia_question import (
+    HorseTriviaQuestion, HorseTriviaMode, validate_horse_mode,
+)
 from models.trivia_leaderboard import TriviaLeaderboardEntry, HorseTriviaLeaderboardEntry
 from services.horse_image_url import image_url_for_game
 
@@ -20,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 SEED_DATA_PATH = "data/trivia_questions.json"
 QUESTION_TIMEOUT = 20.0  # Seconds per question
+HORSE_MODE_LABELS = {"global": "Global", "japanese": "Japanese"}
 
 
 class TriviaButton(discord.ui.Button):
@@ -180,7 +184,9 @@ class TriviaCommands(commands.Cog):
         return embed
 
     @staticmethod
-    def _create_leaderboard_embed(entries: List[TriviaLeaderboardEntry]) -> discord.Embed:
+    def _create_leaderboard_embed(
+        entries: List[TriviaLeaderboardEntry], *, show_horse_mode: bool = False,
+    ) -> discord.Embed:
         """Format the trivia leaderboard embed"""
         embed = discord.Embed(
             title="🏆 Trivia Leaderboard",
@@ -202,8 +208,12 @@ class TriviaCommands(commands.Cog):
             else:
                 medal = f"**{i}.**"
 
+            mode = ""
+            if show_horse_mode:
+                mode_name = HORSE_MODE_LABELS.get(entry.best_mode, "Japanese")
+                mode = f" ({mode_name})"
             lines.append(
-                f"{medal} <@{entry.user_id}> — **{entry.highest_streak}** streak, "
+                f"{medal} <@{entry.user_id}> — **{entry.highest_streak}** streak{mode}, "
                 f"{entry.total_correct} total correct"
             )
 
@@ -229,14 +239,41 @@ class TriviaCommands(commands.Cog):
             used_question_ids.add(question.id)
         return question
 
-    async def _get_next_horse_question(self, used_ids: set[int], unavailable_ids: set[int]):
-        question = await HorseTriviaQuestion.get_random(used_ids | unavailable_ids)
+    async def _get_next_horse_question(
+        self, used_ids: set[int], unavailable_ids: set[int],
+        mode: HorseTriviaMode = "japanese",
+    ):
+        question = await HorseTriviaQuestion.get_random(
+            used_ids | unavailable_ids, mode=mode,
+        )
         if question is None and used_ids:
             used_ids.clear()
-            question = await HorseTriviaQuestion.get_random(unavailable_ids)
+            question = await HorseTriviaQuestion.get_random(
+                unavailable_ids, mode=mode,
+            )
         if question is not None:
             used_ids.add(question.id)
         return question
+
+    @staticmethod
+    def _with_global_options(
+        question: HorseTriviaQuestion, global_answers: set[str],
+    ) -> HorseTriviaQuestion:
+        """Keep eligible curated distractors and fill from the Global pool."""
+        if question.correct_answer not in global_answers:
+            raise ValueError("Global question answer is not in the Global pool")
+        options = [question.correct_answer]
+        for option in question.options:
+            if option in global_answers and option not in options:
+                options.append(option)
+            if len(options) == 4:
+                break
+        candidates = sorted(global_answers.difference(options))
+        missing = 4 - len(options)
+        if len(candidates) < missing:
+            raise ValueError("Global horse trivia needs four distinct answers")
+        options.extend(random.sample(candidates, missing))
+        return replace(question, options=options)
 
     @staticmethod
     def _reveal_horse(embed, question, view):
@@ -252,9 +289,14 @@ class TriviaCommands(commands.Cog):
                 button.style = discord.ButtonStyle.success
         return embed
 
-    async def _start_game(self, interaction: discord.Interaction, *, horse: bool = False):
+    async def _start_game(
+        self, interaction: discord.Interaction, *, horse: bool = False,
+        horse_mode: HorseTriviaMode | None = None,
+    ):
         """Core game loop: fetches questions, handles answers, manages streaks"""
         user_id = interaction.user.id
+        if horse:
+            horse_mode = validate_horse_mode(horse_mode or "japanese")
 
         # Prevent duplicate sessions
         if user_id in self.active_sessions:
@@ -272,24 +314,36 @@ class TriviaCommands(commands.Cog):
         score_attempted = False
         view = None
         score_model = HorseTriviaLeaderboardEntry if horse else TriviaLeaderboardEntry
+        global_answers: set[str] = set()
 
         async def save_score():
             nonlocal score_attempted
             if total_correct and not score_attempted:
                 # Never retry an ambiguous database failure and risk counting twice.
                 score_attempted = True
-                _, is_new = await score_model.record_result(user_id, current_streak, total_correct)
+                if horse:
+                    _, is_new = await score_model.record_result(
+                        user_id, current_streak, total_correct, horse_mode,
+                    )
+                else:
+                    _, is_new = await score_model.record_result(
+                        user_id, current_streak, total_correct,
+                    )
                 return is_new
             return False
 
         try:
             is_first = True
             message = None
+            if horse_mode == "global":
+                global_answers = await HorseTriviaQuestion.get_global_answer_names()
 
             while True:
                 # Fetch a random question that has not appeared in this cycle.
                 question = (
-                    await self._get_next_horse_question(used_question_ids, unavailable_ids)
+                    await self._get_next_horse_question(
+                        used_question_ids, unavailable_ids, horse_mode,
+                    )
                     if horse else await self._get_next_question(used_question_ids)
                 )
                 if not question:
@@ -297,6 +351,7 @@ class TriviaCommands(commands.Cog):
                         is_new_record = await save_score()
                         result = self._create_result_embed(current_streak, is_new_record)
                         result.description += (
+                            f"\nMode: **{HORSE_MODE_LABELS[horse_mode]}**"
                             "\nNo usable horse photos remain. Ask an admin to use `/trivia horse_add`."
                         )
                         await interaction.edit_original_response(
@@ -312,7 +367,16 @@ class TriviaCommands(commands.Cog):
                 embed = self._create_question_embed(question, current_streak)
                 edits = {}
                 if horse:
-                    embed.title = f"🐎 Horse #{current_streak + 1}"
+                    if horse_mode == "global":
+                        try:
+                            question = self._with_global_options(question, global_answers)
+                        except ValueError:
+                            logger.warning("Skipping invalid Global horse question #%s", question.id)
+                            unavailable_ids.add(question.id)
+                            continue
+                    embed.title = (
+                        f"🐎 {HORSE_MODE_LABELS[horse_mode]} Horse #{current_streak + 1}"
+                    )
                     embed.set_footer(text=f"Current streak: {current_streak} | 20 seconds to choose")
                     try:
                         embed.set_image(url=image_url_for_game(question.image_reference))
@@ -349,7 +413,10 @@ class TriviaCommands(commands.Cog):
                     is_new_record = await save_score()
                     result_embed = self._create_result_embed(current_streak, is_new_record)
                     if horse:
-                        result_embed.description += f"\n\n{embed.description}"
+                        result_embed.description += (
+                            f"\nMode: **{HORSE_MODE_LABELS[horse_mode]}**"
+                            f"\n\n{embed.description}"
+                        )
                         result_embed.set_image(url=embed.image.url)
                     await message.edit(embed=result_embed, view=view)
                     return
@@ -376,10 +443,16 @@ class TriviaCommands(commands.Cog):
         await self._start_game(interaction)
 
     @trivia.command(name="horse", description="Guess real racehorses from photos")
-    async def horse(self, interaction: discord.Interaction):
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="Global", value="global"),
+        app_commands.Choice(name="Japanese", value="japanese"),
+    ])
+    async def horse(
+        self, interaction: discord.Interaction, mode: app_commands.Choice[str],
+    ):
         await interaction.response.defer()
         try:
-            await self._start_game(interaction, horse=True)
+            await self._start_game(interaction, horse=True, horse_mode=mode.value)
         except Exception:
             logger.exception("Horse-photo game failed")
             await interaction.followup.send(
@@ -391,7 +464,7 @@ class TriviaCommands(commands.Cog):
         await interaction.response.defer()
         try:
             entries = await HorseTriviaLeaderboardEntry.get_top(10)
-            embed = self._create_leaderboard_embed(entries)
+            embed = self._create_leaderboard_embed(entries, show_horse_mode=True)
             embed.title = "🐎 Horse Photo Leaderboard"
             embed.set_footer(text="Play with /trivia horse to get on the leaderboard!")
             if not entries:
@@ -403,16 +476,21 @@ class TriviaCommands(commands.Cog):
 
     @trivia.command(name="horse_add", description="Add a horse photo and four answers (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.choices(availability=[
+        app_commands.Choice(name="Global + Japanese", value="global"),
+        app_commands.Choice(name="Japanese only", value="japanese"),
+    ])
     @app_commands.describe(
         image_url="Stable, public HTTPS image URL (not an expiring attachment link)",
         source_url="HTTPS source page for identity and attribution",
         author="Photographer or rights holder", license="Reuse license, e.g. CC BY-SA 4.0",
+        availability="Global + Japanese or Japanese only",
         correct_answer="Correct horse name", wrong_option_1="First wrong horse name",
         wrong_option_2="Second wrong horse name", wrong_option_3="Third wrong horse name",
     )
     async def horse_add(
         self, interaction: discord.Interaction, image_url: str, source_url: str,
-        author: str, license: str, correct_answer: str,
+        author: str, license: str, availability: app_commands.Choice[str], correct_answer: str,
         wrong_option_1: str, wrong_option_2: str, wrong_option_3: str,
     ):
         await interaction.response.defer(ephemeral=True)
@@ -421,6 +499,7 @@ class TriviaCommands(commands.Cog):
             question = await HorseTriviaQuestion.create(
                 options=[correct_answer, wrong_option_1, wrong_option_2, wrong_option_3],
                 image_url=image_url, source_url=source_url, author=author, license=license,
+                global_available=availability.value == "global",
             )
             await interaction.followup.send(f"Horse photo added (ID: {question.id}).", ephemeral=True)
         except ValueError as exc:
@@ -441,9 +520,14 @@ class TriviaCommands(commands.Cog):
                 embed = discord.Embed(title="Horse Photo Questions", color=discord.Color.blue())
                 for question in questions[start:start + 5]:
                     choices = ", ".join(discord.utils.escape_markdown(x) for x in question.options)
+                    availability = "Global + Japanese" if question.global_available else "Japanese only"
                     embed.add_field(
                         name=f"#{question.id} — {question.correct_answer}",
-                        value=f"{choices}\n[Source](<{question.source_url}>)", inline=False,
+                        value=(
+                            f"{availability}\n{choices}\n"
+                            f"[Source](<{question.source_url}>)"
+                        ),
+                        inline=False,
                     )
                 await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception:

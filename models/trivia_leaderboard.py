@@ -20,12 +20,15 @@ class TriviaLeaderboardEntry:
     last_played: datetime
     # Fixed class constants only; never accept SQL identifiers from user input.
     table: ClassVar[str] = "trivia_leaderboard"
+    select_columns: ClassVar[str] = (
+        "user_id, highest_streak, total_correct, last_played"
+    )
 
     @classmethod
     async def get_by_user(cls, user_id: int) -> Optional['TriviaLeaderboardEntry']:
         """Fetch a user's leaderboard entry"""
         query = f"""
-            SELECT user_id, highest_streak, total_correct, last_played
+            SELECT {cls.select_columns}
             FROM {cls.table}
             WHERE user_id = $1
         """
@@ -53,7 +56,7 @@ class TriviaLeaderboardEntry:
             SET highest_streak = GREATEST({cls.table}.highest_streak, $2),
                 total_correct = {cls.table}.total_correct + $3,
                 last_played = NOW()
-            RETURNING user_id, highest_streak, total_correct, last_played
+            RETURNING {cls.select_columns}
         """
         async with db.transaction() as conn:
             # SELECT FOR UPDATE cannot lock an absent row. The advisory lock
@@ -76,7 +79,7 @@ class TriviaLeaderboardEntry:
     async def get_top(cls, n: int = 10) -> List['TriviaLeaderboardEntry']:
         """Fetch the top N users by highest_streak descending"""
         query = f"""
-            SELECT user_id, highest_streak, total_correct, last_played
+            SELECT {cls.select_columns}
             FROM {cls.table}
             ORDER BY highest_streak DESC, total_correct DESC
             LIMIT $1
@@ -85,6 +88,47 @@ class TriviaLeaderboardEntry:
         return [cls(**dict(row)) for row in rows]
 
 
+@dataclass
 class HorseTriviaLeaderboardEntry(TriviaLeaderboardEntry):
     """Photo-game scores use the same atomic updates in their own table."""
     table = "horse_trivia_leaderboard"
+    select_columns = (
+        "user_id, highest_streak, total_correct, last_played, best_mode"
+    )
+    best_mode: str = "japanese"
+
+    @classmethod
+    async def record_result(
+        cls, user_id: int, streak: int, total_correct: int,
+        mode: str = "japanese",
+    ) -> tuple['HorseTriviaLeaderboardEntry', bool]:
+        """Update combined photo stats and attribute a strictly higher PB."""
+        if mode not in {"global", "japanese"}:
+            raise ValueError("Invalid horse trivia mode")
+        query = f"""
+            INSERT INTO {cls.table}
+                (user_id, highest_streak, total_correct, last_played, best_mode)
+            VALUES ($1, $2, $3, NOW(), $4)
+            ON CONFLICT (user_id) DO UPDATE
+            SET highest_streak = GREATEST({cls.table}.highest_streak, $2),
+                total_correct = {cls.table}.total_correct + $3,
+                best_mode = CASE
+                    WHEN $2 > {cls.table}.highest_streak THEN $4
+                    ELSE {cls.table}.best_mode
+                END,
+                last_played = NOW()
+            RETURNING {cls.select_columns}
+        """
+        async with db.transaction() as conn:
+            await conn.execute("SELECT pg_advisory_xact_lock($1)", user_id)
+            previous = await conn.fetchval(
+                f"SELECT highest_streak FROM {cls.table} WHERE user_id = $1",
+                user_id,
+            )
+            row = await conn.fetchrow(query, user_id, streak, total_correct, mode)
+        is_new_record = previous is None or streak > previous
+        logger.info(
+            "Updated horse trivia stats for user %s: streak=%s, total_correct=%s, mode=%s",
+            user_id, streak, total_correct, mode,
+        )
+        return cls(**dict(row)), is_new_record
