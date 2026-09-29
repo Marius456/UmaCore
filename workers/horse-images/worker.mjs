@@ -1,8 +1,8 @@
 const CONTEXT = new TextEncoder().encode("umacore-horse-image-v1");
 const TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]);
 const GENERIC_TYPES = new Set(["", "application/octet-stream", "binary/octet-stream"]);
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const DEFAULT_HOSTS = "assets.st-note.com,cdn.netkeiba.com,dir.netkeiba.com,i.daily.jp,jbpress.ismcdn.jp,jra-van.jp,jra.jp,meiba.jp,number.ismcdn.jp,pbs.twimg.com,stat.ameba.jp,static.wikia.nocookie.net,tospo-keiba.jp,uma-furi.com,upload.wikimedia.org,www.meiba.jp";
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const DEFAULT_HOSTS = "assets.st-note.com,i.daily.jp,jbpress.ismcdn.jp,jra-van.jp,meiba.jp,pbs.twimg.com,stat.ameba.jp,tospo-keiba.jp,uma-furi.com,upload.wikimedia.org,www.meiba.jp";
 
 function error(status) {
   return new Response("Image unavailable", {

@@ -3,7 +3,7 @@ import base64
 from functools import lru_cache
 import re
 import secrets
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, parse_qsl, urlsplit
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -18,8 +18,12 @@ class ImageProxyConfigurationError(RuntimeError):
 
 
 def image_url_for_game(source_url: str) -> str:
-    """Encrypt the source URL; never expose it as a query parameter or redirect."""
+    """Return a safe game image URL, proxying sources that can reveal answers."""
     source_url = validate_https_url(source_url)
+    source = urlsplit(source_url)
+    if _is_direct_image_source(source):
+        return source_url
+
     base_url = settings.HORSE_IMAGE_PROXY_URL.strip().rstrip("/")
     key_hex = settings.HORSE_IMAGE_PROXY_KEY.strip()
     if not base_url and not key_hex:
@@ -37,7 +41,6 @@ def image_url_for_game(source_url: str) -> str:
             "to the Worker's 64-character hex secret."
         ) from exc
 
-    source = urlsplit(source_url)
     allowed_hosts = {
         host.strip().lower() for host in settings.HORSE_IMAGE_ALLOWED_HOSTS.split(",")
         if host.strip()
@@ -47,6 +50,49 @@ def image_url_for_game(source_url: str) -> str:
     if len(source_url.encode("utf-8")) > 1200:
         raise ValueError("The image URL is too long for the image proxy (maximum 1,200 UTF-8 bytes).")
     return f"{base_url}/h/v1/{_encrypted_token(source_url, key_hex)}.jpg"
+
+
+def _is_direct_image_source(source: SplitResult) -> bool:
+    if source.port not in (None, 443) or source.fragment:
+        return False
+    if source.hostname == "jra.jp":
+        return True
+    if source.hostname == "cdn.netkeiba.com":
+        return (
+            source.path == "/img.dir/keibamatome/image.php"
+            and re.fullmatch(r"id=\d+", source.query) is not None
+        )
+    if source.hostname == "cdnv2.netkeiba.com":
+        query = parse_qsl(source.query, keep_blank_values=True)
+        values = dict(query)
+        return (
+            source.path == "/img.db.sp/show_photo.php"
+            and len(query) == 5
+            and set(values) == {"horse_id", "no", "tn", "tmp", "default_image"}
+            and re.fullmatch(r"\d+", values["horse_id"]) is not None
+            and values["no"] == "spdb"
+            and values["tn"] == ""
+            and values["tmp"] == "no"
+            and values["default_image"] == "netkeiba"
+        )
+    if source.hostname == "dir.netkeiba.com":
+        return (
+            not source.query
+            and re.fullmatch(
+                r"/PhotoExhibition/photodetail/img/cate_\d+_detail_\d+\.jpg",
+                source.path,
+            ) is not None
+        )
+    if source.hostname == "number.ismcdn.jp":
+        return (
+            not source.query
+            and re.fullmatch(
+                r"/mwimgs/[0-9a-f]/[0-9a-f]/\d+(?:wm|mw|w)/"
+                r"img_[0-9a-f]{32,}\.(?:jpe?g|png|webp)",
+                source.path,
+            ) is not None
+        )
+    return False
 
 
 @lru_cache(maxsize=512)

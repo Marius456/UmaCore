@@ -88,13 +88,16 @@ when the optional proxy is enabled, the Worker retrieves and caches the origin.
 
 ## Neutral image URLs
 
-Direct Commons URLs contain the original filename and can reveal the answer when
-a player hovers the image. The optional Worker in `workers/horse-images/` fixes
-that without storing photos in the bot. The bot encrypts each source URL into an
-authenticated opaque path such as `https://<worker>/h/v1/<token>.jpg`. The
-Worker decrypts it, fetches only an explicitly allowed HTTPS host, strips all
-origin metadata, streams the image, and caches the origin response at
-Cloudflare's edge. It never redirects the player to the source URL.
+Direct Commons and archive URLs can contain a filename that reveals the answer
+when a player hovers the image. The optional Worker in `workers/horse-images/`
+fixes that without storing photos in the bot. The bot encrypts those source URLs
+into an authenticated opaque path such as `https://<worker>/h/v1/<token>.jpg`.
+The Worker decrypts it, fetches only an explicitly allowed HTTPS host, strips
+all origin metadata, streams the image, and caches the origin response at
+Cloudflare's edge. It never redirects the player to the source URL. Exact
+`jra.jp` image URLs, the bundled numeric Netkeiba paths (including profile-photo
+endpoints), and hashed Number CDN paths bypass the Worker because those paths do
+not expose horse names and these sources reject the deployed proxy route.
 
 Deploy it from `workers/horse-images/`:
 
@@ -118,7 +121,7 @@ Then configure the bot and restart it:
 ```env
 HORSE_IMAGE_PROXY_URL=https://umacore-horse-images.<account>.workers.dev
 HORSE_IMAGE_PROXY_KEY=<the same 64-character key>
-HORSE_IMAGE_ALLOWED_HOSTS=assets.st-note.com,cdn.netkeiba.com,dir.netkeiba.com,i.daily.jp,jbpress.ismcdn.jp,jra-van.jp,jra.jp,meiba.jp,number.ismcdn.jp,pbs.twimg.com,stat.ameba.jp,static.wikia.nocookie.net,tospo-keiba.jp,uma-furi.com,upload.wikimedia.org,www.meiba.jp
+HORSE_IMAGE_ALLOWED_HOSTS=assets.st-note.com,i.daily.jp,jbpress.ismcdn.jp,jra-van.jp,meiba.jp,pbs.twimg.com,stat.ameba.jp,tospo-keiba.jp,uma-furi.com,upload.wikimedia.org,www.meiba.jp
 ```
 
 Configure a custom domain such as `images.umacore.app` in Cloudflare if desired,
@@ -128,12 +131,13 @@ ports are rejected. If either proxy setting is missing or malformed, partial
 configuration fails closed instead of exposing the source URL. When both are
 unset, direct URLs remain available for local development.
 
-Administrator-added images must use a host present in
+Administrator-added images must use exact `jra.jp` URLs, one of the supported
+numeric Netkeiba or hashed Number image URL formats, or a host present in
 `HORSE_IMAGE_ALLOWED_HOSTS` on both the bot and Worker. Keep this list narrow to
 prevent the Worker from becoming an open proxy. Rotate the key by updating the
 Worker secret and bot environment together; old opaque links then stop working.
 Deploy the Worker configuration after changing its allowlist; the committed
-configuration permits the bundled Commons, JRA, and historic racing-archive URLs.
+configuration permits the bundled Commons and historic racing-archive URLs.
 
 The Worker has no image files, database, cookies, or access to UmaCore's private
 API. Its tests verify cross-language encryption, tamper rejection, host and

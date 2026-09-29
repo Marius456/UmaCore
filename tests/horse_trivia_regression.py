@@ -89,7 +89,11 @@ def test_starter_pack_is_complete_and_uses_image_urls():
         assert entry["options"].count(entry["correct_answer"]) == 1
         validate_https_url(entry["image_reference"])
         allowed_hosts = set(settings.HORSE_IMAGE_ALLOWED_HOSTS.split(","))
-        assert urlsplit(entry["image_reference"]).hostname in allowed_hosts
+        image_host = urlsplit(entry["image_reference"]).hostname
+        assert image_host in {
+            "jra.jp", "cdn.netkeiba.com", "cdnv2.netkeiba.com",
+            "dir.netkeiba.com", "number.ismcdn.jp",
+        } or image_host in allowed_hosts
         assert "crop" not in entry["image_reference"].casefold()
         assert entry["modifications"]
         if entry["license"].startswith("CC"):
@@ -348,6 +352,14 @@ class HorseStorageTests(unittest.IsolatedAsyncioTestCase):
                 "image": "https://upload.wikimedia.org/wikipedia/commons/f/f8/Gold_Ship_Arima_kinen_2015%28IMG1%29.jpg",
                 "deleted": True,
             },
+            "horse-photo-v4-1069-c163d0601c96": {
+                "image": "https://vignette.wikia.nocookie.net/umamusume/images/5/51/IRL_Sakura_Chiyono_O.jpg/revision/latest?cb=20240726235107",
+                "deleted": False,
+            },
+            "horse-photo-v4-1070-f4e5db4a7b7b": {
+                "image": "https://static.wikia.nocookie.net/umamusume/images/0/00/IRL_Sirius_Symboli.jpg/revision/latest?cb=20240727000208",
+                "deleted": True,
+            },
         }
         async def execute(query, *args):
             if "INSERT INTO" in query:
@@ -373,6 +385,13 @@ class HorseStorageTests(unittest.IsolatedAsyncioTestCase):
         gold_ship = next(entry for entry in entries if entry["seed_key"] == "horse-photo-v1-005")
         self.assertEqual(rows[gold_ship["seed_key"]]["image"], gold_ship["image_reference"])
         self.assertTrue(rows[gold_ship["seed_key"]]["deleted"])
+        for seed_key in (
+            "horse-photo-v4-1069-c163d0601c96",
+            "horse-photo-v4-1070-f4e5db4a7b7b",
+        ):
+            entry = next(item for item in entries if item["seed_key"] == seed_key)
+            self.assertEqual(rows[seed_key]["image"], entry["image_reference"])
+        self.assertTrue(rows["horse-photo-v4-1070-f4e5db4a7b7b"]["deleted"])
 
 
 class HorseCommandTests(unittest.IsolatedAsyncioTestCase):

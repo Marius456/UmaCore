@@ -54,18 +54,20 @@ test("HEAD returns no body and retains neutral headers", async () => {
   assert.equal(await response.text(), "");
 });
 
-test("allows the configured private-use JRA gallery host", async () => {
-  const source = "https://jra.jp/gallery/3minmeiba/horse9/img/pic_gallery_1.jpg";
-  const token = await tokenFor(source);
-  const request = new Request(`https://photos.example.org/h/v1/${token}.jpg`);
-  const jraEnv = { ...env, HORSE_IMAGE_ALLOWED_HOSTS: "upload.wikimedia.org,jra.jp" };
-  const response = await serveImage(request, jraEnv, async (received) => {
-    assert.equal(received, source);
-    return new Response(new Uint8Array([255, 216, 255]), {
-      headers: { "Content-Type": "image/jpeg" },
+test("does not allow direct-source hosts through the Worker", async () => {
+  for (const source of [
+    "https://jra.jp/gallery/3minmeiba/horse9/img/pic_gallery_1.jpg",
+    "https://cdn.netkeiba.com/img.dir/keibamatome/image.php?id=3353",
+    "https://dir.netkeiba.com/PhotoExhibition/photodetail/img/cate_02_detail_01.jpg",
+    "https://number.ismcdn.jp/mwimgs/c/d/750wm/img_cd0a2409e1309f002ba82de0a3e3896c4381320.jpg",
+  ]) {
+    const token = await tokenFor(source);
+    const request = new Request(`https://photos.example.org/h/v1/${token}.jpg`);
+    const response = await serveImage(request, env, () => {
+      throw new Error("Must not fetch");
     });
-  });
-  assert.equal(response.status, 200);
+    assert.equal(response.status, 404);
+  }
 });
 
 test("sniffs safe image bytes from archive CDNs with generic content types", async () => {
@@ -122,7 +124,7 @@ test("upstream redirects, HTML, oversized images and errors do not leak details"
     { status: 404 }, { status: 500 },
     { headers: { "Content-Type": "text/html" } },
     { headers: { "Content-Type": "image/svg+xml" } },
-    { headers: { "Content-Type": "image/jpeg", "Content-Length": "20000000" } },
+    { headers: { "Content-Type": "image/jpeg", "Content-Length": "25000000" } },
   ]) {
     const result = await serveImage(new Request(url), env, async () => new Response(vector.source, init));
     assert.equal(result.status, 502);
@@ -135,7 +137,7 @@ test("upstream redirects, HTML, oversized images and errors do not leak details"
 });
 
 test("limits streamed images even without Content-Length", async () => {
-  const upstream = new Response(new Uint8Array(11 * 1024 * 1024), { headers: { "Content-Type": "image/jpeg" } });
+  const upstream = new Response(new Uint8Array(21 * 1024 * 1024), { headers: { "Content-Type": "image/jpeg" } });
   const response = await serveImage(new Request(url), env, async () => upstream);
   await assert.rejects(response.arrayBuffer(), /Image too large/);
 });

@@ -14,6 +14,14 @@ from services.horse_image_url import (
 TEST_KEY = bytes(range(32)).hex()
 SOURCE = "https://upload.wikimedia.org/wikipedia/commons/a/ab/Gold_Ship.jpg"
 JRA_SOURCE = "https://jra.jp/gallery/3minmeiba/horse9/img/pic_gallery_1.jpg"
+JRA_HALL_OF_FAME_SOURCE = "https://jra.jp/gallery/dendo/horse13/img/pic_gallery_2.jpg"
+NETKEIBA_CDN_SOURCE = "https://cdn.netkeiba.com/img.dir/keibamatome/image.php?id=3353"
+NETKEIBA_PROFILE_SOURCE = (
+    "https://cdnv2.netkeiba.com/img.db.sp/show_photo.php?"
+    "horse_id=1985100743&no=spdb&tn=&tmp=no&default_image=netkeiba"
+)
+NETKEIBA_DIR_SOURCE = "https://dir.netkeiba.com/PhotoExhibition/photodetail/img/cate_02_detail_01.jpg"
+NUMBER_SOURCE = "https://number.ismcdn.jp/mwimgs/c/d/750wm/img_cd0a2409e1309f002ba82de0a3e3896c4381320.jpg"
 ARCHIVE_SOURCE = "https://assets.st-note.com/img/example.jpg?width=1200"
 
 
@@ -48,11 +56,51 @@ def test_disabled_proxy_keeps_existing_direct_url_mode(monkeypatch):
     assert image_url_for_game(SOURCE) == SOURCE
 
 
-def test_private_use_jra_gallery_host_can_be_enabled(monkeypatch):
-    monkeypatch.setattr(settings, "HORSE_IMAGE_ALLOWED_HOSTS", "upload.wikimedia.org,jra.jp")
-    result = image_url_for_game(JRA_SOURCE)
-    assert result.startswith("https://photos.example.org/h/v1/")
-    assert "jra" not in result and "horse9" not in result
+@pytest.mark.parametrize("source", [
+    JRA_SOURCE, JRA_HALL_OF_FAME_SOURCE, NETKEIBA_CDN_SOURCE,
+    NETKEIBA_PROFILE_SOURCE, NETKEIBA_DIR_SOURCE, NUMBER_SOURCE,
+])
+def test_neutral_image_hosts_bypass_worker_with_exact_direct_url(source):
+    assert image_url_for_game(source) == source
+
+
+@pytest.mark.parametrize("base,key", [
+    ("", TEST_KEY), ("https://photos.example.org", "invalid"),
+])
+def test_jra_bypass_precedes_worker_configuration_validation(monkeypatch, base, key):
+    monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_URL", base)
+    monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_KEY", key)
+    for source in (
+        JRA_SOURCE, NETKEIBA_CDN_SOURCE, NETKEIBA_PROFILE_SOURCE,
+        NETKEIBA_DIR_SOURCE, NUMBER_SOURCE,
+    ):
+        assert image_url_for_game(source) == source
+
+
+@pytest.mark.parametrize("source", [
+    "https://images.jra.jp/photo.jpg",
+    "https://example-jra.jp/photo.jpg",
+    "https://jra.jp.example.org/photo.jpg",
+    "https://jra.jp:444/photo.jpg",
+    "https://jra.jp/photo.jpg#answer",
+    "https://cdn.netkeiba.com.example.org/photo.jpg",
+    "https://fakecdn.netkeiba.com/photo.jpg",
+    "https://cdn.netkeiba.com/Gold_Ship.jpg",
+    "https://cdn.netkeiba.com/img.dir/keibamatome/image.php?id=horse-name",
+    "https://cdnv2.netkeiba.com/Gold_Ship.jpg",
+    "https://cdnv2.netkeiba.com/img.db.sp/show_photo.php?horse_id=Gold_Ship&no=spdb&tn=&tmp=no&default_image=netkeiba",
+    "https://cdnv2.netkeiba.com/img.db.sp/show_photo.php?horse_id=1985100743&no=spdb&tn=&tmp=no&default_image=other",
+    "https://cdnv2.netkeiba.com.example.org/img.db.sp/show_photo.php?horse_id=1985100743&no=spdb&tn=&tmp=no&default_image=netkeiba",
+    "https://dir.netkeiba.com:444/photo.jpg",
+    "https://dir.netkeiba.com/photo.jpg#answer",
+    "https://dir.netkeiba.com/Gold_Ship.jpg",
+    "https://number.ismcdn.jp/mwimgs/c/d/750wm/Gold_Ship.jpg",
+    "https://number.ismcdn.jp/mwimgs/c/d/750wm/img_not-a-hash.jpg",
+    "https://number.ismcdn.jp.example.org/mwimgs/c/d/750wm/img_cd0a2409e1309f002ba82de0a3e3896c4381320.jpg",
+])
+def test_direct_host_lookalikes_and_unsafe_variants_do_not_bypass(source):
+    with pytest.raises(ValueError):
+        image_url_for_game(source)
 
 
 def test_private_use_archive_host_can_be_enabled(monkeypatch):

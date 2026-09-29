@@ -42,10 +42,9 @@ HORSE_IMAGE_PROXY_URL = os.getenv("HORSE_IMAGE_PROXY_URL", "")
 HORSE_IMAGE_PROXY_KEY = os.getenv("HORSE_IMAGE_PROXY_KEY", "")
 HORSE_IMAGE_ALLOWED_HOSTS = os.getenv(
     "HORSE_IMAGE_ALLOWED_HOSTS",
-    "assets.st-note.com,cdn.netkeiba.com,dir.netkeiba.com,i.daily.jp,"
-    "jbpress.ismcdn.jp,jra-van.jp,jra.jp,meiba.jp,number.ismcdn.jp,"
-    "pbs.twimg.com,stat.ameba.jp,static.wikia.nocookie.net,tospo-keiba.jp,"
-    "uma-furi.com,upload.wikimedia.org,www.meiba.jp",
+    "assets.st-note.com,i.daily.jp,jbpress.ismcdn.jp,jra-van.jp,meiba.jp,"
+    "pbs.twimg.com,stat.ameba.jp,tospo-keiba.jp,uma-furi.com,"
+    "upload.wikimedia.org,www.meiba.jp",
 )
 
 # Logging Configuration

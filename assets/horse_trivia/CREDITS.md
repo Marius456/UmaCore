@@ -2198,19 +2198,19 @@ These additional file pages and identities were individually checked on 2026-09-
 
 ## Sakura Chiyono O
 
-- Image: [Original photograph](https://static.wikia.nocookie.net/umamusume/images/5/51/IRL_Sakura_Chiyono_O.jpg/revision/latest?cb=20240726235107)
-- Source: [https://umamusume.fandom.com/wiki/Sakura_Chiyono_O/Real_Life](https://umamusume.fandom.com/wiki/Sakura_Chiyono_O/Real_Life)
-- Author: Uma Musume Wiki contributor / source photographer
-- Rights: [Copyrighted - private use only](https://www.fandom.com/terms-of-use)
+- Image: [Original photograph](https://cdnv2.netkeiba.com/img.db.sp/show_photo.php?horse_id=1985100743&no=spdb&tn=&tmp=no&default_image=netkeiba)
+- Source: [https://db.sp.netkeiba.com/horse/1985100743/](https://db.sp.netkeiba.com/horse/1985100743/)
+- Author: Net Dreamers Co., Ltd. / netkeiba contributor
+- Rights: [Copyrighted - private use only](https://www.netdreamers.co.jp/corporate/terms.html)
 - Changes: None.
 - Reviewed directly from the source image; no local photo file is stored.
 
 ## Sirius Symboli
 
-- Image: [Original photograph](https://static.wikia.nocookie.net/umamusume/images/0/00/IRL_Sirius_Symboli.jpg/revision/latest?cb=20240727000208)
-- Source: [https://umamusume.fandom.com/wiki/Sirius_Symboli/Real_Life](https://umamusume.fandom.com/wiki/Sirius_Symboli/Real_Life)
-- Author: Uma Musume Wiki contributor / source photographer
-- Rights: [Copyrighted - private use only](https://www.fandom.com/terms-of-use)
+- Image: [Original photograph](https://stat.ameba.jp/user_images/20230520/22/yumio431215/7c/09/j/o0370058315287064278.jpg)
+- Source: [https://ameblo.jp/yumio431215/entry-12803865563.html](https://ameblo.jp/yumio431215/entry-12803865563.html)
+- Author: Masachan
+- Rights: [Copyrighted - private use only](https://helps.ameba.jp/rules/post_104.html)
 - Changes: None.
 - Reviewed directly from the source image; no local photo file is stored.
 

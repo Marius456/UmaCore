@@ -13,6 +13,14 @@ RETIRED_IMAGE_URLS = {
     "horse-photo-v1-005": (
         "https://upload.wikimedia.org/wikipedia/commons/f/f8/Gold_Ship_Arima_kinen_2015%28IMG1%29.jpg",
     ),
+    "horse-photo-v4-1069-c163d0601c96": (
+        "https://static.wikia.nocookie.net/umamusume/images/5/51/IRL_Sakura_Chiyono_O.jpg/revision/latest?cb=20240726235107",
+        "https://vignette.wikia.nocookie.net/umamusume/images/5/51/IRL_Sakura_Chiyono_O.jpg/revision/latest?cb=20240726235107",
+    ),
+    "horse-photo-v4-1070-f4e5db4a7b7b": (
+        "https://static.wikia.nocookie.net/umamusume/images/0/00/IRL_Sirius_Symboli.jpg/revision/latest?cb=20240727000208",
+        "https://vignette.wikia.nocookie.net/umamusume/images/0/00/IRL_Sirius_Symboli.jpg/revision/latest?cb=20240727000208",
+    ),
 }
 
 
