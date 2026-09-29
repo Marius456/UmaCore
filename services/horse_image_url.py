@@ -27,7 +27,9 @@ def image_url_for_game(source_url: str) -> str:
     base_url = settings.HORSE_IMAGE_PROXY_URL.strip().rstrip("/")
     key_hex = settings.HORSE_IMAGE_PROXY_KEY.strip()
     if not base_url and not key_hex:
-        return source_url
+        raise ImageProxyConfigurationError(
+            "The image Worker is required for sources whose URLs can reveal the answer."
+        )
     try:
         validate_https_url(base_url)
         parsed = urlsplit(base_url)

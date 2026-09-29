@@ -103,12 +103,12 @@ does not overwrite existing custom image URLs.
 An unavailable manifest is logged without preventing text trivia from loading.
 
 The bot does not download or store the photos. Discord fetches the embedded URL;
-when the optional proxy is enabled, the Worker retrieves and caches the origin.
+the Worker retrieves and caches the origin for answer-revealing sources.
 
 ## Neutral image URLs
 
 Direct Commons and archive URLs can contain a filename that reveals the answer
-when a player hovers the image. The optional Worker in `workers/horse-images/`
+when a player hovers the image. The Worker in `workers/horse-images/`
 fixes that without storing photos in the bot. The bot encrypts those source URLs
 into an authenticated opaque path such as `https://<worker>/h/v1/<token>.jpg`.
 The Worker decrypts it, fetches only an explicitly allowed HTTPS host, strips
@@ -146,9 +146,9 @@ HORSE_IMAGE_ALLOWED_HOSTS=assets.st-note.com,i.daily.jp,jbpress.ismcdn.jp,jra-va
 Configure a custom domain such as `images.umacore.app` in Cloudflare if desired,
 then use that HTTPS origin for `HORSE_IMAGE_PROXY_URL`. The bot accepts only a
 bare HTTPS origin; paths, query strings, credentials, fragments, and non-default
-ports are rejected. If either proxy setting is missing or malformed, partial
-configuration fails closed instead of exposing the source URL. When both are
-unset, direct URLs remain available for local development.
+ports are rejected. If either proxy setting is missing or malformed,
+configuration fails closed instead of exposing the source URL. Exact recognized
+sources with neutral numeric or opaque paths can still be fetched directly.
 
 Administrator-added images must use exact `jra.jp` URLs, one of the supported
 numeric Netkeiba or hashed Number image URL formats, or a host present in

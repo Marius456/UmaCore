@@ -50,10 +50,11 @@ def test_worker_interop_vector():
         assert _encrypted_token(vector["source"], vector["key"]) == vector["token"]
 
 
-def test_disabled_proxy_keeps_existing_direct_url_mode(monkeypatch):
+def test_disabled_proxy_never_exposes_revealing_source_url(monkeypatch):
     monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_URL", "")
     monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_KEY", "")
-    assert image_url_for_game(SOURCE) == SOURCE
+    with pytest.raises(ImageProxyConfigurationError):
+        image_url_for_game(SOURCE)
 
 
 @pytest.mark.parametrize("source", [

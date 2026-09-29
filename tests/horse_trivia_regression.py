@@ -24,10 +24,14 @@ from models.trivia_leaderboard import HorseTriviaLeaderboardEntry, TriviaLeaderb
 
 
 @pytest.fixture(autouse=True)
-def direct_image_mode(monkeypatch):
+def image_proxy_mode(monkeypatch):
     """Keep this module independent of a developer's local proxy configuration."""
-    monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_URL", "")
-    monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_KEY", "")
+    monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_URL", "https://photos.example.net")
+    monkeypatch.setattr(settings, "HORSE_IMAGE_PROXY_KEY", "01" * 32)
+    monkeypatch.setattr(
+        settings, "HORSE_IMAGE_ALLOWED_HOSTS",
+        f"{settings.HORSE_IMAGE_ALLOWED_HOSTS},example.org",
+    )
 
 
 def question(number=1, image="https://example.org/photo.jpg", *, global_available=True):
@@ -223,9 +227,14 @@ class HorseGameTests(unittest.IsolatedAsyncioTestCase):
             )
         first = request.edit_original_response.await_args.kwargs
         edits = request.original_response.return_value.edit.await_args_list
+        rendered_urls = []
         for kwargs, url in zip([first, edits[1].kwargs, edits[3].kwargs], urls):
-            self.assertEqual(kwargs["embed"].image.url, url)
+            rendered_url = kwargs["embed"].image.url
+            self.assertTrue(rendered_url.startswith("https://photos.example.net/h/v1/"))
+            self.assertNotIn(url, rendered_url)
+            rendered_urls.append(rendered_url)
             self.assertEqual(kwargs["attachments"], [])
+        self.assertEqual(len(set(rendered_urls)), len(urls))
 
     async def test_empty_bank_ends_privately_without_scoring(self):
         request, scores = await self.run_game([None], [])
