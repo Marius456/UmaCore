@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import plotly.io as pio
 from tabulate import tabulate
 
-from config.settings import COLOR_ON_TRACK, COLOR_BEHIND, COLOR_BOMB, COLOR_INFO
+from config.settings import COLOR_ON_TRACK, COLOR_BEHIND, COLOR_INFO
 
 logger = logging.getLogger(__name__)
 
@@ -337,7 +337,7 @@ class ReportGenerator:
         return embeds_with_files
 
     async def create_daily_report(self, club_name: str, daily_quota: int, status_summary: Dict,
-                                   bombs_data: List[Dict], report_date: date,
+                                   report_date: date,
                                    rank_data: Optional[Dict] = None,
                                    quota_period: str = 'daily') -> List[ReportEmbed]:
         """
@@ -377,7 +377,6 @@ class ReportGenerator:
         total = status_summary['total_members']
         on_track_count = len(status_summary['on_track'])
         behind_count = len(status_summary['behind'])
-        bombs_count = len(bombs_data)
 
         # Build summary text
         summary_text = (
@@ -385,10 +384,6 @@ class ReportGenerator:
             f"✅ On Track: {on_track_count}\n"
             f"⚠️ Behind: {behind_count}"
         )
-
-        # Only show bomb count if there are active bombs
-        if bombs_count > 0:
-            summary_text += f"\n💣 Bombs Active: {bombs_count}"
 
         summary_embed.add_field(
             name="📈 Summary",
@@ -437,17 +432,6 @@ class ReportGenerator:
                 image_prefix="behind"
             )
             report_items.extend(table_embeds)
-
-        # Bombs embed (if any)
-        if bombs_data:
-            bombs_text = self._format_bombs_section(bombs_data)
-            bombs_embed = discord.Embed(
-                title="💣 Active Bombs",
-                description=bombs_text,
-                color=COLOR_BOMB,
-                timestamp=discord.utils.utcnow()
-            )
-            report_items.append((bombs_embed, []))
 
         return report_items
 
@@ -506,32 +490,6 @@ class ReportGenerator:
 
         return sections if sections else ["*No members*"]
 
-    def _format_bombs_section(self, bombs_data: List[Dict]) -> str:
-        """Format the active bombs section"""
-        lines = []
-
-        for item in bombs_data:
-            member = item['member']
-            bomb = item['bomb']
-            history = item['history']
-
-            deficit = abs(history.deficit_surplus)
-            days_remaining = bomb.days_remaining
-
-            if days_remaining <= 2:
-                emoji = "🔴"
-            elif days_remaining <= 4:
-                emoji = "🟠"
-            else:
-                emoji = "🟡"
-
-            lines.append(
-                f"{emoji} **{member.trainer_name}**: {days_remaining} day{'s' if days_remaining != 1 else ''} remaining "
-                f"(-{self.format_fans_short(deficit)} behind)"
-            )
-
-        return "\n".join(lines) if lines else "*No active bombs*"
-
     def _format_rank_section(self, rank_data: Dict) -> str:
         """Format the club/monthly rank lines for the summary embed."""
         monthly_rank = rank_data.get('monthly_rank')
@@ -575,7 +533,7 @@ class ReportGenerator:
             lambda item: (
                 f"❌ **{item['member'].trainer_name}**: "
                 f"Joined {item['member'].join_date.strftime('%Y-%m-%d')} — "
-                f"bomb expired, still behind quota"
+                f"still behind quota"
             ),
             max_length=1000
         )
@@ -584,84 +542,16 @@ class ReportGenerator:
         for idx, section in enumerate(sections):
             title = f"🚨 KICK ALERT - {club_name}" if idx == 0 else f"🚨 KICK ALERT - {club_name} (continued {idx + 1})"
             description = (
-                f"The following members have failed to meet quota after bomb expiration:\n\n{section}"
+                f"The following members need to be kicked:\n\n{section}"
                 if idx == 0 else section
             )
             embed = discord.Embed(
                 title=title,
                 description=description,
-                color=COLOR_BOMB,
+                color=COLOR_BEHIND,
                 timestamp=discord.utils.utcnow()
             )
             embed.set_footer(text=f"Manual kick required - {club_name}")
-            embeds.append(embed)
-
-        return embeds
-
-    def create_bomb_activation_alert(self, club_name: str, newly_activated: List[Dict]) -> List[discord.Embed]:
-        """
-        Create alert embeds for newly activated bombs.
-
-        Returns a list of embeds, split across multiple if needed.
-        """
-        sections = self._split_into_sections(
-            newly_activated,
-            lambda item: (
-                f"💣 **{item['member'].trainer_name}**: "
-                f"**{item['bomb'].days_remaining} day{'s' if item['bomb'].days_remaining != 1 else ''}** to get back on track"
-            ),
-            max_length=1000
-        )
-
-        embeds = []
-        for idx, section in enumerate(sections):
-            title = f"💣 Bomb Activation Alert - {club_name}" if idx == 0 else f"💣 Bomb Activation Alert - {club_name} (continued {idx + 1})"
-            description = (
-                f"The following members have been behind quota for 3+ consecutive days:\n\n{section}"
-                if idx == 0 else section
-            )
-            embed = discord.Embed(
-                title=title,
-                description=description,
-                color=COLOR_BOMB,
-                timestamp=discord.utils.utcnow()
-            )
-            embed.set_footer(text=f"Get back on track to deactivate the bomb! - {club_name}")
-            embeds.append(embed)
-
-        return embeds
-
-    def create_bomb_deactivation_report(self, club_name: str, deactivated: List[Dict]) -> List[discord.Embed]:
-        """
-        Create report embeds for deactivated bombs.
-
-        Returns a list of embeds, split across multiple if needed.
-        """
-        sections = self._split_into_sections(
-            deactivated,
-            lambda item: (
-                f"🎉 **{item['member'].trainer_name}**: "
-                f"+{item['history'].deficit_surplus:,} fans surplus "
-                f"({item['history'].cumulative_fans:,} total)"
-            ),
-            max_length=1000
-        )
-
-        count = len(deactivated)
-        embeds = []
-        for idx, section in enumerate(sections):
-            title = f"✅ Bombs Defused - {club_name}" if idx == 0 else f"✅ Bombs Defused - {club_name} (continued {idx + 1})"
-            description = (
-                f"{count} member{'s' if count != 1 else ''} got back on track!\n\n{section}"
-                if idx == 0 else section
-            )
-            embed = discord.Embed(
-                title=title,
-                description=description,
-                color=COLOR_ON_TRACK,
-                timestamp=discord.utils.utcnow()
-            )
-            embed.set_footer(text=f"Great job getting back on track! - {club_name}")
             embeds.append(embed)
 
         return embeds

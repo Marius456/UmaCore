@@ -66,7 +66,7 @@ class SettingsCommands(commands.Cog):
             logger.error(f"Error in set_report_channel: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)}")
     
-    @app_commands.command(name="set_alert_channel", description="Set the channel for alerts (bombs, kicks)")
+    @app_commands.command(name="set_alert_channel", description="Set the channel for alerts (kicks, warnings)")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_alert_channel(self, interaction: discord.Interaction, channel: discord.TextChannel, club: str):
         """Set the channel where alerts will be posted"""
@@ -86,7 +86,7 @@ class SettingsCommands(commands.Cog):
             
             embed = discord.Embed(
                 title=f"✅ Alert Channel Updated - {club}",
-                description=f"Alerts (bomb warnings, kick notifications) will now be posted to {channel.mention}",
+                description=f"Alerts (kick notifications, warnings) will now be posted to {channel.mention}",
                 color=discord.Color.green(),
                 timestamp=discord.utils.utcnow()
             )

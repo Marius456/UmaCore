@@ -10,8 +10,8 @@ import pytz
 
 from config.settings import TIMEZONE
 from scrapers import UmaMoeAPIScraper
-from services import QuotaCalculator, BombManager, ReportGenerator
-from models import Member, QuotaHistory, Bomb, QuotaRequirement, BotSettings, Club
+from services import QuotaCalculator, ReportGenerator
+from models import Member, QuotaHistory, QuotaRequirement, BotSettings, Club
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,6 @@ class QuotaCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.quota_calculator = QuotaCalculator()
-        self.bomb_manager = BombManager()
         self.report_generator = ReportGenerator()
         self.timezone = pytz.timezone(TIMEZONE)
     
@@ -49,10 +48,10 @@ class QuotaCommands(commands.Cog):
             logger.error(f"Error in set_report_channel: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)}")
     
-    @app_commands.command(name="set_alert_channel", description="Set the channel for alerts (bombs, kicks)")
+    @app_commands.command(name="set_alert_channel", description="Set the channel for alerts (kicks, warnings)")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_alert_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        """Set the channel where alerts (bomb activations, kick warnings) will be posted"""
+        """Set the channel where alerts (kick warnings) will be posted"""
         await interaction.response.defer()
         
         try:
@@ -60,7 +59,7 @@ class QuotaCommands(commands.Cog):
             
             embed = discord.Embed(
                 title="✅ Alert Channel Updated",
-                description=f"Alerts (bomb warnings, kick notifications) will now be posted to {channel.mention}",
+                description=f"Alerts (kick notifications, warnings) will now be posted to {channel.mention}",
                 color=discord.Color.green(),
                 timestamp=discord.utils.utcnow()
             )
@@ -365,37 +364,17 @@ class QuotaCommands(commands.Cog):
                 scraped_data, current_date, current_day
             )
             
-            # Bombs
-            newly_activated = await self.bomb_manager.check_and_activate_bombs(current_date)
-            await self.bomb_manager.update_bomb_countdowns(current_date)
-            deactivated = await self.bomb_manager.check_and_deactivate_bombs(current_date)
-            members_to_kick = await self.bomb_manager.check_expired_bombs()
-            
             # Report
             status_summary = await self.quota_calculator.get_member_status_summary(current_date)
-            bombs_data = await self.bomb_manager.get_active_bombs_with_members()
             
             from config.settings import DAILY_QUOTA
             daily_reports = await self.report_generator.create_daily_report(
-                "Club", DAILY_QUOTA, status_summary, bombs_data, current_date
+                "Club", DAILY_QUOTA, status_summary, current_date
             )
             
             # Send all report embeds
             for embed, files in daily_reports:
                 await report_channel.send(embed=embed, files=files if files else None)
-            
-            # Alerts
-            if newly_activated:
-                bomb_data = []
-                for bomb in newly_activated:
-                    member = await Member.get_by_id(bomb.member_id)
-                    bomb_data.append({'bomb': bomb, 'member': member})
-                alert = self.report_generator.create_bomb_activation_alert(bomb_data)
-                await alert_channel.send(embed=alert)
-            
-            if members_to_kick:
-                kick_alert = self.report_generator.create_kick_alert(members_to_kick)
-                await alert_channel.send(embed=kick_alert)
             
             await interaction.followup.send(
                 f"✅ Check complete: {updated_members} members updated, {new_members} new members"
@@ -424,9 +403,6 @@ class QuotaCommands(commands.Cog):
             if not latest_history:
                 await interaction.followup.send(f"No quota data found for {trainer_name}")
                 return
-            
-            # Check for active bomb
-            active_bomb = await Bomb.get_active_for_member(member.member_id)
             
             # Create embed
             embed = discord.Embed(
@@ -460,59 +436,10 @@ class QuotaCommands(commands.Cog):
                 inline=False
             )
             
-            if active_bomb:
-                embed.add_field(
-                    name="💣 Active Bomb",
-                    value=f"**Activated:** {active_bomb.activation_date.strftime('%Y-%m-%d')}\n"
-                          f"**Days Remaining:** {active_bomb.days_remaining}",
-                    inline=False
-                )
-            
             await interaction.followup.send(embed=embed)
             
         except Exception as e:
             logger.error(f"Error in member_status: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
-    
-    @app_commands.command(name="bomb_status", description="View all active bombs")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def bomb_status(self, interaction: discord.Interaction):
-        """View all active bombs"""
-        await interaction.response.defer()
-        
-        try:
-            bombs_data = await self.bomb_manager.get_active_bombs_with_members()
-            
-            if not bombs_data:
-                await interaction.followup.send("✅ No active bombs!")
-                return
-            
-            embed = discord.Embed(
-                title="💣 Active Bombs",
-                description=f"Total: {len(bombs_data)}",
-                color=discord.Color.red(),
-                timestamp=discord.utils.utcnow()
-            )
-            
-            for item in bombs_data[:25]:  # Discord limit
-                member = item['member']
-                bomb = item['bomb']
-                history = item['history']
-                
-                deficit = abs(history.deficit_surplus)
-                
-                embed.add_field(
-                    name=f"{member.trainer_name}",
-                    value=f"**Days Remaining:** {bomb.days_remaining}\n"
-                          f"**Behind by:** {deficit:,} fans\n"
-                          f"**Activated:** {bomb.activation_date.strftime('%Y-%m-%d')}",
-                    inline=True
-                )
-            
-            await interaction.followup.send(embed=embed)
-            
-        except Exception as e:
-            logger.error(f"Error in bomb_status: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)}")
     
     @app_commands.command(name="add_member", description="Manually add a new member")

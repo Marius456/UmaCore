@@ -7,7 +7,7 @@ from discord.ext import commands
 from datetime import date as date_class
 import logging
 
-from models import Member, QuotaHistory, Bomb, UserLink, Club, QuotaRequirement
+from models import Member, QuotaHistory, UserLink, Club, QuotaRequirement
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,6 @@ class MemberCommands(commands.Cog):
             user_link = await UserLink.create(
                 discord_user_id=interaction.user.id,
                 member_id=member.member_id,
-                notify_on_bombs=True,
                 notify_on_deficit=False
             )
             
@@ -86,8 +85,7 @@ class MemberCommands(commands.Cog):
             
             embed.add_field(
                 name="🔔 Notifications Enabled",
-                value="• **Bomb Warnings:** ✅ Enabled\n"
-                      "• **Deficit Alerts:** ❌ Disabled",
+                value="• **Deficit Alerts:** ❌ Disabled",
                 inline=False
             )
             
@@ -148,7 +146,6 @@ class MemberCommands(commands.Cog):
     
     @app_commands.command(name="notification_settings", description="Manage your notification preferences")
     async def notification_settings(self, interaction: discord.Interaction, 
-                                   bomb_warnings: bool = None, 
                                    deficit_alerts: bool = None):
         """Manage notification settings"""
         await interaction.response.defer(ephemeral=True)
@@ -164,7 +161,7 @@ class MemberCommands(commands.Cog):
                 return
             
             # If no settings provided, show current settings
-            if bomb_warnings is None and deficit_alerts is None:
+            if deficit_alerts is None:
                 member = await Member.get_by_id(user_link.member_id)
                 
                 embed = discord.Embed(
@@ -174,19 +171,17 @@ class MemberCommands(commands.Cog):
                     timestamp=discord.utils.utcnow()
                 )
                 
-                bomb_status = "✅ Enabled" if user_link.notify_on_bombs else "❌ Disabled"
                 deficit_status = "✅ Enabled" if user_link.notify_on_deficit else "❌ Disabled"
                 
                 embed.add_field(
                     name="Current Settings",
-                    value=f"**💣 Bomb Warnings:** {bomb_status}\n"
-                          f"**⚠️ Deficit Alerts:** {deficit_status}",
+                    value=f"**⚠️ Deficit Alerts:** {deficit_status}",
                     inline=False
                 )
                 
                 embed.add_field(
                     name="ℹ️ How to change",
-                    value="Use `/notification_settings bomb_warnings:True` or similar to update settings",
+                    value="Use `/notification_settings deficit_alerts:True` or similar to update settings",
                     inline=False
                 )
                 
@@ -194,10 +189,9 @@ class MemberCommands(commands.Cog):
                 return
             
             # Update settings
-            new_bomb_setting = bomb_warnings if bomb_warnings is not None else user_link.notify_on_bombs
             new_deficit_setting = deficit_alerts if deficit_alerts is not None else user_link.notify_on_deficit
             
-            await user_link.update_notifications(new_bomb_setting, new_deficit_setting)
+            await user_link.update_notifications(new_deficit_setting)
             
             member = await Member.get_by_id(user_link.member_id)
             
@@ -208,13 +202,11 @@ class MemberCommands(commands.Cog):
                 timestamp=discord.utils.utcnow()
             )
             
-            bomb_status = "✅ Enabled" if new_bomb_setting else "❌ Disabled"
             deficit_status = "✅ Enabled" if new_deficit_setting else "❌ Disabled"
             
             embed.add_field(
                 name="New Settings",
-                value=f"**💣 Bomb Warnings:** {bomb_status}\n"
-                      f"**⚠️ Deficit Alerts:** {deficit_status}",
+                value=f"**⚠️ Deficit Alerts:** {deficit_status}",
                 inline=False
             )
             
@@ -277,8 +269,6 @@ class MemberCommands(commands.Cog):
             await interaction.followup.send(f"No quota data found for {member.trainer_name}")
             return
         
-        active_bomb = await Bomb.get_active_for_member(member.member_id)
-        
         # Get club info and effective quota
         from models import Club
         club = await Club.get_by_id(member.club_id)
@@ -288,17 +278,13 @@ class MemberCommands(commands.Cog):
             daily_quota = 1000000
         
         # Determine color based on status
-        if active_bomb:
-            color = 0xFF0000  # Red for bomb
-        elif latest_history.deficit_surplus < 0:
+        if latest_history.deficit_surplus < 0:
             color = 0xFFA500  # Orange for behind
         else:
             color = 0x3498db  # Blue for on track
         
         # Build title
-        if active_bomb:
-            title = "💣 Quota Status - Bomb Active"
-        elif latest_history.deficit_surplus < 0:
+        if latest_history.deficit_surplus < 0:
             title = "⚠️ Quota Status - Behind"
         else:
             title = "📊 Quota Status"
@@ -386,38 +372,16 @@ class MemberCommands(commands.Cog):
             inline=True
         )
         
-        # Bomb status
-        if active_bomb:
-            urgency_emoji = "🔴" if active_bomb.days_remaining <= 2 else "🟠" if active_bomb.days_remaining <= 4 else "🟡"
-            
-            embed.add_field(
-                name="💣 Active Bomb",
-                value=f"{urgency_emoji} **{active_bomb.days_remaining} days remaining**\n"
-                      f"Activated: {active_bomb.activation_date.strftime('%b %d, %Y')}\n"
-                      f"Get back on track!",
-                inline=True
-            )
-        elif latest_history.days_behind == 2:
-            embed.add_field(
-                name="💣 Bomb Warning",
-                value=f"🟡 **1 more day** behind\n"
-                      f"and a bomb will activate!\n"
-                      f"Get on track today.",
-                inline=True
-            )
-        else:
-            embed.add_field(name="\u200b", value="\u200b", inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=True)
         
         # Recommendations
         if latest_history.deficit_surplus < 0:
             deficit = abs(latest_history.deficit_surplus)
-            catchup_days = (club.bomb_countdown_days - latest_history.days_behind) if club else 7
-            recommended_daily = daily_quota + (deficit // max(1, catchup_days))
             
             embed.add_field(
                 name="💡 To Catch Up",
                 value=f"Earn **{deficit:,}+ fans** total\n"
-                      f"Target: **{recommended_daily:,} fans/day**",
+                      f"Target: **{daily_quota:,} fans/day**",
                 inline=False
             )
         

@@ -2,7 +2,6 @@
 Services package
 """
 from .quota_calculator import QuotaCalculator
-from .bomb_manager import BombManager
 from .report_generator import ReportGenerator
 from .notification_service import NotificationService
 from .monthly_info_service import MonthlyInfoService
@@ -11,7 +10,6 @@ from .leaderboard_report_service import LeaderboardReportService
 
 __all__ = [
     'QuotaCalculator', 
-    'BombManager', 
     'ReportGenerator', 
     'NotificationService', 
     'MonthlyInfoService',

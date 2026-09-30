@@ -13,7 +13,7 @@ from aiohttp import web
 from config.database import db
 from models import Club
 from scrapers import UmaMoeAPIScraper
-from services import QuotaCalculator, BombManager, ScrapeContext
+from services import QuotaCalculator, ScrapeContext
 
 logger = logging.getLogger(__name__)
 
@@ -180,10 +180,6 @@ async def handle_sync(request: web.Request) -> web.StreamResponse:
                     club.club_id, scraped_data, current_date, current_day,
                     quota_period=club.quota_period
                 )
-
-                bomb_manager = BombManager()
-                await bomb_manager.check_and_activate_bombs(club, current_date)
-                await bomb_manager.check_and_deactivate_bombs(club.club_id, current_date)
 
                 fetched_year = getattr(scraper, '_fetched_year', None) or current_date.year
                 fetched_month = getattr(scraper, '_fetched_month', None) or current_date.month

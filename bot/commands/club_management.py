@@ -209,8 +209,7 @@ class ClubManagementCommands(commands.Cog):
             embed.add_field(
                 name="Settings",
                 value=f"**Quota:** {quota_formatted} fans per {period_label}\n"
-                      f"**Scrape Time:** {scrape_time} {timezone}\n"
-                      f"**Bomb Rules:** 3 days trigger, 7 days countdown",
+                      f"**Scrape Time:** {scrape_time} {timezone}",
                 inline=False
             )
             
@@ -284,7 +283,6 @@ class ClubManagementCommands(commands.Cog):
                 name="🗑️ What will be deleted",
                 value="• All member records\n"
                       "• All quota history\n"
-                      "• All active bombs\n"
                       "• All quota requirements\n"
                       "• All user links\n"
                       "• All settings",
@@ -394,15 +392,11 @@ class ClubManagementCommands(commands.Cog):
                 else:
                     scraper_info = "\n**Scraper:** ChronoGenesis"
 
-                # Bomb status indicator
-                bomb_status = "Enabled ✅" if club.bombs_enabled else "Disabled ❌"
-
                 embed.add_field(
                     name=f"{status} {club.club_name}",
                     value=f"**Quota:** {quota_formatted} fans/{period_label}\n"
                           f"**Schedule:** {club.get_scrape_time_str()} {club.timezone}"
-                          f"{scraper_info}\n"
-                          f"**Bombs:** {bomb_status}",
+                          f"{scraper_info}",
                     inline=False
                 )
             
@@ -426,9 +420,7 @@ class ClubManagementCommands(commands.Cog):
                        quota_period: app_commands.Choice[str] = None,
                        scrape_time: str = None,
                        timezone: str = None,
-                       bomb_trigger_days: int = None,
-                       bomb_countdown_days: int = None,
-                       bombs_enabled: bool = None):
+                       ):
         """Edit club configuration"""
         await interaction.response.defer()
         
@@ -480,23 +472,9 @@ class ClubManagementCommands(commands.Cog):
                     await interaction.followup.send(f"❌ Invalid timezone: `{timezone}`")
                     return
                 updates['timezone'] = timezone
-            if bomb_trigger_days is not None:
-                updates['bomb_trigger_days'] = bomb_trigger_days
-            if bomb_countdown_days is not None:
-                updates['bomb_countdown_days'] = bomb_countdown_days
-            if bombs_enabled is not None:
-                updates['bombs_enabled'] = bombs_enabled
-
             if not updates:
                 await interaction.followup.send("❌ No changes specified")
                 return
-
-            # If bombs are being disabled, deactivate all active bombs
-            from datetime import date
-            from models import Bomb
-            deactivated_count = 0
-            if bombs_enabled is False and club_obj.bombs_enabled:
-                deactivated_count = await Bomb.deactivate_all(club_obj.club_id, date.today())
 
             await club_obj.update_settings(**updates)
             
@@ -538,16 +516,6 @@ class ClubManagementCommands(commands.Cog):
                     changes_text.append(f"**Scrape Time:** {value}")
                 elif key == 'timezone':
                     changes_text.append(f"**Timezone:** {value}")
-                elif key == 'bomb_trigger_days':
-                    changes_text.append(f"**Bomb Trigger:** {value} days")
-                elif key == 'bomb_countdown_days':
-                    changes_text.append(f"**Bomb Countdown:** {value} days")
-                elif key == 'bombs_enabled':
-                    status = "Enabled ✅" if value else "Disabled ❌"
-                    changes_text.append(f"**Bombs:** {status}")
-                    if not value and deactivated_count > 0:
-                        changes_text.append(f"  ↳ Deactivated {deactivated_count} active bomb{'s' if deactivated_count != 1 else ''}")
-
             embed.add_field(
                 name="Changes Applied",
                 value="\n".join(changes_text) + period_warning,
