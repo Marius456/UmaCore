@@ -5,6 +5,8 @@ import discord
 from discord.ext import tasks
 import json as json_mod
 import os
+import re
+import tempfile
 from datetime import datetime, date, timedelta
 from typing import Optional
 import logging
@@ -34,18 +36,28 @@ class BotTasks:
 
         # Track last run per club per day (club_id_YYYY-MM-DD -> True)
         self.last_runs = {}
+        # Serializes event scraping with notification reads/writes of events.json.
+        self._events_lock = asyncio.Lock()
+        # Prevents duplicate Discord posts if a successful send is followed by
+        # a transient failure while persisting the deduplication state.
+        self._sent_event_notifications = set()
 
         logger.info("Multi-club tasks configured - will check all clubs hourly")
 
     def start_tasks(self):
         """Start all scheduled tasks"""
         self.hourly_check.start()
+        self.hourly_event_notifications.start()
         self.daily_official_events_check.start()
-        logger.info("Scheduled tasks started (hourly check, daily official events)")
+        logger.info(
+            "Scheduled tasks started (hourly reports, hourly event notifications, "
+            "daily official event scraping)"
+        )
 
     def stop_tasks(self):
         """Stop all scheduled tasks"""
         self.hourly_check.cancel()
+        self.hourly_event_notifications.cancel()
         self.daily_official_events_check.cancel()
         logger.info("Scheduled tasks stopped")
 
@@ -394,6 +406,17 @@ class BotTasks:
 
     # ── Event Notification Helpers ─────────────────────────────────────
 
+    @staticmethod
+    def _event_display_name(title: str) -> str:
+        """Remove announcement status text from an event title used in alerts."""
+        title = re.sub(
+            r"\s+(?:is coming soon|is here|has ended|out now)!?$",
+            "",
+            title.strip(),
+            flags=re.IGNORECASE,
+        )
+        return re.sub(r"^The (?:story|race) event\s+", "", title, flags=re.IGNORECASE)
+
     async def _notify_events_for_club(self, club: Club, event: dict, notif_type: str) -> bool:
         """
         Send an event notification embed to a club's events channel.
@@ -418,8 +441,14 @@ class BotTasks:
             return False
 
         title = event.get("title", "Unknown event")
+        display_name = self._event_display_name(title)
         event_url = event.get("url", "")
         banner_image = event.get("banner_image")
+        event_key = event.get("event_key") or display_name.lower()
+        notification_key = f"{event_key}:{club.club_id}:{notif_type}"
+        if notification_key in self._sent_event_notifications:
+            logger.debug(f"Notification already sent in this run for '{event_key}' ({notif_type})")
+            return False
 
         if notif_type == "starting":
             try:
@@ -434,7 +463,7 @@ class BotTasks:
                 color=discord.Color.blue(),
                 timestamp=discord.utils.utcnow()
             )
-            embed.add_field(name="📰 Event", value=title, inline=False)
+            embed.add_field(name="📰 Event", value=display_name, inline=False)
             embed.add_field(
                 name="📅 Starts",
                 value=f"<t:{int(start_dt.timestamp())}:F> (<t:{int(start_dt.timestamp())}:R>)",
@@ -453,7 +482,7 @@ class BotTasks:
                 color=discord.Color.red(),
                 timestamp=discord.utils.utcnow()
             )
-            embed.add_field(name="📰 Event", value=title, inline=False)
+            embed.add_field(name="📰 Event", value=display_name, inline=False)
             embed.add_field(
                 name="📅 Ends",
                 value=f"<t:{int(end_dt.timestamp())}:F> (<t:{int(end_dt.timestamp())}:R>)",
@@ -472,32 +501,63 @@ class BotTasks:
             # Uses "{club_id}_{notif_type}" format to distinguish starting vs ending notifications
             notified_clubs.append(dedup_key)
             event["notified_clubs"] = notified_clubs
-            self._save_events_json()
+            self._sent_event_notifications.add(notification_key)
+            if not self._save_events_json():
+                logger.warning(
+                    f"Sent {notif_type} notification for '{title[:60]}', "
+                    "but failed to persist its deduplication state"
+                )
             logger.info(f"Sent {notif_type} notification to {club.club_name}: '{title[:60]}'")
             return True
         except Exception as e:
             logger.error(f"Error sending {notif_type} notification to {club.club_name}: {e}", exc_info=True)
             return False
 
-    def _save_events_json(self) -> None:
+    def _save_events_json(self) -> bool:
         """Save the current in-memory events data back to the JSON file."""
         try:
             if not hasattr(self, '_events_data') or not self._events_data:
-                return
-            with open(EVENTS_JSON_PATH, "w", encoding="utf-8") as f:
-                json_mod.dump(self._events_data, f, ensure_ascii=False, indent=2)
+                return False
+            directory = os.path.dirname(EVENTS_JSON_PATH) or "."
+            temp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=directory,
+                    prefix=".events-",
+                    suffix=".tmp",
+                    delete=False,
+                ) as f:
+                    temp_path = f.name
+                    json_mod.dump(self._events_data, f, ensure_ascii=False, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(temp_path, EVENTS_JSON_PATH)
+                temp_path = None
+            finally:
+                if temp_path and os.path.exists(temp_path):
+                    os.unlink(temp_path)
+            return True
         except Exception as e:
             logger.error(f"Failed to save events JSON: {e}")
+            return False
 
     # ── Event Notifications ────────────────────────────────────────────
 
     async def event_notifications(self):
+        """Serialize event notification checks with official-event scraping."""
+        async with self._events_lock:
+            await self._event_notifications_locked()
+
+    async def _event_notifications_locked(self):
         """
         Check events.json for events starting or ending within 1.5 days
-        and send notifications to each club's events channel.
+        and send notifications to each club's events channel before those events occur.
 
         Uses 'notified_clubs' per-event list (persisted in JSON) for dedup.
-        Checks upcoming events within the next 36 hours.
+        Checks upcoming events within the next 36 hours for starts and the next
+        24 hours for ending alerts.
         """
         logger.info("=" * 80)
         logger.info("Event notifications - checking events.json...")
@@ -545,8 +605,8 @@ class BotTasks:
                         if end_dt.tzinfo is None:
                             end_dt = end_dt.replace(tzinfo=pytz.UTC)
                         remaining = (end_dt - now).total_seconds()
-                        # Within 36 hours in the future OR already ended within last 36h
-                        if -129600 <= remaining <= 129600:
+                        # Within 24 hours in the future; never alert after an event ends.
+                        if 0 <= remaining <= 86400:
                             for club in clubs:
                                 await self._notify_events_for_club(club, event, "ending")
                     except (ValueError, TypeError):
@@ -557,6 +617,17 @@ class BotTasks:
 
     # ── Daily Official Events Scraper Task ─────────────────────────────
 
+    @tasks.loop(hours=1)
+    async def hourly_event_notifications(self):
+        """Check saved events hourly and post due notifications."""
+        await self.event_notifications()
+
+    @hourly_event_notifications.before_loop
+    async def before_hourly_event_notifications(self):
+        """Wait for Discord readiness before checking event notifications."""
+        await self.bot.wait_until_ready()
+        logger.info("Bot ready, hourly event notification loop starting")
+
     @tasks.loop(hours=24)
     async def daily_official_events_check(self):
         """
@@ -566,8 +637,7 @@ class BotTasks:
         Runs once per day, checks for new event articles by comparing
         event titles against the previously-saved JSON file.
         
-        If new events are found, immediately notify all clubs so they
-        don't miss events that started before the scraped_at time.
+        Event notifications run independently every hour against the saved data.
         """
         logger.info("=" * 80)
         logger.info("Daily official events check - scraping news page...")
@@ -575,7 +645,8 @@ class BotTasks:
 
         try:
             logger.info(f"Checking for new official events → {EVENTS_JSON_PATH}")
-            changed = await check_and_save_official_events(EVENTS_JSON_PATH)
+            async with self._events_lock:
+                changed = await check_and_save_official_events(EVENTS_JSON_PATH)
 
             if changed:
                 logger.info("✅ New official events detected and saved to JSON")
@@ -584,9 +655,6 @@ class BotTasks:
         except Exception as e:
             logger.error(f"Error in daily_official_events_check: {e}", exc_info=True)
             return
-
-        # Notify clubs about events that are starting/ending within 1.5 days
-        await self.event_notifications()
 
     @daily_official_events_check.before_loop
     async def before_daily_official_events_check(self):
