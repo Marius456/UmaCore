@@ -169,8 +169,20 @@ class LeaderboardReportService:
             if name not in today_map or not m_deltas:
                 continue
 
+            # Filter 1: Representative Sample — need at least 3 days of data
+            if len(m_deltas) < 3:
+                continue
+
             avg = sum(d["delta"] for d in m_deltas) / len(m_deltas)
             today_gain = today_map[name]["daily"]
+
+            # Filter 2: Volume Floor — must have gained at least 1M fans today
+            if today_gain < 1_000_000:
+                continue
+
+            # Filter 3: No Deficit — must be above quota (positive surplus)
+            if today_map[name]["surplus"] < 0:
+                continue
 
             if avg > 0 and today_gain > 0:
                 pct = ((today_gain - avg) / avg) * 100

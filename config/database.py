@@ -168,6 +168,30 @@ class Database:
             END IF;
         END $$;
 
+        -- Migration: Add leaderboard_channel_id column if it doesn't exist
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name='clubs' AND column_name='leaderboard_channel_id'
+            ) THEN
+                ALTER TABLE clubs ADD COLUMN leaderboard_channel_id BIGINT;
+                RAISE NOTICE 'Added leaderboard_channel_id column to clubs';
+            END IF;
+        END $$;
+
+        -- Migration: Add gacha_channel_id column if it doesn't exist
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name='clubs' AND column_name='gacha_channel_id'
+            ) THEN
+                ALTER TABLE clubs ADD COLUMN gacha_channel_id BIGINT;
+                RAISE NOTICE 'Added gacha_channel_id column to clubs';
+            END IF;
+        END $$;
+
         -- Migration: Set public_slug from circle_id (authoritative source)
         -- Clubs sharing a circle_id get suffixes: 481227375, 481227375-2, 481227375-3, ...
         DO $$
