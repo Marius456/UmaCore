@@ -1,8 +1,9 @@
 """
 Uma.moe API scraper for club data fetching
 
-Uses Playwright with bundled Chromium in headless mode, with stealth patches
-and persistent cookie storage for robust Cloudflare-bypassed scraping.
+Uses direct HTTP requests with X-API-Key header as the primary method.
+Falls back to Playwright with bundled Chromium in headless mode (with stealth patches
+and persistent cookie storage) when the direct API call fails.
 """
 from typing import Dict, Optional, List
 import logging
@@ -12,11 +13,13 @@ import asyncio
 import os
 from datetime import datetime, date, timezone, timedelta
 
+import aiohttp
+
 from playwright.async_api import async_playwright, Error as PlaywrightError
 from playwright.async_api import BrowserContext, Page
 
 from scrapers.base_scraper import BaseScraper
-from config.settings import PLAYWRIGHT_COOKIE_DIR
+from config.settings import PLAYWRIGHT_COOKIE_DIR, UMAMOE_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -225,57 +228,63 @@ class UmaMoeAPIScraper(BaseScraper):
         self._yesterday_rank: Optional[int] = None
         super().__init__(self.base_url)
 
-    async def _fetch_json_via_fetch(self, page, url: str) -> Optional[dict]:
+    async def _fetch_via_direct_api(self, year: int, month: int) -> Optional[dict]:
         """
-        Fetch JSON from the given URL using JavaScript fetch() within the page context.
-        This preserves Cloudflare Turnstile proof (page.goto() would lose it).
-        Returns parsed dict or None on failure.
+        Fetch API data using a direct HTTP request with the X-API-Key header.
+
+        This is the primary method — fast, no browser overhead.
+
+        Args:
+            year: Competition year
+            month: Competition month
+
+        Returns:
+            Parsed JSON dict on success, None on any failure.
         """
+        api_url = (
+            f"{self.base_url}"
+            f"?circle_id={self.circle_id}"
+            f"&year={year}"
+            f"&month={month}"
+        )
+
+        headers = {
+            "accept": "application/json",
+            "X-API-Key": UMAMOE_API_KEY,
+        }
+
         try:
-            result = await page.evaluate("""
-                async (url) => {
-                    try {
-                        const resp = await fetch(url);
-                        const body = await resp.text();
-                        let parsed = null;
-                        try { parsed = JSON.parse(body); } catch(e) {}
-                        return {
-                            status: resp.status,
-                            body: body,
-                            ok: resp.ok,
-                            error: null
-                        };
-                    } catch (e) {
-                        return { status: 0, body: '', ok: false, error: e.message };
-                    }
-                }
-            """, url)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url, headers=headers, timeout=30) as response:
+                    if response.status != 200:
+                        body_preview = (await response.text())[:200]
+                        logger.warning(
+                            f"Direct API returned status {response.status} for {year}-{month:02d}: {body_preview}"
+                        )
+                        return None
 
-            if result.get("error"):
-                logger.error(f"Fetch failed for {url}: {result['error']}")
-                return None
+                    data = await response.json()
+                    logger.info(f"Direct API call successful for {year}-{month:02d}")
+                    return data
 
-            status = result.get("status")
-            if status != 200:
-                body_preview = (result.get("body") or "")[:200]
-                logger.error(f"Uma.moe API returned status {status} for {url}: {body_preview}")
-                return None
-
-            body = result.get("body")
-            if not body:
-                logger.error("Empty response body for %s", url)
-                return None
-
-            return json.loads(body)
-
+        except asyncio.TimeoutError:
+            logger.warning(f"Direct API timed out for {year}-{month:02d}")
+            return None
+        except aiohttp.ClientError as e:
+            logger.warning(f"Direct API request failed for {year}-{month:02d}: {e}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.warning(f"Direct API returned invalid JSON for {year}-{month:02d}: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Request failed for {url}: {e}")
+            logger.warning(f"Direct API unexpected error for {year}-{month:02d}: {e}")
             return None
 
-    async def _fetch_api_data(self, year: int, month: int) -> dict:
+    async def _fetch_via_playwright(self, year: int, month: int) -> dict:
         """
-        Fetch API data using a persistent headless browser context.
+        Fetch API data using a persistent headless browser context (Playwright).
 
+        This is the fallback method — used when the direct API call fails.
         After initial Cloudflare challenge resolution, cookies are persisted
         and reused for subsequent calls.
 
@@ -337,11 +346,11 @@ class UmaMoeAPIScraper(BaseScraper):
                 f"&year={year}"
                 f"&month={month}"
             )
-            logger.info(f"Fetching API data from: {api_url}")
+            logger.info(f"Fetching API data via Playwright from: {api_url}")
 
             data = await self._fetch_json_via_fetch(page, api_url)
             if data is None:
-                raise ValueError(f"API request failed for {year}-{month:02d}")
+                raise ValueError(f"Playwright API request failed for {year}-{month:02d}")
 
             # Save cookies/storage state for future reuse
             try:
@@ -357,9 +366,59 @@ class UmaMoeAPIScraper(BaseScraper):
         finally:
             await page.close()
 
+    async def _fetch_json_via_fetch(self, page, url: str) -> Optional[dict]:
+        """
+        Fetch JSON from the given URL using JavaScript fetch() within the page context.
+        This preserves Cloudflare Turnstile proof (page.goto() would lose it).
+        Returns parsed dict or None on failure.
+        """
+        try:
+            result = await page.evaluate("""
+                async (url) => {
+                    try {
+                        const resp = await fetch(url);
+                        const body = await resp.text();
+                        let parsed = null;
+                        try { parsed = JSON.parse(body); } catch(e) {}
+                        return {
+                            status: resp.status,
+                            body: body,
+                            ok: resp.ok,
+                            error: null
+                        };
+                    } catch (e) {
+                        return { status: 0, body: '', ok: false, error: e.message };
+                    }
+                }
+            """, url)
+
+            if result.get("error"):
+                logger.error(f"Fetch failed for {url}: {result['error']}")
+                return None
+
+            status = result.get("status")
+            if status != 200:
+                body_preview = (result.get("body") or "")[:200]
+                logger.error(f"Uma.moe API returned status {status} for {url}: {body_preview}")
+                return None
+
+            body = result.get("body")
+            if not body:
+                logger.error("Empty response body for %s", url)
+                return None
+
+            return json.loads(body)
+
+        except Exception as e:
+            logger.error(f"Request failed for {url}: {e}")
+            return None
+
     async def scrape(self) -> Dict[str, Dict]:
         """
         Scrape club data from Uma.moe API.
+
+        Primary method: direct HTTP request with X-API-Key header.
+        Fallback: Playwright browser automation (for when direct API fails).
 
         On Day 1 the new month hasn't populated yet, so we fetch the previous
         month as the primary data source. We also fetch the current month and
@@ -392,16 +451,28 @@ class UmaMoeAPIScraper(BaseScraper):
 
             logger.info(f"Fetching data from Uma.moe API for circle {self.circle_id}...")
 
-            # Primary fetch: the month we're actually reporting on
-            primary_data = await self._fetch_api_data(year, month)
-            if not primary_data:
-                raise ValueError(f"Primary API request failed for {year}-{month:02d}")
+            # --- Primary: direct API call ---
+            primary_data = await self._fetch_via_direct_api(year, month)
+
+            # --- Fallback: Playwright if direct API failed ---
+            if primary_data is None:
+                logger.warning("Direct API failed, falling back to Playwright browser method...")
+                primary_data = await self._fetch_via_playwright(year, month)
+                if primary_data:
+                    logger.info("Playwright fallback successful")
+                else:
+                    raise ValueError(f"Both direct API and Playwright fallback failed for {year}-{month:02d}")
 
             # On Day 1, also fetch current month for endpoint correction
             endpoint_members = None
             endpoint_data = None
             if now.day == 1:
-                endpoint_data = await self._fetch_api_data(now.year, now.month)
+                # Try direct API first for the current month too
+                endpoint_data = await self._fetch_via_direct_api(now.year, now.month)
+                if endpoint_data is None:
+                    logger.warning("Direct API failed for current month (Day 1), trying Playwright fallback...")
+                    endpoint_data = await self._fetch_via_playwright(now.year, now.month)
+
                 if endpoint_data and "members" in endpoint_data:
                     endpoint_members = endpoint_data.get("members", [])
                     logger.info(f"Fetched {len(endpoint_members)} members from {now.year}-{now.month:02d} for endpoint correction")

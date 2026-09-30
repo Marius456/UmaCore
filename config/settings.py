@@ -19,7 +19,7 @@ SCRAPE_RETRY_ATTEMPTS = 3
 SCRAPE_RETRY_DELAY = 1  # seconds
 
 # Uma.moe API Configuration
-USE_UMAMOE_API = os.getenv("USE_UMAMOE_API", "true").lower() == "true"
+UMAMOE_API_KEY = os.getenv("UMAMOE_API_KEY", "")
 
 # Playwright Configuration (for Cloudflare-bypassed scraping)
 PLAYWRIGHT_COOKIE_DIR = os.getenv("PLAYWRIGHT_COOKIE_DIR", ".umamoe_cookies")
