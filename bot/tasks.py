@@ -13,7 +13,7 @@ import asyncio
 
 from models import Club, Member, ClubRankHistory, QuotaRequirement, BotSettings
 from scrapers import (
-    ChronoGenesisScraper, UmaMoeAPIScraper,
+    ChronoGenesisScraper, UmaMoeAPIScraper, DataNotAvailableError,
     scrape_official_events, check_and_save as check_and_save_official_events,
 )
 from services import QuotaCalculator, BombManager, ReportGenerator, NotificationService, ScrapeLockManager, ScrapeContext
@@ -41,14 +41,12 @@ class BotTasks:
     def start_tasks(self):
         """Start all scheduled tasks"""
         self.hourly_check.start()
-        self.daily_event_notifications.start()
         self.daily_official_events_check.start()
-        logger.info("Scheduled tasks started (hourly check, daily event notifications, daily official events)")
+        logger.info("Scheduled tasks started (hourly check, daily official events)")
 
     def stop_tasks(self):
         """Stop all scheduled tasks"""
         self.hourly_check.cancel()
-        self.daily_event_notifications.cancel()
         self.daily_official_events_check.cancel()
         logger.info("Scheduled tasks stopped")
 
@@ -81,8 +79,6 @@ class BotTasks:
                             continue
 
                         logger.info(f"⏰ Time to check {club.club_name} ({now_in_club_tz.strftime('%H:%M')} {club.timezone})")
-
-                        self.last_runs[run_key] = True
 
                         asyncio.create_task(self.daily_check_for_club(club))
                     else:
@@ -163,6 +159,7 @@ class BotTasks:
                     logger.info(f"Using ChronoGenesis scraper for {club.club_name}")
 
                 # STEP 2: Scrape with retries
+                # First, do 3 fast retries with backoff (catches transient network errors)
                 for attempt in range(1, max_retries + 1):
                     try:
                         logger.info(f"🔍 Scraping {club.club_name} (attempt {attempt}/{max_retries})...")
@@ -175,6 +172,14 @@ class BotTasks:
                         else:
                             raise ValueError("Scraper returned empty data")
 
+                    except DataNotAvailableError as e:
+                        # Data not available yet — this is expected, will retry in long loop below
+                        last_error = e
+                        logger.warning(f"📡 Data not available yet for {club.club_name} (attempt {attempt}/{max_retries}): {e}")
+                        if attempt < max_retries:
+                            await asyncio.sleep(retry_delay)
+                            retry_delay *= 2
+
                     except Exception as e:
                         last_error = e
                         logger.error(f"❌ Scraping failed for {club.club_name} (attempt {attempt}/{max_retries}): {e}")
@@ -184,10 +189,36 @@ class BotTasks:
                             await asyncio.sleep(retry_delay)
                             retry_delay *= 2
 
-                # STEP 3: Handle scraping failure
+                # STEP 3: If all fast retries failed with DataNotAvailableError, enter long retry loop
+                if not scraped_data and isinstance(last_error, DataNotAvailableError):
+                    logger.warning(
+                        f"⏳ Data not yet available for {club.club_name} after {max_retries} fast retries. "
+                        f"Entering 10-minute retry loop until data arrives..."
+                    )
+                    while not scraped_data:
+                        await asyncio.sleep(600)  # 10 minutes
+                        try:
+                            logger.info(f"🔍 Retrying scrape for {club.club_name} (10-min cycle)...")
+                            scraped_data = await scraper.scrape()
+                            current_day = scraper.get_current_day()
+                            if scraped_data:
+                                logger.info(f"✅ Scraping successful for {club.club_name} ({len(scraped_data)} members found)")
+                                break
+                            else:
+                                raise ValueError("Scraper returned empty data")
+                        except DataNotAvailableError as e:
+                            logger.warning(f"📡 Data still not available for {club.club_name}. Waiting another 10 minutes...")
+                            last_error = e
+                        except Exception as e:
+                            logger.error(f"❌ Scrape failed in 10-min retry loop for {club.club_name}: {e}")
+                            last_error = e
+                            # For non-DataNotAvailableError, exit the loop and report failure
+                            break
+
+                # STEP 3b: Handle scraping failure (all retries exhausted)
                 if not scraped_data:
                     error_msg = (
-                        f"Failed to scrape data after {max_retries} attempts.\n\n"
+                        f"Failed to scrape data after multiple retries.\n\n"
                         f"**Last error:** {str(last_error)}\n\n"
                         f"**Most likely cause:**\n"
                         f"• Data for current day not yet available on Uma.moe\n"
@@ -399,6 +430,13 @@ class BotTasks:
                 except Exception as e:
                     logger.error(f"Error generating leaderboard report for {club.club_name}: {e}", exc_info=True)
 
+                # Mark this club as successfully completed for today
+                club_tz = pytz.timezone(club.timezone)
+                now_in_club_tz = datetime.now(club_tz)
+                run_key = f"{club.club_id}_{now_in_club_tz.date()}"
+                self.last_runs[run_key] = True
+                logger.info(f"✅ Marked {club.club_name} as completed for {now_in_club_tz.date()}")
+
                 # STEP 9: Final summary
                 logger.info("=" * 80)
                 logger.info(f"✅ Daily check complete for {club.club_name}!")
@@ -447,9 +485,10 @@ class BotTasks:
             return False
 
         # Check notified_clubs list in the JSON event data
-        # club_id is stored as string in JSON, so compare as string
+        # Uses "{club_id}_{notif_type}" format to distinguish starting vs ending notifications
         notified_clubs = event.get("notified_clubs", [])
-        if str(club.club_id) in notified_clubs:
+        dedup_key = f"{club.club_id}_{notif_type}"
+        if dedup_key in notified_clubs:
             logger.debug(f"Club {club.club_id} already notified for '{event.get('title', '')[:60]}' ({notif_type})")
             return False
 
@@ -505,8 +544,8 @@ class BotTasks:
         try:
             await events_channel.send(embed=embed)
             # Mark as notified and save back to JSON
-            # Convert club_id to string for JSON serialization
-            notified_clubs.append(str(club.club_id))
+            # Uses "{club_id}_{notif_type}" format to distinguish starting vs ending notifications
+            notified_clubs.append(dedup_key)
             event["notified_clubs"] = notified_clubs
             self._save_events_json()
             logger.info(f"Sent {notif_type} notification to {club.club_name}: '{title[:60]}'")
@@ -525,21 +564,20 @@ class BotTasks:
         except Exception as e:
             logger.error(f"Failed to save events JSON: {e}")
 
-    # ── Daily Event Notification Task ──────────────────────────────────
+    # ── Event Notifications ────────────────────────────────────────────
 
-    @tasks.loop(hours=24)
-    async def daily_event_notifications(self):
+    async def event_notifications(self):
         """
-        Check events.json for events starting or ending within 1 day
+        Check events.json for events starting or ending within 1.5 days
         and send notifications to each club's events channel.
 
         Uses 'notified_clubs' per-event list (persisted in JSON) for dedup.
-        Checks events that started/ended within the last 24 hours as well
-        as upcoming events within the next 24 hours, so newly discovered
+        Checks events that started/ended within the last 36 hours as well
+        as upcoming events within the next 36 hours, so newly discovered
         events that already started still get notified.
         """
         logger.info("=" * 80)
-        logger.info("Daily event notifications - checking events.json...")
+        logger.info("Event notifications - checking events.json...")
         logger.info("=" * 80)
 
         try:
@@ -569,8 +607,8 @@ class BotTasks:
                         if start_dt.tzinfo is None:
                             start_dt = start_dt.replace(tzinfo=pytz.UTC)
                         remaining = (start_dt - now).total_seconds()
-                        # Within 24 hours in the future OR already started within last 24h
-                        if -86400 <= remaining <= 86400:
+                        # Within 36 hours in the future OR already started within last 36h
+                        if -129600 <= remaining <= 129600:
                             for club in clubs:
                                 await self._notify_events_for_club(club, event, "starting")
                     except (ValueError, TypeError):
@@ -584,21 +622,15 @@ class BotTasks:
                         if end_dt.tzinfo is None:
                             end_dt = end_dt.replace(tzinfo=pytz.UTC)
                         remaining = (end_dt - now).total_seconds()
-                        # Within 24 hours in the future OR already ended within last 24h
-                        if -86400 <= remaining <= 86400:
+                        # Within 36 hours in the future OR already ended within last 36h
+                        if -129600 <= remaining <= 129600:
                             for club in clubs:
                                 await self._notify_events_for_club(club, event, "ending")
                     except (ValueError, TypeError):
                         logger.debug(f"Could not parse end_time for: {title[:40]}")
 
         except Exception as e:
-            logger.error(f"Error in daily_event_notifications: {e}", exc_info=True)
-
-    @daily_event_notifications.before_loop
-    async def before_daily_event_notifications(self):
-        """Wait for bot to be ready before starting tasks"""
-        await self.bot.wait_until_ready()
-        logger.info("Bot ready, daily event notifications loop starting")
+            logger.error(f"Error in event_notifications: {e}", exc_info=True)
 
     # ── Daily Official Events Scraper Task ─────────────────────────────
 
@@ -628,6 +660,10 @@ class BotTasks:
                 logger.info("ℹ️ No new official events found (JSON unchanged)")
         except Exception as e:
             logger.error(f"Error in daily_official_events_check: {e}", exc_info=True)
+            return
+
+        # Notify clubs about events that are starting/ending within 1.5 days
+        await self.event_notifications()
 
     @daily_official_events_check.before_loop
     async def before_daily_official_events_check(self):

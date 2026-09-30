@@ -40,6 +40,7 @@ class LeaderboardCommands(commands.Cog):
         name="leaderboard_report",
         description="Generate a news-style leaderboard report for the current month",
     )
+    @app_commands.checks.has_permissions(administrator=True)
     async def leaderboard_report(
         self, interaction: discord.Interaction, club: str
     ):
