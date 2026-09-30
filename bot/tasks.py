@@ -7,22 +7,27 @@ import json as json_mod
 import os
 import re
 import tempfile
-from datetime import datetime, date, timedelta
-from typing import Optional
+from datetime import datetime
 import logging
 import pytz
 import asyncio
 
-from models import Club, ClubRankHistory, QuotaRequirement, BotSettings
+from models import Club, ClubRankHistory, QuotaRequirement
 from scrapers import (
     UmaMoeAPIScraper, DataNotAvailableError,
-    scrape_official_events, check_and_save as check_and_save_official_events,
+    check_and_save as check_and_save_official_events,
 )
-from services import QuotaCalculator, ReportGenerator, NotificationService, ScrapeLockManager, ScrapeContext
+from services.notification_service import NotificationService
+from services.quota_calculator import QuotaCalculator
+from services.report_generator import ReportGenerator
+from services.scrape_lock_manager import ScrapeContext
 from services.leaderboard_report_service import LeaderboardReportService
 from config.settings import EVENTS_JSON_PATH
 
 logger = logging.getLogger(__name__)
+
+LONG_RETRY_INTERVAL_SECONDS = 10 * 60
+LONG_RETRY_WINDOW_SECONDS = 6 * 60 * 60
 
 
 class BotTasks:
@@ -36,41 +41,95 @@ class BotTasks:
 
         # Track last run per club per day (club_id_YYYY-MM-DD -> True)
         self.last_runs = {}
+        self._running_club_ids = set()
+        self._scheduled_tasks = set()
         # Serializes event scraping with notification reads/writes of events.json.
         self._events_lock = asyncio.Lock()
         # Prevents duplicate Discord posts if a successful send is followed by
         # a transient failure while persisting the deduplication state.
         self._sent_event_notifications = set()
 
-        logger.info("Multi-club tasks configured - will check all clubs hourly")
+        logger.info("Multi-club tasks configured - will check club schedules every minute")
 
     def start_tasks(self):
         """Start all scheduled tasks"""
-        self.hourly_check.start()
+        self.scheduled_report_check.start()
         self.hourly_event_notifications.start()
         self.daily_official_events_check.start()
         logger.info(
-            "Scheduled tasks started (hourly reports, hourly event notifications, "
+            "Scheduled tasks started (minute-based report scheduling, hourly event notifications, "
             "daily official event scraping)"
         )
 
-    def stop_tasks(self):
-        """Stop all scheduled tasks"""
-        self.hourly_check.cancel()
+    @staticmethod
+    def _is_daily_check_time(now_in_club_tz: datetime, scrape_time) -> bool:
+        """Return whether the current local minute matches the configured run time."""
+        return (now_in_club_tz.hour, now_in_club_tz.minute) == (
+            scrape_time.hour,
+            scrape_time.minute,
+        )
+
+    @staticmethod
+    def _club_goal_kwargs(rank_data):
+        """Select the live uma.moe fields used by the leaderboard Club Goal."""
+        if not rank_data:
+            return {}
+        keys = (
+            "club_rank",
+            "monthly_rank",
+            "fans_to_next_tier",
+            "fans_to_lower_tier",
+        )
+        return {key: rank_data.get(key) for key in keys}
+
+    async def stop_tasks(self):
+        """Cancel scheduled work and wait until it has finished unwinding."""
+        loop_tasks = [
+            loop.get_task()
+            for loop in (
+                self.scheduled_report_check,
+                self.hourly_event_notifications,
+                self.daily_official_events_check,
+            )
+            if loop.get_task() is not None
+        ]
+        self.scheduled_report_check.cancel()
         self.hourly_event_notifications.cancel()
         self.daily_official_events_check.cancel()
+        scheduled_tasks = tuple(self._scheduled_tasks)
+        for task in scheduled_tasks:
+            task.cancel()
+        current_task = asyncio.current_task()
+        pending = {
+            task for task in (*loop_tasks, *scheduled_tasks)
+            if task is not current_task and not task.done()
+        }
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        self._scheduled_tasks.clear()
+        self._running_club_ids.clear()
         logger.info("Scheduled tasks stopped")
 
-    @tasks.loop(hours=1)
-    async def hourly_check(self):
-        """Check every hour if it's time to run any club's daily report"""
+    @tasks.loop(minutes=1)
+    async def scheduled_report_check(self):
+        """Check every minute for clubs whose daily report is scheduled now."""
         logger.info("=" * 80)
-        logger.info("Hourly check - scanning all clubs...")
+        logger.info("Scheduled report check - scanning all clubs...")
         logger.info("=" * 80)
 
         try:
             clubs = await Club.get_all_active()
             logger.info(f"Found {len(clubs)} active club(s)")
+
+            active_run_keys = {
+                f"{club.club_id}_{datetime.now(pytz.timezone(club.timezone)).date()}"
+                for club in clubs
+            }
+            self.last_runs = {
+                key: value
+                for key, value in self.last_runs.items()
+                if key in active_run_keys
+            }
 
             for club in clubs:
                 try:
@@ -81,17 +140,25 @@ class BotTasks:
                     target_hour = club.scrape_time.hour
                     target_minute = club.scrape_time.minute
 
-                    if (now_in_club_tz.hour == target_hour and
-                            now_in_club_tz.minute >= target_minute):
+                    if self._is_daily_check_time(now_in_club_tz, club.scrape_time):
 
                         run_key = f"{club.club_id}_{current_date}"
                         if self.last_runs.get(run_key):
                             logger.debug(f"{club.club_name}: Already ran today ({current_date})")
                             continue
 
+                        if club.club_id in self._running_club_ids:
+                            logger.debug(f"{club.club_name}: Daily check already running")
+                            continue
+
                         logger.info(f"⏰ Time to check {club.club_name} ({now_in_club_tz.strftime('%H:%M')} {club.timezone})")
 
-                        asyncio.create_task(self.daily_check_for_club(club))
+                        self._running_club_ids.add(club.club_id)
+                        task = asyncio.create_task(
+                            self._run_scheduled_daily_check(club, current_date)
+                        )
+                        self._scheduled_tasks.add(task)
+                        task.add_done_callback(self._scheduled_task_done)
                     else:
                         logger.debug(
                             f"{club.club_name}: Not time yet "
@@ -104,13 +171,35 @@ class BotTasks:
                     continue
 
         except Exception as e:
-            logger.error(f"Error in hourly_check: {e}", exc_info=True)
+            logger.error(f"Error in scheduled_report_check: {e}", exc_info=True)
 
-    async def daily_check_for_club(self, club: Club):
+    def _scheduled_task_done(self, task: asyncio.Task):
+        """Retain background tasks through completion and consume failures."""
+        self._scheduled_tasks.discard(task)
+        if not task.cancelled() and (error := task.exception()) is not None:
+            logger.error("Scheduled daily check crashed", exc_info=error)
+
+    async def _run_scheduled_daily_check(self, club: Club, run_date=None):
+        """Run one scheduled check and always clear its in-process guard."""
+        try:
+            await self.daily_check_for_club(club, run_date=run_date)
+        finally:
+            self._running_club_ids.discard(club.club_id)
+
+    @staticmethod
+    async def _send_embeds(channel, embeds):
+        """Send each embed returned by a report service in order."""
+        for embed in embeds:
+            await channel.send(embed=embed)
+
+    async def daily_check_for_club(self, club: Club, run_date=None):
         """Daily quota check and report generation for a specific club"""
         logger.info("=" * 80)
         logger.info(f"Starting daily check for {club.club_name}")
         logger.info("=" * 80)
+
+        if run_date is None:
+            run_date = datetime.now(pytz.timezone(club.timezone)).date()
 
         try:
             async with ScrapeContext(club.club_id, f"tasks_{club.club_name}"):
@@ -193,12 +282,24 @@ class BotTasks:
 
                 # STEP 3: If all fast retries failed with DataNotAvailableError, enter long retry loop
                 if not scraped_data and isinstance(last_error, DataNotAvailableError):
+                    loop = asyncio.get_running_loop()
+                    retry_deadline = loop.time() + LONG_RETRY_WINDOW_SECONDS
                     logger.warning(
                         f"⏳ Data not yet available for {club.club_name} after {max_retries} fast retries. "
-                        f"Entering 10-minute retry loop until data arrives..."
+                        f"Entering a bounded 10-minute retry loop..."
                     )
                     while not scraped_data:
-                        await asyncio.sleep(600)  # 10 minutes
+                        remaining = retry_deadline - loop.time()
+                        local_date = datetime.now(club_tz).date()
+                        if remaining <= 0 or local_date != run_date:
+                            logger.warning(
+                                "Stopping delayed retries for %s after the retry window/date ended",
+                                club.club_name,
+                            )
+                            break
+                        await asyncio.sleep(min(LONG_RETRY_INTERVAL_SECONDS, remaining))
+                        if loop.time() >= retry_deadline:
+                            break
                         try:
                             logger.info(f"🔍 Retrying scrape for {club.club_name} (10-min cycle)...")
                             scraped_data = await scraper.scrape()
@@ -250,12 +351,26 @@ class BotTasks:
                     logger.info(f"Using scraper's data date: {current_date} (previous-month fallback)")
 
                 # Extract and persist club rank data
-                rank_data = None
                 monthly_rank = scraper.get_monthly_rank()
+                club_rank = scraper.get_club_rank()
                 last_month_rank = scraper.get_last_month_rank()
                 yesterday_rank = scraper.get_yesterday_rank()
                 fans_to_next_tier = scraper.get_fans_to_next_tier()
                 fans_to_lower_tier = scraper.get_fans_to_lower_tier()
+
+                rank_data = None
+                if monthly_rank is not None or (
+                    fans_to_next_tier is not None
+                    and fans_to_lower_tier is not None
+                ):
+                    rank_data = {
+                        'club_rank': club_rank,
+                        'monthly_rank': monthly_rank,
+                        'last_month_rank': last_month_rank,
+                        'yesterday_rank': yesterday_rank,
+                        'fans_to_next_tier': fans_to_next_tier,
+                        'fans_to_lower_tier': fans_to_lower_tier,
+                    }
 
                 if monthly_rank is not None:
                     try:
@@ -263,24 +378,17 @@ class BotTasks:
                     except Exception as e:
                         logger.error(f"Failed to save rank data for {club.club_name}: {e}", exc_info=True)
 
-                    rank_data = {
-                        'monthly_rank': monthly_rank,
-                        'last_month_rank': last_month_rank,
-                        'yesterday_rank': yesterday_rank,
-                        'fans_to_next_tier': fans_to_next_tier,
-                        'fans_to_lower_tier': fans_to_lower_tier,
-                    }
                     logger.info(
                         f"Rank data for {club.club_name}: "
                         f"monthly={monthly_rank}, yesterday={yesterday_rank}, "
                         f"last_month={last_month_rank}"
                     )
-                    if fans_to_next_tier is not None:
-                        logger.info(
-                            f"Tier progress for {club.club_name}: "
-                            f"fans_to_next_tier={fans_to_next_tier:,}, "
-                            f"fans_to_lower_tier={fans_to_lower_tier:,}"
-                        )
+                if fans_to_next_tier is not None:
+                    logger.info(
+                        f"Tier progress for {club.club_name}: "
+                        f"fans_to_next_tier={fans_to_next_tier:,}, "
+                        f"fans_to_lower_tier={fans_to_lower_tier:,}"
+                    )
 
                 # STEP 4: Process the scraped data
                 try:
@@ -295,7 +403,7 @@ class BotTasks:
                     logger.error(f"❌ Error processing scraped data for {club.club_name}: {e}", exc_info=True)
                     error_embed = self.report_generator.create_error_report(
                         club.club_name,
-                        f"Data processing failed: {str(e)}"
+                        "Data processing failed. Please try again later."
                     )
                     await report_channel.send(embed=error_embed)
                     return
@@ -314,6 +422,7 @@ class BotTasks:
                     logger.error(f"❌ Error sending DM notifications for {club.club_name}: {e}", exc_info=True)
 
                 # STEP 7: Generate and send reports
+                daily_report_sent = False
                 try:
                     logger.info(f"📊 Generating daily report for {club.club_name}...")
                     status_summary = await self.quota_calculator.get_member_status_summary(
@@ -329,13 +438,14 @@ class BotTasks:
                     for embed, files in daily_reports:
                         await report_channel.send(embed=embed, files=files if files else None)
 
+                    daily_report_sent = True
                     logger.info(f"✅ Daily report sent for {club.club_name} ({len(daily_reports)} embed(s))")
 
                 except Exception as e:
                     logger.error(f"❌ Error generating/sending daily report for {club.club_name}: {e}", exc_info=True)
                     error_embed = self.report_generator.create_error_report(
                         club.club_name,
-                        f"Failed to generate daily report: {str(e)}"
+                        "Failed to generate the daily report. Please try again later."
                     )
                     await report_channel.send(embed=error_embed)
 
@@ -344,22 +454,21 @@ class BotTasks:
                     if club.leaderboard_channel_id:
                         leaderboard_channel = self.bot.get_channel(club.leaderboard_channel_id)
                         if leaderboard_channel:
-                            club_tz = pytz.timezone(club.timezone)
-                            now = datetime.now(club_tz)
-                            year, month = now.year, now.month
+                            year, month = current_date.year, current_date.month
 
                             # Pass tier progress data from the scraper if available
-                            tier_kwargs = {}
-                            if rank_data:
-                                tier_kwargs['fans_to_next_tier'] = rank_data.get('fans_to_next_tier')
-                                tier_kwargs['fans_to_lower_tier'] = rank_data.get('fans_to_lower_tier')
+                            tier_kwargs = self._club_goal_kwargs(rank_data)
 
-                            embed = await LeaderboardReportService.generate_leaderboard_report(
+                            embeds = await LeaderboardReportService.generate_leaderboard_report(
                                 club.club_id, club.club_name, year, month,
                                 **tier_kwargs,
                             )
-                            await leaderboard_channel.send(embed=embed)
-                            logger.info(f"Leaderboard report sent for {club.club_name}")
+                            await self._send_embeds(leaderboard_channel, embeds)
+                            await LeaderboardReportService.persist_delivered_predictions(embeds)
+                            logger.info(
+                                f"Leaderboard report sent for {club.club_name} "
+                                f"({len(embeds)} embed(s))"
+                            )
                         else:
                             logger.error(f"Leaderboard channel {club.leaderboard_channel_id} not found for {club.club_name}")
                     else:
@@ -370,16 +479,27 @@ class BotTasks:
                 except Exception as e:
                     logger.error(f"Error generating leaderboard report for {club.club_name}: {e}", exc_info=True)
 
-                # Mark this club as successfully completed for today
-                club_tz = pytz.timezone(club.timezone)
-                now_in_club_tz = datetime.now(club_tz)
-                run_key = f"{club.club_id}_{now_in_club_tz.date()}"
-                self.last_runs[run_key] = True
-                logger.info(f"✅ Marked {club.club_name} as completed for {now_in_club_tz.date()}")
+                # Suppress additional checks only after the primary report was
+                # completely delivered. Data processing alone is not a successful
+                # scheduled report run.
+                if daily_report_sent:
+                    run_key = f"{club.club_id}_{run_date}"
+                    self.last_runs[run_key] = True
+                    logger.info(f"✅ Marked {club.club_name} as completed for {run_date}")
+                else:
+                    logger.warning(
+                        "Daily check for %s remains retryable because report delivery failed",
+                        club.club_name,
+                    )
 
                 # STEP 9: Final summary
                 logger.info("=" * 80)
-                logger.info(f"✅ Daily check complete for {club.club_name}!")
+                logger.info(
+                    "%s Daily check %s for %s!",
+                    "✅" if daily_report_sent else "⚠️",
+                    "complete" if daily_report_sent else "processed but not delivered",
+                    club.club_name,
+                )
                 logger.info(f"   • Members updated: {updated_members}")
                 logger.info(f"   • New members: {new_members}")
                 logger.info("=" * 80)
@@ -392,17 +512,17 @@ class BotTasks:
                 if report_channel:
                     error_embed = self.report_generator.create_error_report(
                         club.club_name,
-                        f"Fatal error during daily check: {str(e)}"
+                        "The daily check failed unexpectedly. Please try again later."
                     )
                     await report_channel.send(embed=error_embed)
             except Exception:
                 pass
 
-    @hourly_check.before_loop
-    async def before_hourly_check(self):
+    @scheduled_report_check.before_loop
+    async def before_scheduled_report_check(self):
         """Wait for bot to be ready before starting tasks"""
         await self.bot.wait_until_ready()
-        logger.info("Bot ready, multi-club hourly check loop starting")
+        logger.info("Bot ready, minute-based report schedule loop starting")
 
     # ── Event Notification Helpers ─────────────────────────────────────
 
@@ -502,7 +622,7 @@ class BotTasks:
             notified_clubs.append(dedup_key)
             event["notified_clubs"] = notified_clubs
             self._sent_event_notifications.add(notification_key)
-            if not self._save_events_json():
+            if not await asyncio.to_thread(self._save_events_json):
                 logger.warning(
                     f"Sent {notif_type} notification for '{title[:60]}', "
                     "but failed to persist its deduplication state"
@@ -543,6 +663,12 @@ class BotTasks:
             logger.error(f"Failed to save events JSON: {e}")
             return False
 
+    @staticmethod
+    def _load_events_json():
+        """Read the event cache off the event-loop thread."""
+        with open(EVENTS_JSON_PATH, "r", encoding="utf-8") as f:
+            return json_mod.load(f)
+
     # ── Event Notifications ────────────────────────────────────────────
 
     async def event_notifications(self):
@@ -568,8 +694,7 @@ class BotTasks:
                 logger.warning(f"Events file not found: {EVENTS_JSON_PATH}")
                 return
 
-            with open(EVENTS_JSON_PATH, "r", encoding="utf-8") as f:
-                self._events_data = json_mod.load(f)
+            self._events_data = await asyncio.to_thread(self._load_events_json)
 
             events = self._events_data.get("events", [])
             if not events:
@@ -651,7 +776,7 @@ class BotTasks:
             if changed:
                 logger.info("✅ New official events detected and saved to JSON")
             else:
-                logger.info("ℹ️ No new official events found (JSON unchanged)")
+                logger.info("ℹ️ No new official events found; refreshed saved event data")
         except Exception as e:
             logger.error(f"Error in daily_official_events_check: {e}", exc_info=True)
             return

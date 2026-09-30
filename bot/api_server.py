@@ -5,17 +5,33 @@ Binds to 127.0.0.1 only — never exposed publicly.
 import json
 import logging
 from uuid import UUID
-from datetime import datetime, date, timedelta
+from datetime import datetime
 
 import pytz
 from aiohttp import web
 
-from config.database import db
 from models import Club
 from scrapers import UmaMoeAPIScraper
-from services import QuotaCalculator, ScrapeContext
+from services.quota_calculator import QuotaCalculator
+from services.quota_maintenance_service import QuotaMaintenanceService
+from services.scrape_lock_manager import ScrapeContext, ScrapeLockUnavailableError
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_club_id(body) -> tuple[UUID | None, str | None]:
+    """Validate the small JSON envelope shared by mutating API endpoints."""
+    if not isinstance(body, dict):
+        return None, "JSON body must be an object"
+    value = body.get("club_id")
+    if value is None or value == "":
+        return None, "club_id required"
+    if not isinstance(value, str):
+        return None, "Invalid club_id"
+    try:
+        return UUID(value), None
+    except (ValueError, AttributeError, TypeError):
+        return None, "Invalid club_id"
 
 
 async def _send_json(request: web.Request, data: dict, status: int = 200) -> web.StreamResponse:
@@ -30,120 +46,15 @@ async def _send_json(request: web.Request, data: dict, status: int = 200) -> web
     return resp
 
 
-async def _backfill_month(club: Club, scraped_data: dict, fetched_year: int, fetched_month: int) -> int:
-    """
-    Insert quota_history rows for every day in the scraped fans array
-    that doesn't already have a record.
-
-    Uma.moe returns daily_fans as a lifetime-converted monthly array where
-    fans[i] represents competition results for date(year, month, i).
-    join_day is the first index that has data (1-based), so we iterate
-    range(join_day, len(fans)) to cover all competition days up to current.
-    """
-    period_days = {'daily': 1, 'weekly': 7, 'biweekly': 14}.get(club.quota_period, 1)
-    default_quota = club.daily_quota
-
-    quota_reqs = await db.fetch(
-        "SELECT effective_date, daily_quota FROM quota_requirements "
-        "WHERE club_id = $1 ORDER BY effective_date ASC",
-        club.club_id
-    )
-
-    def quota_for(d: date) -> int:
-        q = default_quota
-        for row in quota_reqs:
-            if row['effective_date'] <= d:
-                q = row['daily_quota']
-            else:
-                break
-        return q
-
-    def calc_expected(join_date: date, data_date: date) -> int:
-        start_of_month = date(data_date.year, data_date.month, 1)
-        start = join_date if join_date >= start_of_month else start_of_month
-        total = 0.0
-        cur = start
-        while cur <= data_date:
-            total += quota_for(cur) / period_days
-            cur += timedelta(days=1)
-        return round(total)
-
-    month_start = date(fetched_year, fetched_month, 1)
-    backfilled = 0
-
-    for trainer_id, member_data in scraped_data.items():
-        member_row = await db.fetchrow(
-            "SELECT member_id, join_date FROM members "
-            "WHERE club_id = $1 AND trainer_id = $2 AND is_active = TRUE",
-            club.club_id, trainer_id
-        )
-        if not member_row:
-            continue
-
-        member_id = member_row['member_id']
-        join_date_val: date = member_row['join_date']
-        join_day: int = member_data['join_day']
-        fans: list = member_data['fans']
-
-        existing = {
-            row['date']: row['deficit_surplus']
-            for row in await db.fetch(
-                "SELECT date, deficit_surplus FROM quota_history "
-                "WHERE member_id = $1 AND date >= $2",
-                member_id, month_start
-            )
-        }
-
-        consecutive_behind = 0
-
-        for i in range(join_day, len(fans)):
-            comp_fans = fans[i]
-            if comp_fans == 0:
-                consecutive_behind = 0
-                continue
-
-            comp_date = date(fetched_year, fetched_month, i)
-
-            if comp_date in existing:
-                consecutive_behind = (
-                    consecutive_behind + 1 if existing[comp_date] < 0 else 0
-                )
-                continue
-
-            expected = calc_expected(join_date_val, comp_date)
-            deficit_surplus = comp_fans - expected
-            consecutive_behind = consecutive_behind + 1 if deficit_surplus < 0 else 0
-
-            await db.execute(
-                """
-                INSERT INTO quota_history
-                    (member_id, club_id, date, cumulative_fans, expected_fans,
-                     deficit_surplus, days_behind)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (member_id, date) DO NOTHING
-                """,
-                member_id, club.club_id, comp_date,
-                comp_fans, expected, deficit_surplus, consecutive_behind
-            )
-            backfilled += 1
-
-    return backfilled
-
-
 async def handle_sync(request: web.Request) -> web.StreamResponse:
     try:
         body = await request.json()
     except Exception:
         return await _send_json(request, {'error': 'Invalid JSON body'}, status=400)
 
-    club_id_str = body.get('club_id')
-    if not club_id_str:
-        return await _send_json(request, {'error': 'club_id required'}, status=400)
-
-    try:
-        club_id = UUID(club_id_str)
-    except ValueError:
-        return await _send_json(request, {'error': 'Invalid club_id'}, status=400)
+    club_id, validation_error = _parse_club_id(body)
+    if validation_error:
+        return await _send_json(request, {'error': validation_error}, status=400)
 
     club = await Club.get_by_id(club_id)
     if not club:
@@ -183,7 +94,9 @@ async def handle_sync(request: web.Request) -> web.StreamResponse:
 
                 fetched_year = getattr(scraper, '_fetched_year', None) or current_date.year
                 fetched_month = getattr(scraper, '_fetched_month', None) or current_date.month
-                backfilled = await _backfill_month(club, scraped_data, fetched_year, fetched_month)
+                backfilled = await QuotaMaintenanceService.backfill_month(
+                    club, scraped_data, fetched_year, fetched_month
+                )
 
                 if backfilled:
                     logger.info(f"Backfilled {backfilled} missing quota_history rows for {club.club_name}")
@@ -197,9 +110,16 @@ async def handle_sync(request: web.Request) -> web.StreamResponse:
                     'backfilled': backfilled,
                 }
 
+    except ScrapeLockUnavailableError as e:
+        logger.warning("Web sync lock unavailable for club %s: %s", club.club_id, e)
+        return await _send_json(
+            request,
+            {'error': 'Another sync or recalculation is already running'},
+            status=409,
+        )
     except Exception as e:
         logger.error(f"Web sync failed for {club.club_name}: {e}", exc_info=True)
-        error = str(e)
+        error = "Sync failed. Please try again later."
 
     if error:
         return await _send_json(request, {'error': error}, status=500)
@@ -212,86 +132,27 @@ async def handle_recalculate(request: web.Request) -> web.StreamResponse:
     except Exception:
         return await _send_json(request, {'error': 'Invalid JSON body'}, status=400)
 
-    club_id_str = body.get('club_id')
-    if not club_id_str:
-        return await _send_json(request, {'error': 'club_id required'}, status=400)
-
-    try:
-        club_id = UUID(club_id_str)
-    except ValueError:
-        return await _send_json(request, {'error': 'Invalid club_id'}, status=400)
+    club_id, validation_error = _parse_club_id(body)
+    if validation_error:
+        return await _send_json(request, {'error': validation_error}, status=400)
 
     club = await Club.get_by_id(club_id)
     if not club:
         return await _send_json(request, {'error': 'Club not found'}, status=404)
 
-    period_days = {'daily': 1, 'weekly': 7, 'biweekly': 14}.get(club.quota_period, 1)
-    default_quota = club.daily_quota
-
-    quota_reqs = await db.fetch(
-        "SELECT effective_date, daily_quota FROM quota_requirements "
-        "WHERE club_id = $1 ORDER BY effective_date ASC",
-        club_id
-    )
-
-    def quota_for(d: date) -> int:
-        q = default_quota
-        for row in quota_reqs:
-            if row['effective_date'] <= d:
-                q = row['daily_quota']
-            else:
-                break
-        return q
-
-    def calc_expected(join_date: date, data_date: date) -> int:
-        month_start = date(data_date.year, data_date.month, 1)
-        start = join_date if join_date >= month_start else month_start
-        total = 0.0
-        cur = start
-        while cur <= data_date:
-            total += quota_for(cur) / period_days
-            cur += timedelta(days=1)
-        return round(total)
-
-    today = date.today()
-    month_start = date(today.year, today.month, 1)
-
-    members = await db.fetch(
-        """
-        SELECT DISTINCT m.member_id, m.join_date
-        FROM members m
-        JOIN quota_history qh ON qh.member_id = m.member_id
-        WHERE m.club_id = $1 AND qh.date >= $2
-        """,
-        club_id, month_start
-    )
-
-    updated = 0
-    for member in members:
-        history = await db.fetch(
-            """
-            SELECT id, date, cumulative_fans
-            FROM quota_history
-            WHERE member_id = $1 AND date >= $2
-            ORDER BY date ASC
-            """,
-            member['member_id'], month_start
+    try:
+        async with ScrapeContext(club.club_id, f"web_recalculate_{club.club_name}"):
+            updated = await QuotaMaintenanceService.recalculate_current_month(club)
+    except ScrapeLockUnavailableError as e:
+        logger.warning("Recalculation lock unavailable for club %s: %s", club_id, e)
+        return await _send_json(
+            request,
+            {'error': 'Another sync or recalculation is already running'},
+            status=409,
         )
-
-        consecutive_behind = 0
-        for row in history:
-            expected = calc_expected(member['join_date'], row['date'])
-            deficit_surplus = row['cumulative_fans'] - expected
-            consecutive_behind = consecutive_behind + 1 if deficit_surplus < 0 else 0
-            await db.execute(
-                """
-                UPDATE quota_history
-                SET expected_fans = $1, deficit_surplus = $2, days_behind = $3
-                WHERE id = $4
-                """,
-                expected, deficit_surplus, consecutive_behind, row['id']
-            )
-            updated += 1
+    except Exception as e:
+        logger.error("Recalculation failed for club %s: %s", club_id, e, exc_info=True)
+        return await _send_json(request, {'error': 'Recalculation failed'}, status=500)
 
     logger.info(f"Recalculated {updated} quota_history rows for club {club_id}")
     return await _send_json(request, {'recalculated': updated})

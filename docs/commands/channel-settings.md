@@ -17,7 +17,8 @@ Set the channel where daily quota reports are posted.
 
 ## /set_alert_channel
 
-Set the channel where alerts (bombs, kicks) are posted.
+Set the reserved operational-alert channel. Daily quota reports continue to use
+the report channel; the current release does not emit automated kick alerts.
 
 | Parameter | Required | Description |
 |---|---|---|
@@ -38,12 +39,15 @@ View the current report and alert channel configuration for a club.
 
 ## /post_monthly_info
 
-Post the monthly info board to a channel. This embed automatically updates whenever quota changes are made.
+Post the monthly info board to a channel. Changes made with `/quota` or
+`/delete_quota` automatically refresh the saved board; use
+`/update_monthly_info` after changing the base quota or quota period through
+`/edit_club`.
 
 | Parameter | Required | Description |
 |---|---|---|
 | `club` | Yes | Target club |
-| `channel` | No | Channel to post in (defaults to report channel) |
+| `channel` | No | Channel to post in (defaults to the current channel) |
 
 ---
 
@@ -53,4 +57,27 @@ Manually refresh the monthly info board embed.
 
 | Parameter | Required | Description |
 |---|---|---|
+| `club` | Yes | Target club |
+
+---
+
+## /set_leaderboard_channel
+
+Set the channel for the daily leaderboard analysis generated after a successful
+quota scrape.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `channel` | Yes | Discord text channel |
+| `club` | Yes | Target club |
+
+---
+
+## /set_events_channel
+
+Set the channel for official event starting and ending-soon notifications.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `channel` | Yes | Discord text channel |
 | `club` | Yes | Target club |

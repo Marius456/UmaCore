@@ -86,6 +86,40 @@ class UserLink:
         await db.execute(query, notify_on_deficit, self.discord_user_id)
         self.notify_on_deficit = notify_on_deficit
         logger.info(f"Updated notifications for Discord ID {self.discord_user_id}")
+
+    async def reassign_member(
+        self, member_id: UUID, expected_member_id: Optional[UUID] = None
+    ) -> bool:
+        """Reassign this link while preserving settings and optionally guarding races."""
+        if expected_member_id is None:
+            query = """
+                UPDATE user_links
+                SET member_id = $1, updated_at = NOW()
+                WHERE discord_user_id = $2
+                RETURNING member_id
+            """
+            row = await db.fetchrow(query, member_id, self.discord_user_id)
+        else:
+            query = """
+                UPDATE user_links
+                SET member_id = $1, updated_at = NOW()
+                WHERE discord_user_id = $2 AND member_id = $3
+                RETURNING member_id
+            """
+            row = await db.fetchrow(
+                query, member_id, self.discord_user_id, expected_member_id
+            )
+
+        if not row:
+            return False
+        self.member_id = member_id
+        logger.info(
+            "Reassigned Discord ID %s from member %s to member %s",
+            self.discord_user_id,
+            expected_member_id,
+            member_id,
+        )
+        return True
     
     @classmethod
     async def delete(cls, discord_user_id: int):

@@ -6,7 +6,6 @@ from discord import app_commands
 from discord.ext import commands
 import logging
 
-from config.settings import DISCORD_TOKEN
 from config.database import db
 from .tasks import BotTasks
 from services.report_generator import _close_playwright_browser_async
@@ -24,7 +23,8 @@ class UmamusumeBot(commands.Bot):
         super().__init__(
             command_prefix=commands.when_mentioned,
             intents=intents,
-            help_command=None
+            help_command=None,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
         
         self.tasks_manager = None
@@ -116,7 +116,7 @@ class UmamusumeBot(commands.Bot):
             await ctx.send(f"❌ Missing required argument: {error.param}")
         else:
             logger.error(f"Command error: {error}", exc_info=error)
-            await ctx.send(f"❌ An error occurred: {str(error)}")
+            await ctx.send("❌ An unexpected error occurred. Please try again later.")
     
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         """Global error handler for slash commands"""
@@ -134,7 +134,7 @@ class UmamusumeBot(commands.Bot):
             logger.warning(f"User {interaction.user} (ID: {interaction.user.id}) failed check for /{interaction.command.name}: {error}")
         else:
             logger.error(f"Slash command error in /{interaction.command.name}: {error}", exc_info=error)
-            msg = f"❌ An error occurred: {str(error)}"
+            msg = "❌ An unexpected error occurred. Please try again later."
 
         try:
             if interaction.response.is_done():
@@ -147,7 +147,7 @@ class UmamusumeBot(commands.Bot):
     async def close(self):
         """Cleanup when bot is shutting down"""
         if self.tasks_manager:
-            self.tasks_manager.stop_tasks()
+            await self.tasks_manager.stop_tasks()
         
         # Close Playwright browser used for report image rendering
         await _close_playwright_browser_async()

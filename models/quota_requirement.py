@@ -24,9 +24,16 @@ class QuotaRequirement:
     @classmethod
     async def create(cls, club_id: UUID, effective_date: date, daily_quota: int, set_by: str = None) -> 'QuotaRequirement':
         """Create a new quota requirement"""
+        if daily_quota <= 0:
+            raise ValueError("daily_quota must be greater than zero")
         query = """
             INSERT INTO quota_requirements (club_id, effective_date, daily_quota, set_by)
             VALUES ($1, $2, $3, $4)
+            ON CONFLICT (club_id, effective_date)
+            DO UPDATE SET
+                daily_quota = EXCLUDED.daily_quota,
+                set_by = EXCLUDED.set_by,
+                created_at = NOW()
             RETURNING id, club_id, effective_date, daily_quota, set_by
         """
         row = await db.fetchrow(query, club_id, effective_date, daily_quota, set_by)
@@ -48,7 +55,9 @@ class QuotaRequirement:
         query = """
             SELECT daily_quota
             FROM quota_requirements
-            WHERE club_id = $1 AND effective_date <= $2
+            WHERE club_id = $1
+              AND effective_date >= date_trunc('month', $2::date)::date
+              AND effective_date <= $2
             ORDER BY effective_date DESC
             LIMIT 1
         """

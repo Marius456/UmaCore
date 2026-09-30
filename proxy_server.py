@@ -1,10 +1,23 @@
-import subprocess
+"""Run the Windows official-news proxy on the private Tailscale interface."""
+from pathlib import Path
 import sys
 
-# This starts a proxy on all interfaces on port 8888
-if __name__ == '__main__':
+
+def main() -> None:
     from proxy import entry_point
-    # --hostname 0.0.0.0 makes it listen for your server's connection
-    # --port 8888 is the port it will use
-    sys.argv = ['proxy', '--hostname', '0.0.0.0', '--port', '8888']
+
+    log_dir = Path(__file__).resolve().parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+    sys.argv = [
+        "proxy",
+        "--hostname", "100.111.216.3",
+        "--port", "8888",
+        "--num-workers", "1",
+        "--num-acceptors", "1",
+        "--log-file", str(log_dir / "official-events-proxy.log"),
+    ]
     entry_point()
+
+
+if __name__ == "__main__":
+    main()

@@ -240,6 +240,8 @@ geckodriver
 # ============================================
 # Project Specific
 # ============================================
+.codex-remote-attachments/
+
 # Any personal test files
 test_*.py
 scratch_*.py
@@ -263,5 +265,6 @@ VPS_SETUP.md
 .umamoe_cookies/
 
 .runtime-deps
+node_modules/
 qna.json
 trivia-sources.md

@@ -64,17 +64,22 @@ class ClubRankHistory:
           - best_club_rank_date: date
           - best_monthly_rank: int
           - best_monthly_rank_date: date
+          - club_rank_history_start / club_rank_history_end: date
         or None if no rank records exist.
         """
         query = """
             WITH best_ranks AS (
                 SELECT
-                    MIN(club_rank) FILTER (WHERE club_rank IS NOT NULL) AS best_club_rank,
-                    MIN(monthly_rank) FILTER (WHERE monthly_rank IS NOT NULL) AS best_monthly_rank
+                    MIN(club_rank) FILTER (WHERE club_rank > 0) AS best_club_rank,
+                    MIN(monthly_rank) FILTER (WHERE monthly_rank > 0) AS best_monthly_rank,
+                    MIN(date) FILTER (WHERE club_rank > 0) AS club_rank_history_start,
+                    MAX(date) FILTER (WHERE club_rank > 0) AS club_rank_history_end
                 FROM club_rank_history
                 WHERE club_id = $1
             )
             SELECT
+                (SELECT club_rank_history_start FROM best_ranks) AS club_rank_history_start,
+                (SELECT club_rank_history_end FROM best_ranks) AS club_rank_history_end,
                 (SELECT best_club_rank FROM best_ranks) AS best_club_rank,
                 (SELECT date FROM club_rank_history
                  WHERE club_id = $1 AND club_rank = (SELECT best_club_rank FROM best_ranks)

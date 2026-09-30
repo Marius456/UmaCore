@@ -8,6 +8,7 @@ from .official_event_scraper import scrape_official_events, Event, EventType, ch
 
 __all__ = [
     'BaseScraper', 'UmaMoeAPIScraper',
+    'DataNotAvailableError',
     '_close_browser', 'scrape_gacha_banners', 'GachaBanner', 'GachaItem',
     'scrape_official_events', 'Event', 'EventType', 'check_and_save',
 ]

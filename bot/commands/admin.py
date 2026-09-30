@@ -4,39 +4,33 @@ Administrative commands for quota management
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import datetime, time
+from datetime import datetime
 import logging
 import pytz
 import asyncio
 
 from scrapers import UmaMoeAPIScraper
-from services import QuotaCalculator, ReportGenerator, MonthlyInfoService
-from models import Member, QuotaRequirement, BotSettings, Club, ClubRankHistory
+from services.monthly_info_service import MonthlyInfoService
+from services.quota_calculator import QuotaCalculator
+from services.quota_maintenance_service import QuotaMaintenanceService
+from services.report_generator import ReportGenerator
+from services.scrape_lock_manager import ScrapeContext, ScrapeLockUnavailableError
+from models import Member, QuotaRequirement, Club, ClubRankHistory
+from .common import ClubAutocompleteMixin
 
 logger = logging.getLogger(__name__)
 
 
-class AdminCommands(commands.Cog):
+class AdminCommands(ClubAutocompleteMixin, commands.Cog):
     """Administrative commands for quota management"""
+
+    club_autocomplete = ClubAutocompleteMixin.club_autocomplete
 
     def __init__(self, bot):
         self.bot = bot
         self.quota_calculator = QuotaCalculator()
         self.report_generator = ReportGenerator()
         self.monthly_info_service = MonthlyInfoService()
-
-    async def club_autocomplete(self, interaction: discord.Interaction, current: str):
-        """Autocomplete for club names visible in this guild"""
-        try:
-            club_names = await Club.get_names_for_guild(interaction.guild_id)
-            return [
-                app_commands.Choice(name=name, value=name)
-                for name in club_names
-                if current.lower() in name.lower()
-            ][:25]
-        except Exception as e:
-            logger.error(f"Error in club autocomplete: {e}")
-            return []
 
     async def _update_monthly_info_board(self, club_obj: Club, current_date) -> bool:
         """Auto-update the monthly info board after quota changes"""
@@ -70,7 +64,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -79,7 +73,7 @@ class AdminCommands(commands.Cog):
                 await interaction.followup.send(f"❌ Club '{club}' is not registered in this server.")
                 return
 
-            if amount < 0:
+            if amount <= 0:
                 await interaction.followup.send("❌ Quota amount must be positive")
                 return
 
@@ -95,12 +89,18 @@ class AdminCommands(commands.Cog):
             current_date = current_datetime.date()
 
             set_by = f"{interaction.user.name}#{interaction.user.discriminator}"
-            quota_req = await QuotaRequirement.create(
-                club_id=club_obj.club_id,
-                effective_date=current_date,
-                daily_quota=amount,
-                set_by=set_by
-            )
+            async with ScrapeContext(
+                club_obj.club_id, f"set_quota_{club_obj.club_name}"
+            ):
+                await QuotaRequirement.create(
+                    club_id=club_obj.club_id,
+                    effective_date=current_date,
+                    daily_quota=amount,
+                    set_by=set_by,
+                )
+                await QuotaMaintenanceService.recalculate_current_month(
+                    club_obj, today=current_date
+                )
 
             if amount >= 1_000_000:
                 formatted = f"{amount / 1_000_000:.1f}M"
@@ -151,9 +151,13 @@ class AdminCommands(commands.Cog):
             if updated:
                 await interaction.followup.send("✅ Monthly info board auto-updated!", ephemeral=True)
 
+        except ScrapeLockUnavailableError:
+            await interaction.followup.send(
+                "⚠️ A sync or quota update is already running for this club."
+            )
         except Exception as e:
             logger.error(f"Error in set_quota: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="update_monthly_info", description="Update the monthly info board")
     @app_commands.checks.has_permissions(administrator=True)
@@ -162,7 +166,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -181,13 +185,13 @@ class AdminCommands(commands.Cog):
 
             channel = self.bot.get_channel(channel_id)
             if not channel:
-                await interaction.followup.send(f"❌ Channel not found. The board may have been deleted.")
+                await interaction.followup.send("❌ Channel not found. The board may have been deleted.")
                 return
 
             try:
                 message = await channel.fetch_message(message_id)
             except discord.NotFound:
-                await interaction.followup.send(f"❌ Message not found. Use `/post_monthly_info` to create a new one.")
+                await interaction.followup.send("❌ Message not found. Use `/post_monthly_info` to create a new one.")
                 return
 
             club_tz = pytz.timezone(club_obj.timezone)
@@ -206,7 +210,7 @@ class AdminCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in update_monthly_info: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="quota_history", description="View quota changes this month")
     @app_commands.checks.has_permissions(administrator=True)
@@ -215,7 +219,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -272,7 +276,7 @@ class AdminCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in quota_history: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="delete_quota", description="Delete a specific quota requirement entry by date and amount")
     @app_commands.checks.has_permissions(administrator=True)
@@ -281,7 +285,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -296,9 +300,21 @@ class AdminCommands(commands.Cog):
                 await interaction.followup.send("❌ Invalid date format. Use YYYY-MM-DD")
                 return
 
-            deleted = await QuotaRequirement.delete_by_date_and_amount(
-                club_obj.club_id, effective_date, amount
-            )
+            club_tz = pytz.timezone(club_obj.timezone)
+            current_date = datetime.now(club_tz).date()
+            async with ScrapeContext(
+                club_obj.club_id, f"delete_quota_{club_obj.club_name}"
+            ):
+                deleted = await QuotaRequirement.delete_by_date_and_amount(
+                    club_obj.club_id, effective_date, amount
+                )
+                if deleted and (
+                    effective_date.year,
+                    effective_date.month,
+                ) == (current_date.year, current_date.month):
+                    await QuotaMaintenanceService.recalculate_current_month(
+                        club_obj, today=current_date
+                    )
 
             if deleted == 0:
                 await interaction.followup.send(
@@ -322,8 +338,8 @@ class AdminCommands(commands.Cog):
             )
             embed.add_field(
                 name="ℹ️ Next Steps",
-                value="The bot will now use the next applicable quota entry. "
-                      "Run `/quota_history` to verify, or `/force_check` to recalculate.",
+                value="Current-month history has been recalculated using the "
+                      "remaining quota entries. Run `/quota_history` to verify.",
                 inline=False
             )
             embed.set_footer(text=f"Deleted by {interaction.user}")
@@ -331,20 +347,25 @@ class AdminCommands(commands.Cog):
             await interaction.followup.send(embed=embed)
             logger.info(f"Quota entry deleted for {club} ({amount:,} on {date}) by {interaction.user}")
 
-            await self._update_monthly_info_board(club_obj, effective_date)
+            await self._update_monthly_info_board(club_obj, current_date)
 
+        except ScrapeLockUnavailableError:
+            await interaction.followup.send(
+                "⚠️ A sync or quota update is already running for this club."
+            )
         except Exception as e:
             logger.error(f"Error in delete_quota: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="force_check", description="Manually trigger a quota check and report")
     @app_commands.checks.has_permissions(administrator=True)
     async def force_check(self, interaction: discord.Interaction, club: str):
         """Manually trigger the daily check"""
         await interaction.response.defer()
+        scrape_context = None
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -352,6 +373,11 @@ class AdminCommands(commands.Cog):
             if not club_obj.belongs_to_guild(interaction.guild_id):
                 await interaction.followup.send(f"❌ Club '{club}' is not registered in this server.")
                 return
+
+            scrape_context = ScrapeContext(
+                club_obj.club_id, f"force_check_{club_obj.club_name}"
+            )
+            await scrape_context.__aenter__()
 
             report_channel = self.bot.get_channel(club_obj.report_channel_id)
             alert_channel = self.bot.get_channel(club_obj.alert_channel_id or club_obj.report_channel_id)
@@ -406,7 +432,7 @@ class AdminCommands(commands.Cog):
 
                     if scraped_data:
                         break
-                except Exception as e:
+                except Exception:
                     if attempt == max_retries:
                         raise
                     await interaction.followup.send(f"⚠️ Attempt {attempt} failed, retrying in {retry_delay}s...")
@@ -474,9 +500,22 @@ class AdminCommands(commands.Cog):
                 f"✅ Check complete for {club}: {updated_members} members updated, {new_members} new members"
             )
 
+        except ScrapeLockUnavailableError:
+            await interaction.followup.send(
+                "⚠️ A sync or quota check is already running for this club."
+            )
         except Exception as e:
             logger.error(f"Error in force_check: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
+        finally:
+            if scrape_context and scrape_context.lock_acquired:
+                try:
+                    await scrape_context.__aexit__(None, None, None)
+                except Exception:
+                    logger.exception(
+                        "Failed to release force-check lock for club %s",
+                        club,
+                    )
 
     @app_commands.command(name="add_member", description="Manually add a new member")
     @app_commands.checks.has_permissions(administrator=True)
@@ -486,7 +525,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -506,7 +545,7 @@ class AdminCommands(commands.Cog):
                 await interaction.followup.send(f"❌ Member '{trainer_name}' already exists in {club}")
                 return
 
-            member = await Member.create(club_obj.club_id, trainer_name, join_date_obj, trainer_id)
+            await Member.create(club_obj.club_id, trainer_name, join_date_obj, trainer_id)
 
             await interaction.followup.send(
                 f"✅ Added member to {club}: {trainer_name} (joined {join_date}, ID: {trainer_id or 'N/A'})"
@@ -516,7 +555,7 @@ class AdminCommands(commands.Cog):
             await interaction.followup.send("❌ Invalid date format. Use YYYY-MM-DD")
         except Exception as e:
             logger.error(f"Error in add_member: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="deactivate_member", description="Manually deactivate a member")
     @app_commands.checks.has_permissions(administrator=True)
@@ -525,7 +564,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -564,7 +603,7 @@ class AdminCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in deactivate_member: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="activate_member", description="Reactivate a member")
     @app_commands.checks.has_permissions(administrator=True)
@@ -573,7 +612,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -606,7 +645,7 @@ class AdminCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in activate_member: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="recalculate", description="Recalculate days-behind counts from current history")
     @app_commands.checks.has_permissions(administrator=True)
@@ -615,7 +654,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -624,42 +663,17 @@ class AdminCommands(commands.Cog):
                 await interaction.followup.send(f"❌ Club '{club}' is not registered in this server.")
                 return
 
-            from config.database import db as _db
-
             club_tz = pytz.timezone(club_obj.timezone)
             current_date = datetime.now(club_tz).date()
 
             await interaction.followup.send(f"🔄 Recalculating for {club}...")
 
-            # Recalculate days_behind for all members in the current month.
-            # Walk each member's history in date order and track consecutive deficit days.
-            members = await Member.get_all_active(club_obj.club_id)
-            updated_entries = 0
-
-            for member in members:
-                rows = await _db.fetch(
-                    """
-                    SELECT id, date, deficit_surplus
-                    FROM quota_history
-                    WHERE member_id = $1
-                      AND date_part('year', date) = $2
-                      AND date_part('month', date) = $3
-                    ORDER BY date ASC
-                    """,
-                    member.member_id, current_date.year, current_date.month
+            async with ScrapeContext(
+                club_obj.club_id, f"recalculate_{club_obj.club_name}"
+            ):
+                updated_entries = await QuotaMaintenanceService.recalculate_days_behind(
+                    club_obj.club_id, current_date
                 )
-
-                consecutive = 0
-                for row in rows:
-                    if row['deficit_surplus'] < 0:
-                        consecutive += 1
-                    else:
-                        consecutive = 0
-                    await _db.execute(
-                        "UPDATE quota_history SET days_behind = $1 WHERE id = $2",
-                        consecutive, row['id']
-                    )
-                    updated_entries += 1
 
             embed = discord.Embed(
                 title=f"✅ Recalculation Complete - {club}",
@@ -676,55 +690,13 @@ class AdminCommands(commands.Cog):
             logger.info(f"Recalculation performed for {club} by {interaction.user}: "
                         f"{updated_entries} entries updated")
 
+        except ScrapeLockUnavailableError:
+            await interaction.followup.send(
+                "⚠️ A sync or quota check is already running for this club."
+            )
         except Exception as e:
             logger.error(f"Error in recalculate: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
-
-    @app_commands.command(name="reset_month", description="Manually trigger monthly reset: clears all history and quota requirements")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def reset_month(self, interaction: discord.Interaction, club: str):
-        """Manually reset all monthly data for a club (for use when auto-reset fails)"""
-        await interaction.response.defer()
-
-        try:
-            club_obj = await Club.get_by_name(club)
-            if not club_obj:
-                await interaction.followup.send(f"❌ Club '{club}' not found")
-                return
-
-            if not club_obj.belongs_to_guild(interaction.guild_id):
-                await interaction.followup.send(f"❌ Club '{club}' is not registered in this server.")
-                return
-
-            from config.database import db as _db
-
-            await _db.execute("DELETE FROM quota_history WHERE club_id = $1", club_obj.club_id)
-            await _db.execute("DELETE FROM quota_requirements WHERE club_id = $1", club_obj.club_id)
-            await _db.execute(
-                "UPDATE members SET manually_deactivated = FALSE WHERE club_id = $1 AND manually_deactivated = TRUE",
-                club_obj.club_id
-            )
-
-            embed = discord.Embed(
-                title=f"🔄 Monthly Reset Complete - {club}",
-                description=(
-                    "All monthly data has been cleared.\n\n"
-                    "**Cleared:**\n"
-                    "• All quota history\n"
-                    "• All quota requirements\n"
-                    "• Manual deactivation flags\n\n"
-                    f"Run `/force_check club:{club}` to populate fresh data."
-                ),
-                color=discord.Color.orange(),
-                timestamp=discord.utils.utcnow()
-            )
-            embed.set_footer(text=f"Reset by {interaction.user}")
-            await interaction.followup.send(embed=embed)
-            logger.warning(f"Manual monthly reset performed for {club} by {interaction.user}")
-
-        except Exception as e:
-            logger.error(f"Error in reset_month: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     # Register autocomplete for all club arguments
     set_quota.autocomplete('club')(club_autocomplete)
@@ -736,7 +708,6 @@ class AdminCommands(commands.Cog):
     deactivate_member.autocomplete('club')(club_autocomplete)
     activate_member.autocomplete('club')(club_autocomplete)
     recalculate.autocomplete('club')(club_autocomplete)
-    reset_month.autocomplete('club')(club_autocomplete)
 
 
 async def setup(bot):

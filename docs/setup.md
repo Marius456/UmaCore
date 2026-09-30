@@ -5,7 +5,7 @@
 - Python 3.10+
 - PostgreSQL database (Neon, Supabase, or local)
 - Discord bot token
-- Chrome/Chromium — only needed if using ChronoGenesis scraper
+- Chromium installed through Playwright
 
 ## Installation
 
@@ -35,9 +35,8 @@ postgresql://user:password@host:5432/database_name
 
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
 2. Create a new application and add a bot
-3. Under **Bot settings**, enable:
-   - Server Members Intent
-   - Message Content Intent
+3. The bot uses Discord's standard guild intent; no privileged intents are
+   required by the current code.
 4. Copy the bot token
 5. Invite the bot to your server with permissions: Send Messages, Embed Links, Read Messages/History
 
@@ -47,10 +46,9 @@ postgresql://user:password@host:5432/database_name
 DISCORD_TOKEN=your_bot_token_here
 DATABASE_URL=postgresql://user:password@host:5432/database_name
 LOG_LEVEL=INFO
-USE_UMAMOE_API=true
+# Optional when the host IP is blocked by the official news site:
+OFFICIAL_EVENTS_PROXY=http://proxy-host:8888
 ```
-
-Set `USE_UMAMOE_API=false` to use ChronoGenesis scraping instead of Uma.moe API.
 
 ### 6. Run the bot
 
@@ -60,6 +58,33 @@ python main.py
 
 On first run, the bot automatically creates all database tables, syncs slash commands, and starts the scheduler.
 
+### Windows proxy for official news
+
+The production scraper uses `http://100.111.216.3:8888`, the Windows host's
+Tailscale address. The `UmaProxy` Windows scheduled task launches
+`D:\Projects\UmaCore\start_proxy.bat`, which runs `scripts/start-proxy.ps1`
+with the user's installed Python 3.11. Install the separate host dependency
+with `py -3.11 -m pip install proxy.py==2.4.10`; it is not a bot-container dependency.
+
+The proxy binds only to `100.111.216.3` and writes to
+`logs/official-events-proxy.log`; its launcher waits for the Tailscale address
+at logon, supervises the process, and writes restarts to
+`logs/official-events-proxy-supervisor.log`. Keep Tailscale running and preserve
+these launcher files when updating this checkout. For a different Python location,
+run `scripts/start-proxy.ps1 -PythonExe C:\path\to\python.exe`.
+
+Configure the existing `UmaProxy` task to start at logon, restart every minute
+on failure, start when available, and have no execution time limit. Its action
+must point to `start_proxy.bat` in this checkout. Run
+`scripts/repair-proxy-task.ps1` from an administrator PowerShell to apply these
+settings and allow TCP 8888 from production (`100.83.153.101`) on Tailscale.
+The repair preserves Python's block on other ports and blocks other IPv4
+sources on port 8888; it saves the prior task and affected rule names in `logs`.
+Start it manually after repairs
+with `Start-ScheduledTask -TaskName UmaProxy`. A sleeping or powered-off Windows
+host cannot provide the proxy. Verify port 8888 from the production container
+and fetch the news page through it before treating a repair as complete.
+
 ---
 
 ## Quick Start
@@ -68,7 +93,7 @@ Once the bot is running, do this to get started:
 
 **1. Add your club**
 ```
-/add_club club_name:YourClub scrape_url:... circle_id:860280110
+/add_club club_name:YourClub circle_id:860280110
 ```
 
 **2. Set up channels**
@@ -101,10 +126,35 @@ If you want to use the Uma.moe API (recommended):
 
 ## Deployment
 
-### Docker
+### Production server
+
+On Windows, use the checked-in deployment wrapper:
+
+```powershell
+.\scripts\deploy.ps1
+```
+
+It defaults to `origin/feat/fix-issues` on the configured Ubuntu host. All
+connection settings and the selected remote branch can be overridden:
+
+```powershell
+.\scripts\deploy.ps1 -Branch main
+.\scripts\deploy.ps1 -Host example.com -User ubuntu -IdentityFile C:\keys\server.key
+```
+
+The remote `~/UmaCore` checkout must be clean and must not contain server-only
+commits. Only commits already pushed to `origin` can be deployed. The server's
+`.env` remains in place and is never copied to the local machine. The deployment
+builds before stopping the current bot, waits up to 60
+seconds for the internal `/health` endpoint, and automatically restores the
+previous container if startup fails. If a deployment reports a pre-existing
+`para-bot-container-rollback`, inspect and resolve that container manually
+before retrying.
+
+### Local Docker
 
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 ### Railway / Render / Fly.io
@@ -135,7 +185,12 @@ All tables are created automatically on first run:
 | `members` | Club member data |
 | `quota_history` | Daily quota tracking per member |
 | `quota_requirements` | Quota change history |
-| `bombs` | Active bomb warnings |
+| `scrape_history` | Scrape outcomes and diagnostics |
+| `scrape_locks` | Per-club concurrency guards |
 | `user_links` | Discord ID to trainer mappings |
 | `bot_settings` | Monthly info board locations |
 | `club_rank_history` | Club ranking over time |
+| `notification_deliveries` | Idempotency records for daily deficit DMs |
+| `trivia_questions` | Trivia question bank |
+| `trivia_leaderboard` | Trivia scores |
+| `audit_logs` | Dashboard action history |

@@ -19,6 +19,7 @@ import logging
 import os
 import re
 import tempfile
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from enum import Enum
@@ -52,6 +53,50 @@ IN_DOCKER = os.environ.get("RUNNING_IN_DOCKER") == "true" or os.path.exists("/.d
 # Longer timeouts for Docker environment
 PAGE_LOAD_TIMEOUT = 90000 if IN_DOCKER else 60000  # 90s in Docker, 60s locally
 DEFAULT_WAIT_TIMEOUT = 5000 if IN_DOCKER else 3000  # 5s in Docker, 3s locally
+OFFICIAL_EVENTS_PROXY = os.getenv(
+    "OFFICIAL_EVENTS_PROXY", "http://100.111.216.3:8888"
+).strip()
+PROXY_CONNECT_TIMEOUT = 3.0
+UNDATED_EVENT_RETENTION_DAYS = 30
+
+
+async def _reachable_proxy(proxy_address: str) -> Optional[str]:
+    """Return the configured proxy only when its TCP endpoint is reachable."""
+    if not proxy_address:
+        return None
+
+    parsed = urlparse(proxy_address)
+    if not parsed.hostname:
+        logger.warning("Ignoring invalid OFFICIAL_EVENTS_PROXY value")
+        return None
+
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError:
+        logger.warning("Ignoring OFFICIAL_EVENTS_PROXY with an invalid port")
+        return None
+    writer = None
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(parsed.hostname, port),
+            timeout=PROXY_CONNECT_TIMEOUT,
+        )
+        return proxy_address
+    except (OSError, asyncio.TimeoutError) as exc:
+        logger.warning(
+            "Official-events proxy %s:%s is unreachable (%s); trying direct connection",
+            parsed.hostname,
+            port,
+            exc,
+        )
+        return None
+    finally:
+        if writer is not None:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except OSError:
+                pass
 
 
 class EventType(str, Enum):
@@ -72,6 +117,7 @@ class Event:
     end_time: Optional[datetime]
     url: str
     banner_image: Optional[str] = None
+    published_at: Optional[datetime] = None
 
 
 # ── Date Parsing ──────────────────────────────────────────────────────────────
@@ -234,17 +280,48 @@ def _clean_title(raw: str) -> str:
       "Game\\n2026/06/25 22:00 (UTC)\\nNew Spotlight Scouts out now!...\\n\\nDetails"
     We take the longest meaningful line that isn't boilerplate.
     """
-    lines = [l.strip() for l in raw.split('\n') if l.strip()]
+    lines = [line.strip() for line in raw.split('\n') if line.strip()]
     # Prefer the longest line that isn't a known keyword
     candidates = [
-        l for l in lines
-        if l not in ("Game", "Details", "Top", "News")
-        and not re.match(r'^\d{4}[/-]\d{2}[/-]\d{2}', l)
-        and not re.match(r'^\d{1,2}[:]\d{2}', l)
+        line for line in lines
+        if line not in ("Game", "Details", "Top", "News")
+        and not re.match(r'^\d{4}[/-]\d{2}[/-]\d{2}', line)
+        and not re.match(r'^\d{1,2}[:]\d{2}', line)
     ]
     if candidates:
         return max(candidates, key=len)
     return max(lines, key=len) if lines else raw
+
+
+def _extract_card_published_at(raw: str) -> Optional[datetime]:
+    """Extract the publication timestamp displayed on a news-list card."""
+    match = re.search(
+        r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})"
+        r"(?:\s+(\d{1,2})[:](\d{2}))?"
+        r"(?:\s*\((UTC|JST)\))?",
+        raw,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    try:
+        published_at = datetime(
+            int(match.group(1)),
+            int(match.group(2)),
+            int(match.group(3)),
+            int(match.group(4) or 0),
+            int(match.group(5) or 0),
+            tzinfo=timezone.utc,
+        )
+    except ValueError:
+        return None
+
+    # The site normally labels card timestamps as UTC. Treat an unlabeled or
+    # explicitly JST timestamp consistently with the detail-page date parser.
+    if (match.group(6) or "JST").upper() == "JST":
+        published_at -= timedelta(hours=9)
+    return published_at
 
 
 # ── Article Detail Extraction ────────────────────────────────────────────────
@@ -360,15 +437,25 @@ def _extract_times_from_body(body_text: str) -> Tuple[Optional[datetime], Option
 
 # ── Main Scraping Function ───────────────────────────────────────────────────
 
-async def _collect_article_cards(page: Page) -> List[Tuple[str, str]]:
+async def _wait_for_news_cards(page: Page) -> None:
+    """Wait for client-rendered news; a load failure must not become an empty feed."""
+    await page.locator(
+        "a[href^='/news/'], a[class*='newsList_cardLink'], a[href*='/news/article/']"
+    ).first.wait_for(state="visible", timeout=PAGE_LOAD_TIMEOUT)
+
+
+async def _collect_article_cards(page: Page) -> List[Tuple[str, str, Optional[datetime]]]:
     """
     From the news list page, collect all visible article cards.
-    Returns list of (title, url) tuples.
+    Returns list of (title, url, published_at) tuples.
     """
     cards = []
 
-    # Try several selectors for article cards
+    # The current site links directly to numeric article paths such as
+    # ``/news/914``. Keep the older selectors as fallbacks because the site
+    # has changed its card markup more than once.
     for selector in [
+        "a[href^='/news/']",
         "a[class*='newsList_cardLink']",
         "a[class*='card']",
         "article a",
@@ -392,7 +479,19 @@ async def _collect_article_cards(page: Page) -> List[Tuple[str, str]]:
                 href = await link.get_attribute("href") or ""
                 if href and not href.startswith("http"):
                     href = f"https://umamusume.com{href}"
-                cards.append((title, href))
+
+                # Exclude the news index, pagination links, and unrelated
+                # navigation cards. Article pages currently use /news/<id>.
+                if not re.search(
+                    r"^https://umamusume\.com/news/(?:article/)?\d+/?(?:[?#].*)?$",
+                    href,
+                    re.IGNORECASE,
+                ):
+                    continue
+
+                if any(existing_url == href for _, existing_url, _ in cards):
+                    continue
+                cards.append((title, href, _extract_card_published_at(raw)))
             except Exception:
                 continue
 
@@ -403,7 +502,11 @@ async def _collect_article_cards(page: Page) -> List[Tuple[str, str]]:
     return cards
 
 
-async def scrape_official_events(known_titles: Optional[Set[str]] = None) -> List[Event]:
+async def scrape_official_events(
+    known_titles: Optional[Set[str]] = None,
+    existing_events: Optional[dict[str, dict]] = None,
+    now: Optional[datetime] = None,
+) -> List[Event]:
     """
     Scrape upcoming in-game events from the official Umamusume news page.
 
@@ -411,29 +514,44 @@ async def scrape_official_events(known_titles: Optional[Set[str]] = None) -> Lis
       1. Load the news list page, click "View More" to expand
       2. Collect all visible article card titles + URLs
       3. For each matching event article, navigate directly to its URL
-         (unless the title is already in known_titles, in which case
-          skip the detail page navigation and return a placeholder event)
+         unless it was previously recorded with a past end time
       4. Extract start/end times from the article body
 
     Args:
-        known_titles: Optional set of event titles that are already saved.
-                      Events with these titles will skip detail-page navigation.
+        known_titles: Optional set of saved titles retained for caller compatibility.
+        existing_events: Previously saved event records, used to avoid loading
+                         detail pages for events already known to have ended.
+        now: Current time override used by tests and retention checks.
 
     Returns:
         List of Event dataclass instances.
     """
     events: List[Event] = []
-    known_titles = known_titles or set()
+    existing_events = existing_events or {}
+    scrape_now = now or datetime.now(timezone.utc)
+    if scrape_now.tzinfo is None:
+        scrape_now = scrape_now.replace(tzinfo=timezone.utc)
+    existing_by_key: dict[str, dict] = {}
+    for existing_title, existing_data in existing_events.items():
+        try:
+            existing_type = EventType(
+                existing_data.get("type", EventType.UNKNOWN.value)
+            )
+        except ValueError:
+            existing_type = EventType.UNKNOWN
+        existing_by_key[_canonical_event_key(existing_title, existing_type)] = existing_data
 
     async with async_playwright() as p:
-        proxy_address = "http://100.111.216.3:8888"
+        proxy_address = await _reachable_proxy(OFFICIAL_EVENTS_PROXY)
+        launch_options = {
+            "headless": True,
+            "args": LAUNCH_ARGS,
+            "timeout": 30000,
+        }
+        if proxy_address:
+            launch_options["proxy"] = {"server": proxy_address}
         browser = await p.chromium.launch(
-            headless=True,
-            args=LAUNCH_ARGS,
-            timeout=30000,
-            proxy={
-                "server": proxy_address
-            },
+            **launch_options,
         )
         context = await browser.new_context(
             user_agent=(
@@ -451,7 +569,7 @@ async def scrape_official_events(known_titles: Optional[Set[str]] = None) -> Lis
             # ── Step 1: Load news list and expand ──────────────────────
             logger.info(f"Loading news page: {URL}")
             await page.goto(URL, wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT)
-            await page.wait_for_timeout(DEFAULT_WAIT_TIMEOUT)
+            await _wait_for_news_cards(page)
 
             view_more_selectors = [
                 "button:has-text('View More')",
@@ -507,17 +625,42 @@ async def scrape_official_events(known_titles: Optional[Set[str]] = None) -> Lis
                 return events
 
             # ── Step 3: Classify and process each card ─────────────────
-            for title, url in cards:
+            for title, url, published_at in cards:
                 event_type = _classify_event(title)
                 if event_type == EventType.UNKNOWN:
                     logger.debug(f"Skipping non-event: '{title[:50]}'")
                     continue
 
-                logger.info(f"Processing new event: '{title[:50]}' ({event_type.value})")
+                existing_data = existing_events.get(title) or existing_by_key.get(
+                    _canonical_event_key(title, event_type)
+                )
+                if existing_data:
+                    try:
+                        existing_end = datetime.fromisoformat(existing_data.get("end_time", ""))
+                        if existing_end.tzinfo is None:
+                            existing_end = existing_end.replace(tzinfo=timezone.utc)
+                        if existing_end < scrape_now:
+                            logger.debug(f"Skipping expired event article: '{title[:50]}'")
+                            continue
+                    except (TypeError, ValueError):
+                        pass
+
+                # Classification only makes this an event article; whether the
+                # underlying event is new is decided after canonical deduplication
+                # against events.json in check_and_save(). Calling every article
+                # "new" here made normal restart refreshes look like discoveries.
+                logger.info(f"Processing event article: '{title[:50]}' ({event_type.value})")
 
                 # Navigate directly to the article URL
                 if not url:
-                    events.append(Event(title=title, type=event_type, start_time=None, end_time=None, url=""))
+                    events.append(Event(
+                        title=title,
+                        type=event_type,
+                        start_time=None,
+                        end_time=None,
+                        url="",
+                        published_at=published_at,
+                    ))
                     continue
 
                 try:
@@ -539,6 +682,7 @@ async def scrape_official_events(known_titles: Optional[Set[str]] = None) -> Lis
                     end_time=end_time,
                     url=url,
                     banner_image=banner_image,
+                    published_at=published_at,
                 ))
 
                 if start_time or end_time:
@@ -610,6 +754,7 @@ def _save_events(events: List[Event], path: str, merged_notified: Optional[dict[
                 "type": e.type.value,
                 "start_time": e.start_time.isoformat() if e.start_time else None,
                 "end_time": e.end_time.isoformat() if e.end_time else None,
+                "published_at": e.published_at.isoformat() if e.published_at else None,
                 "url": e.url,
                 "banner_image": e.banner_image,
                 "notified_clubs": merged_notified.get(e.title, []),
@@ -663,31 +808,80 @@ def _dedup_events(events: List[Event]) -> List[Event]:
         # fields from the other article variant.
         if e.start_time and e.end_time and not (existing.start_time and existing.end_time):
             e.banner_image = e.banner_image or existing.banner_image
+            if existing.published_at and (
+                not e.published_at or existing.published_at > e.published_at
+            ):
+                e.published_at = existing.published_at
             grouped[key] = e
         else:
             existing.start_time = existing.start_time or e.start_time
             existing.end_time = existing.end_time or e.end_time
             existing.banner_image = existing.banner_image or e.banner_image
+            if e.published_at and (
+                not existing.published_at or e.published_at > existing.published_at
+            ):
+                existing.published_at = e.published_at
         logger.debug(f"Merged article variant '{e.title[:50]}' into event '{key}'")
 
     return list(grouped.values())
 
 
-async def check_and_save(json_path: str) -> bool:
+def _retain_relevant_events(
+    events: List[Event], now: Optional[datetime] = None
+) -> List[Event]:
+    """Keep active/upcoming events and recent undated announcements."""
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    cutoff = now - timedelta(days=UNDATED_EVENT_RETENTION_DAYS)
+    retained: List[Event] = []
+
+    for event in events:
+        if event.end_time is not None:
+            end_time = event.end_time
+            if end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
+            if end_time >= now:
+                retained.append(event)
+            else:
+                logger.info(f"Pruned ended event: '{event.title[:50]}'")
+            continue
+
+        if event.published_at is not None:
+            published_at = event.published_at
+            if published_at.tzinfo is None:
+                published_at = published_at.replace(tzinfo=timezone.utc)
+            if published_at >= cutoff:
+                retained.append(event)
+            else:
+                logger.info(f"Pruned stale undated event: '{event.title[:50]}'")
+            continue
+
+        # Existing JSON from before published_at was introduced cannot be aged
+        # safely, so retain it until a future scrape supplies usable metadata.
+        retained.append(event)
+
+    return retained
+
+
+async def check_and_save(json_path: str, now: Optional[datetime] = None) -> bool:
     """
     Run scraper once; save if new events detected.
 
-    For events already in the JSON file, the scraper skips detail-page
-    navigation. After scraping, existing detail data (start_time, end_time,
-    banner_image) is merged back into those placeholder events so the saved
-    file always has complete information for all events.
+    Previously ended events are skipped before detail-page navigation. After
+    scraping, missing detail data is merged from the saved file and expired or
+    stale undated events are pruned before the file is replaced.
     """
     known_titles = _load_known_titles(json_path)
     existing = _load_existing_events(json_path)
 
     # Pass known titles for logging/compatibility. Known articles are still
     # re-parsed so schedule corrections and parser fixes take effect.
-    raw_events = await scrape_official_events(known_titles=known_titles)
+    raw_events = await scrape_official_events(
+        known_titles=known_titles,
+        existing_events=existing,
+        now=now,
+    )
     events = _dedup_events(raw_events)
     logger.info(f"Dedup: {len(raw_events)} raw -> {len(events)} unique event(s)")
 
@@ -703,28 +897,27 @@ async def check_and_save(json_path: str) -> bool:
         existing_by_key[_canonical_event_key(title, event_type)] = existing_data
 
     for e in events:
-        if e.start_time is None and e.end_time is None:
-            existing_data = existing.get(e.title) or existing_by_key.get(
-                _canonical_event_key(e.title, e.type)
-            )
-            if not existing_data:
+        existing_data = existing.get(e.title) or existing_by_key.get(
+            _canonical_event_key(e.title, e.type)
+        )
+        if not existing_data:
+            continue
+        # Parse stored ISO strings back into datetime objects for any fields
+        # that the current article did not provide.
+        for field in ("start_time", "end_time", "published_at"):
+            if getattr(e, field) is not None:
                 continue
-            # Parse stored ISO strings back into datetime objects
-            start_str = existing_data.get("start_time")
-            end_str = existing_data.get("end_time")
-            if start_str:
+            value = existing_data.get(field)
+            if value:
                 try:
-                    e.start_time = datetime.fromisoformat(start_str)
+                    setattr(e, field, datetime.fromisoformat(value))
                 except (ValueError, TypeError):
                     pass
-            if end_str:
-                try:
-                    e.end_time = datetime.fromisoformat(end_str)
-                except (ValueError, TypeError):
-                    pass
-            if not e.banner_image:
-                e.banner_image = existing_data.get("banner_image")
-            logger.debug(f"Merged existing detail data for '{e.title[:50]}'")
+        if not e.banner_image:
+            e.banner_image = existing_data.get("banner_image")
+        logger.debug(f"Merged existing detail data for '{e.title[:50]}'")
+
+    events = _retain_relevant_events(events, now=now)
 
     # Collect existing notified_clubs data by canonical event identity so
     # announcement-status variants share notification history.

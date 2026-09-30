@@ -1,13 +1,13 @@
 # 📰 Leaderboard News — Paragon
 
-**July 2026** · 30 members
-_Jul 24 update_
+**August 2026** · 30 members
+_Aug 18 update_
 
 ---
 
 ## 🔥 HEADLINE NEWS
 
-🎯 **fatcat** is on fire — performing **419.0%** above their average!
+🌪️ Four positions changed today — the most movement we've seen this week!
 
 ───
 
@@ -17,18 +17,15 @@ _Jul 24 update_
 
 **🏆 Club MVP**
 
-**fatcat** — performed 419.0% above their average, gaining +8,872,909 fans today
+**Mysty** — performed 55.2% above their average, gaining +7,307,879 fans today
 
-**🥇 Top Trainer** — **PHBant** (+15.4M) gained the most fans today!
+**🥇 Top Trainer** — **Syluar** (+15.8M) gained the most fans today!
 
-**🏅 Best Week** — **Mariartis** (avg +10.1M/day over the last 7 days)
+**🏅 Best Week** — **Syluar** (avg +14.8M/day over the last 7 days)
 
-**🛡️ THE TANK**
+**🏰 THE SIEGE**
 
-**Mariartis** is unmovable at **#1** with a **18.7M** buffer. No one can challenge them today.
-
-**🏆 New PBs**
-**PHBant** — **+15.4M** (prev best +12.6M)
+The **10-day era** of **Secretariat** is finally being challenged. **Syluar** is on a journey to defeat our long-standing leader—how long can they hold out?
 
 ───
 
@@ -36,23 +33,17 @@ _Jul 24 update_
 
 ## THE BATTLE ZONE
 
-**Yesterday's Calls**
-
-• ❌ **Syluar** fell short of **Otter** for #13
-• ✅ **Otter** overtook **Luprin** for #12
-• ✅ **fatcat** overtook **Moekofi** for #21
-
 **🚨 Urgent Overtakes**
 
-• **Birb** is projected to overtake **Drycoolguy** for **#5** — TODAY (closing 620.3K gap at +6.2M/day)
-• **Syluar** is projected to overtake **Azuvector** for **#12** — TODAY (closing 2.2M gap at +5.5M/day)
-• **blukip** is projected to overtake **Moekofi** for **#22** — TODAY (closing 807.9K gap at +1.9M/day)
+• **Willow** is projected to overtake **Mariartis** for **#3** — TODAY (closing 2.2M gap at +6.1M/day)
+• **HellaZach** is projected to overtake **TunMan＾＾** for **#15** — TODAY (closing 2.3M gap at +6.7M/day)
+• **Runic** is projected to overtake **HellaZach** for **#16** — TOMORROW (closing 893.5K gap at +739.8K/day)
 
 **Monthly Rivalries**
 
-**Yuki** (#9) vs **Azuvector** (#12) — **Yuki** leads by 3.8M (8 swaps)
-**Droll** (#27) vs **Nazuna** (#28) — **Droll** leads by 673.9K (6 swaps)
-**Luprin** (#14) vs **Andrewkin** (#16) — **Luprin** leads by 5.9M (6 swaps)
+**Lmf** (#11) vs **Lea** (#8) — **Lea** leads by 29.7M (5 swaps)
+**Andrewkin** (#22) vs **ZT** (#20) — **ZT** leads by 10.3M (5 swaps)
+**Arceny** (#26) vs **Mysty** (#24) — **Mysty** leads by 1.8M (5 swaps)
 
 ───
 
@@ -60,9 +51,9 @@ _Jul 24 update_
 
 ## MILESTONE TRACKER
 
-🎯 **Andrewkin** — [▰▰▰▰▰▰▰▰▰▱] 139,470 remaining — expected **today**!
+🎯 **Moekofi** — [▰▰▰▰▰▰▰▰▰▱] 584,882 remaining — expected **today**!
 
-🎯 **Runic** — [▰▰▰▰▰▰▰▰▰▱] 979,583 remaining — expected **today**!
+🎯 **ZT** — [▰▰▰▰▰▰▰▰▰▱] 1,123,720 remaining — expected **today**!
 
 ───
 
@@ -70,15 +61,15 @@ _Jul 24 update_
 
 ## TOP MOVERS
 
-📈 **Jun** #11→#8 · 📈 **PHBant** #6→#4 · 📈 **Otter** #13→#11
+📈 **Mysty** #26→#24 · 📉 **Luprin** #16→#18 · 📈 **Dragon** #6→#5
 
 ---
 
 ## CLUB ACTIVITY
 
-**Total fans gained today**: +176.9M
-**Active members**: 30/30
-**Average gain**: +5.9M
+**Total fans gained today**: +197.6M
+**Active members**: 29/30
+**Average gain**: +6.6M
 
 ───
 
@@ -86,8 +77,8 @@ _Jul 24 update_
 
 ## 📊 MONTHLY RECORDS
 
-📊 **Biggest Day**: **Mariartis** — +38,621,934 fans
-⬆️ **Biggest Climber**: **Jun** — up 3 spots
+📊 **Biggest Day**: **Secretariat** — +21,580,128 fans
+⬆️ **Biggest Climber**: **Mysty** — up 2 spots
 
 ───
 
@@ -95,10 +86,10 @@ _Jul 24 update_
 
 ## 📈 CLUB GOAL
 
-**Progress**: [▰▰▰▰▰▱▱▱▱▱] 54.6%
+**Next tier**: [▰▰▰▰▰▰▱▱▱▱] 69.0% · 799.8M remaining
 
 ---
 
-*Generated at: 2026-07-26 06:51:29.516255+00:00*
+*Generated at: 2026-08-20 08:55:34.021388+00:00*
 
-*Footer: Paragon · Powering Through July*
+*Footer: Paragon · Powering Through August*

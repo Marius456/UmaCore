@@ -4,32 +4,24 @@ Member status and user linking commands
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import date as date_class
+import io
 import logging
 
-from models import Member, QuotaHistory, UserLink, Club, QuotaRequirement
+from models import Member, UserLink, Club
+from services.member_status_service import load_member_status
+from services.member_status_card import render_card, fallback_embed
+from .common import ClubAutocompleteMixin
 
 logger = logging.getLogger(__name__)
 
 
-class MemberCommands(commands.Cog):
+class MemberCommands(ClubAutocompleteMixin, commands.Cog):
     """Member status and user linking commands"""
+
+    club_autocomplete = ClubAutocompleteMixin.club_autocomplete
     
     def __init__(self, bot):
         self.bot = bot
-    
-    async def club_autocomplete(self, interaction: discord.Interaction, current: str):
-        """Autocomplete for club names visible in this guild"""
-        try:
-            club_names = await Club.get_names_for_guild(interaction.guild_id)
-            return [
-                app_commands.Choice(name=name, value=name)
-                for name in club_names
-                if current.lower() in name.lower()
-            ][:25]
-        except Exception as e:
-            logger.error(f"Error in club autocomplete: {e}")
-            return []
     
     @app_commands.command(name="link_trainer", description="Link your Discord account to your trainer")
     async def link_trainer(self, interaction: discord.Interaction, trainer_name: str, club: str):
@@ -37,11 +29,18 @@ class MemberCommands(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(
                     f"❌ Club '{club}' not found.",
                     ephemeral=True
+                )
+                return
+
+            if not club_obj.belongs_to_guild(interaction.guild_id):
+                await interaction.followup.send(
+                    f"❌ Club '{club}' is not registered in this server.",
+                    ephemeral=True,
                 )
                 return
             
@@ -58,7 +57,7 @@ class MemberCommands(commands.Cog):
             existing_link = await UserLink.get_by_discord_id(interaction.user.id)
             if existing_link:
                 existing_member = await Member.get_by_id(existing_link.member_id)
-                if existing_member.member_id == member.member_id:
+                if existing_member and existing_member.member_id == member.member_id:
                     await interaction.followup.send(
                         f"ℹ️ You're already linked to **{trainer_name}** in **{club}**",
                         ephemeral=True
@@ -67,10 +66,11 @@ class MemberCommands(commands.Cog):
                 else:
                     # Unlink from old trainer
                     await UserLink.delete(interaction.user.id)
-                    logger.info(f"Unlinked user {interaction.user.id} from {existing_member.trainer_name}")
+                    old_name = existing_member.trainer_name if existing_member else "a deleted member"
+                    logger.info(f"Unlinked user {interaction.user.id} from {old_name}")
             
             # Create link
-            user_link = await UserLink.create(
+            await UserLink.create(
                 discord_user_id=interaction.user.id,
                 member_id=member.member_id,
                 notify_on_deficit=False
@@ -104,7 +104,7 @@ class MemberCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in link_trainer: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.", ephemeral=True)
     
     @app_commands.command(name="unlink", description="Unlink your Discord account from your trainer")
     async def unlink(self, interaction: discord.Interaction):
@@ -142,7 +142,7 @@ class MemberCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in unlink: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.", ephemeral=True)
     
     @app_commands.command(name="notification_settings", description="Manage your notification preferences")
     async def notification_settings(self, interaction: discord.Interaction, 
@@ -215,7 +215,7 @@ class MemberCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in notification_settings: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.", ephemeral=True)
     
     @app_commands.command(name="my_status", description="View your own quota status")
     async def my_status(self, interaction: discord.Interaction):
@@ -232,11 +232,55 @@ class MemberCommands(commands.Cog):
                 return
             
             member = await Member.get_by_id(user_link.member_id)
+            member = await self._resolve_current_member(
+                interaction.guild_id, user_link, member
+            )
             await self._send_member_status(interaction, member)
             
         except Exception as e:
             logger.error(f"Error in my_status: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
+
+    async def _resolve_current_member(self, guild_id, user_link: UserLink, member: Member):
+        """Repair a stale link when one newer active membership is unambiguous."""
+        if member is None or not member.trainer_id or guild_id is None:
+            return member
+
+        candidates = await Member.get_active_by_trainer_id_for_guild(
+            member.trainer_id, guild_id
+        )
+        if not candidates:
+            return member
+
+        newest_date = candidates[0].last_seen
+        newest = [candidate for candidate in candidates if candidate.last_seen == newest_date]
+        if len(newest) != 1:
+            return member
+
+        candidate = newest[0]
+        if candidate.member_id == member.member_id:
+            return member
+        if member.is_active and candidate.last_seen <= member.last_seen:
+            return member
+
+        reassigned = await user_link.reassign_member(
+            candidate.member_id, expected_member_id=member.member_id
+        )
+        if not reassigned:
+            # Another command may have relinked the user after our initial read.
+            current_link = await UserLink.get_by_discord_id(user_link.discord_user_id)
+            if current_link and current_link.member_id != member.member_id:
+                current_member = await Member.get_by_id(current_link.member_id)
+                return current_member or member
+            return member
+
+        logger.info(
+            "Automatically moved /my_status link for Discord ID %s from %s to %s",
+            user_link.discord_user_id,
+            member.member_id,
+            candidate.member_id,
+        )
+        return candidate
     
     @app_commands.command(name="member_status", description="View status of a specific member")
     async def member_status(self, interaction: discord.Interaction, trainer_name: str, club: str):
@@ -244,9 +288,15 @@ class MemberCommands(commands.Cog):
         await interaction.response.defer()
         
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
+                return
+
+            if not club_obj.belongs_to_guild(interaction.guild_id):
+                await interaction.followup.send(
+                    f"❌ Club '{club}' is not registered in this server."
+                )
                 return
             
             member = await Member.get_by_name(club_obj.club_id, trainer_name)
@@ -259,242 +309,31 @@ class MemberCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in member_status: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     async def _send_member_status(self, interaction: discord.Interaction, member: Member):
-        """Send a detailed status embed for a member"""
-        latest_history = await QuotaHistory.get_latest_for_member(member.member_id)
-        
-        if not latest_history:
+        """Send the shared status card, retaining text delivery if rendering fails."""
+        if member is None:
+            await interaction.followup.send(
+                "Your linked trainer no longer exists. Use `/link_trainer` to link again."
+            )
+            return
+        status = await load_member_status(member)
+        if status is None:
             await interaction.followup.send(f"No quota data found for {member.trainer_name}")
             return
-        
-        # Get club info and effective quota
-        from models import Club
-        club = await Club.get_by_id(member.club_id)
-        if club:
-            daily_quota = await QuotaRequirement.get_quota_for_date(club.club_id, date_class.today())
-        else:
-            daily_quota = 1000000
-        
-        # Determine color based on status
-        if latest_history.deficit_surplus < 0:
-            color = 0xFFA500  # Orange for behind
-        else:
-            color = 0x3498db  # Blue for on track
-        
-        # Build title
-        if latest_history.deficit_surplus < 0:
-            title = "⚠️ Quota Status - Behind"
-        else:
-            title = "📊 Quota Status"
-        
-        embed = discord.Embed(
-            title=title,
-            color=color,
-            timestamp=discord.utils.utcnow()
-        )
-        
-        # Trainer info - split into two columns
-        status_text = "✅ Active" if member.is_active else "❌ Inactive"
-        if member.manually_deactivated:
-            status_text += " (Manually Deactivated)"
-        
-        embed.add_field(
-            name="👤 Trainer Information",
-            value=f"**Name:** {member.trainer_name}\n"
-                  f"**Trainer ID:** `{member.trainer_id or 'N/A'}`\n"
-                  f"**Club:** {club.club_name if club else 'Unknown'}",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="📅 Membership",
-            value=f"**Joined:** {member.join_date.strftime('%b %d, %Y')}\n"
-                  f"**Status:** {status_text}",
-            inline=True
-        )
-        
-        # Progress bar
-        if latest_history.expected_fans > 0:
-            progress_pct = int((latest_history.cumulative_fans / latest_history.expected_fans) * 100)
-        else:
-            progress_pct = 0
-        
-        # Determine color indicator
-        if progress_pct >= 500:
-            color_indicator = "🟨"
-        elif progress_pct >= 400:
-            color_indicator = "🟧"
-        elif progress_pct >= 300:
-            color_indicator = "🟪"
-        elif progress_pct >= 200:
-            color_indicator = "🟦"
-        elif progress_pct >= 100:
-            color_indicator = "🟩"
-        else:
-            color_indicator = "⬜"
-        
-        # Calculate bar display
-        if progress_pct >= 100:
-            bar = "█" * 20
-        else:
-            filled = int(progress_pct / 5)
-            empty = 20 - filled
-            bar = "█" * filled + "░" * empty
-        
-        progress_title = "📈 Current Progress" if latest_history.deficit_surplus >= 0 else "📉 Current Progress"
-        
-        embed.add_field(
-            name=progress_title,
-            value=f"```\nCurrent:  {latest_history.cumulative_fans:,} 👥\n"
-                  f"Expected: {latest_history.expected_fans:,} 👥\n"
-                  f"━━━━━━━━━━━━━━━━━━━━\n"
-                  f"Progress: {bar} {color_indicator}{progress_pct}%\n```",
-            inline=False
-        )
-        
-        # Performance section
-        if latest_history.deficit_surplus >= 0:
-            status_emoji = "🎯"
-            deficit_text = f"+{latest_history.deficit_surplus:,}"
-            performance_title = "🎯 Performance"
-        else:
-            status_emoji = "⚠️"
-            deficit_text = f"{latest_history.deficit_surplus:,}"
-            performance_title = "⚠️ Performance"
-        
-        embed.add_field(
-            name=performance_title,
-            value=f"**Surplus/Deficit:** {deficit_text} fans {status_emoji}\n"
-                  f"**Days Behind:** {latest_history.days_behind} days\n"
-                  f"**Daily Quota:** {daily_quota:,} fans/day",
-            inline=True
-        )
-        
-        embed.add_field(name="\u200b", value="\u200b", inline=True)
-        
-        # Recommendations
-        if latest_history.deficit_surplus < 0:
-            deficit = abs(latest_history.deficit_surplus)
-            
-            embed.add_field(
-                name="💡 To Catch Up",
-                value=f"Earn **{deficit:,}+ fans** total\n"
-                      f"Target: **{daily_quota:,} fans/day**",
-                inline=False
-            )
-        
-        # Statistics
-        current_date = date_class.today()
-        
-        # Calculate streak and get history
-        history_records = await QuotaHistory.get_last_n_days(member.member_id, 100)
-        
-        # Use actual number of days with data
-        days_active = len(history_records) if history_records else 1
-        avg_daily = latest_history.cumulative_fans / max(1, days_active) if days_active > 0 else 0
-        
-        # Calculate streak
-        streak_days = 0
-        
-        if latest_history.deficit_surplus >= 0:
-            streak_days = 1
-            for record in history_records[1:]:
-                if record.deficit_surplus >= 0:
-                    streak_days += 1
-                else:
-                    break
-        
-        # Get best day
-        best_day_fans = 0
-        if len(history_records) >= 2:
-            for i in range(len(history_records) - 1):
-                current = history_records[i]
-                previous = history_records[i + 1]
-                daily_gain = current.cumulative_fans - previous.cumulative_fans
-                if daily_gain > best_day_fans:
-                    best_day_fans = daily_gain
-        
-        # Format stats
-        if avg_daily >= 1_000_000:
-            avg_formatted = f"{avg_daily / 1_000_000:.2f}M"
-        elif avg_daily >= 1_000:
-            avg_formatted = f"{avg_daily / 1_000:.1f}K"
-        else:
-            avg_formatted = f"{int(avg_daily)}"
-        
-        if best_day_fans >= 1_000_000:
-            best_formatted = f"{best_day_fans / 1_000_000:.2f}M"
-        elif best_day_fans >= 1_000:
-            best_formatted = f"{best_day_fans / 1_000:.1f}K"
-        else:
-            best_formatted = f"{best_day_fans}"
-        
-        # Streak emoji
-        if streak_days >= 30:
-            streak_emoji = "🔥🔥🔥"
-        elif streak_days >= 14:
-            streak_emoji = "🔥🔥"
-        elif streak_days >= 7:
-            streak_emoji = "🔥"
-        elif streak_days >= 3:
-            streak_emoji = "✨"
-        else:
-            streak_emoji = ""
-        
-        embed.add_field(
-            name="📊 Statistics",
-            value=f"**Days Active:** {days_active}\n"
-                  f"**Avg Daily:** {avg_formatted}/day\n"
-                  f"**Best Day:** +{best_formatted}\n"
-                  f"**Streak:** {streak_days} day{'s' if streak_days != 1 else ''} {streak_emoji}",
-            inline=True
-        )
-        
-        # Rank
-        all_members = await Member.get_all_active(member.club_id)
-        member_rankings = []
-        
-        for m in all_members:
-            m_history = await QuotaHistory.get_latest_for_member(m.member_id)
-            if m_history:
-                member_rankings.append({
-                    'member_id': m.member_id,
-                    'deficit_surplus': m_history.deficit_surplus
-                })
-        
-        member_rankings.sort(key=lambda x: x['deficit_surplus'], reverse=True)
-        
-        member_rank = 0
-        for idx, ranking in enumerate(member_rankings, start=1):
-            if ranking['member_id'] == member.member_id:
-                member_rank = idx
-                break
-        
-        total_members = len(member_rankings)
-        percentile = 100 - int((member_rank / total_members) * 100) if total_members > 0 else 0
-        
-        if percentile >= 90:
-            percentile_desc = f"Top {100 - percentile}%"
-        elif percentile >= 75:
-            percentile_desc = f"Top {100 - percentile}%"
-        elif percentile >= 50:
-            percentile_desc = f"Top {100 - percentile}%"
-        else:
-            percentile_desc = f"Bottom {percentile}%"
-        
-        embed.add_field(
-            name="🏆 Rank",
-            value=f"**Club Rank:** #{member_rank} of {total_members}\n"
-                  f"**Percentile:** {percentile_desc}",
-            inline=True
-        )
-        
-        embed.set_footer(text=f"Last updated: {latest_history.date.strftime('%b %d, %Y')}")
-        
-        await interaction.followup.send(embed=embed)
-    
+        try:
+            png = await render_card(status)
+        except Exception:
+            logger.warning("Status card rendering failed; sending text fallback", exc_info=True)
+            await interaction.followup.send(embed=fallback_embed(status))
+            return
+        attachment = discord.File(io.BytesIO(png), filename="member-status.png")
+        try:
+            await interaction.followup.send(file=attachment)
+        finally:
+            attachment.close()
+
     # Apply autocomplete
     link_trainer.autocomplete('club')(club_autocomplete)
     member_status.autocomplete('club')(club_autocomplete)

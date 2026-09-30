@@ -14,6 +14,7 @@ import pytz
 import aiohttp
 
 from models import Club, QuotaHistory, QuotaRequirement
+from .common import ClubAutocompleteMixin
 
 UMAMOE_API_URL = "https://uma.moe/api/v4/circles"
 
@@ -173,23 +174,13 @@ def _build_chart(member_data: dict[str, dict]) -> bytes:
             browser.close()
 
 
-class ChartCommands(commands.Cog):
+class ChartCommands(ClubAutocompleteMixin, commands.Cog):
     """Chart and visualization commands"""
+
+    club_autocomplete = ClubAutocompleteMixin.club_autocomplete
 
     def __init__(self, bot):
         self.bot = bot
-
-    async def club_autocomplete(self, interaction: discord.Interaction, current: str):
-        try:
-            club_names = await Club.get_names_for_guild(interaction.guild_id)
-            return [
-                app_commands.Choice(name=name, value=name)
-                for name in club_names
-                if current.lower() in name.lower()
-            ][:25]
-        except Exception as e:
-            logger.error(f"Error in club autocomplete: {e}")
-            return []
 
     @app_commands.command(
         name="progress_chart",
@@ -208,7 +199,7 @@ class ChartCommands(commands.Cog):
             return
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found.")
                 return
@@ -275,7 +266,7 @@ class ChartCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in progress_chart: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     progress_chart.autocomplete("club")(club_autocomplete)
 
@@ -292,7 +283,7 @@ class ChartCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found.")
                 return
@@ -337,7 +328,7 @@ class ChartCommands(commands.Cog):
                 monthly_target = quota
                 quota_source = f"provided ({quota:,})"
             else:
-                # Try DB — may fall back to club default if reset_month wiped the history
+                # Try DB, falling back to the club default when no requirement exists
                 last_day = date(prev_year, prev_month, days_in_month)
                 daily_quota = await QuotaRequirement.get_quota_for_date(club_obj.club_id, last_day)
                 monthly_target = daily_quota * days_in_month
@@ -395,7 +386,7 @@ class ChartCommands(commands.Cog):
             # Split into chunks that fit within Discord's 1024-char field limit
             chunk, chunks = [], []
             for line in lines:
-                if sum(len(l) + 1 for l in chunk) + len(line) > 980:
+                if sum(len(item) + 1 for item in chunk) + len(line) > 980:
                     chunks.append("\n".join(chunk))
                     chunk = []
                 chunk.append(line)
@@ -420,7 +411,7 @@ class ChartCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in previous_month: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     previous_month.autocomplete("club")(club_autocomplete)
 

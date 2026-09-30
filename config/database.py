@@ -3,7 +3,8 @@ PostgreSQL database connection management
 """
 import json
 import asyncpg
-from typing import Optional, List, Dict, Any
+from contextlib import asynccontextmanager
+from typing import Optional, List, Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,13 @@ class Database:
         """Fetch single value"""
         async with self.pool.acquire() as conn:
             return await conn.fetchval(query, *args)
+
+    @asynccontextmanager
+    async def transaction(self):
+        """Yield one connection inside a database transaction."""
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                yield conn
     
     async def initialize_schema(self):
         """Initialize database schema with multi-club support"""
@@ -76,7 +84,7 @@ class Database:
         -- Clubs table
         CREATE TABLE IF NOT EXISTS clubs (
             club_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            club_name VARCHAR(100) UNIQUE NOT NULL,
+            club_name VARCHAR(100) NOT NULL,
             scrape_url TEXT NOT NULL,
             circle_id VARCHAR(100),
             daily_quota BIGINT NOT NULL DEFAULT 1000000,
@@ -128,6 +136,13 @@ class Database:
                 RAISE NOTICE 'Added guild_id column to clubs';
             END IF;
         END $$;
+
+        -- Club names only need to be unique within a Discord guild. The old
+        -- global constraint prevented two unrelated servers from using the
+        -- same real-world club name.
+        ALTER TABLE clubs DROP CONSTRAINT IF EXISTS clubs_club_name_key;
+        CREATE UNIQUE INDEX IF NOT EXISTS clubs_guild_name_unique
+            ON clubs(guild_id, club_name) WHERE guild_id IS NOT NULL;
 
         -- Migration: Add quota_period column if it doesn't exist
         DO $$
@@ -189,11 +204,10 @@ class Database:
             END IF;
         END $$;
 
-        -- Migration: Set public_slug from circle_id (authoritative source)
+        -- Migration: Fill missing public_slug values from circle_id.
         -- Clubs sharing a circle_id get suffixes: 481227375, 481227375-2, 481227375-3, ...
         DO $$
         BEGIN
-            UPDATE clubs SET public_slug = NULL;
             UPDATE clubs c
             SET public_slug = CASE WHEN ranked.rn = 1 THEN ranked.circle_id
                                    ELSE ranked.circle_id || '-' || ranked.rn::text END
@@ -203,8 +217,9 @@ class Database:
                 FROM clubs
                 WHERE circle_id IS NOT NULL AND circle_id != ''
             ) ranked
-            WHERE c.club_id = ranked.club_id;
-            RAISE NOTICE 'Synced public_slug from circle_id';
+            WHERE c.club_id = ranked.club_id
+              AND c.public_slug IS NULL;
+            RAISE NOTICE 'Filled missing public_slug values from circle_id';
         END $$;
 
         -- Migration: Create partial unique index on public_slug if it doesn't exist
@@ -228,6 +243,7 @@ class Database:
             join_date DATE NOT NULL,
             is_active BOOLEAN DEFAULT TRUE,
             manually_deactivated BOOLEAN DEFAULT FALSE,
+            missing_scrapes INTEGER NOT NULL DEFAULT 0,
             last_seen DATE NOT NULL,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -266,6 +282,18 @@ class Database:
             ) THEN
                 ALTER TABLE members ADD COLUMN manually_deactivated BOOLEAN DEFAULT FALSE;
                 RAISE NOTICE 'Added manually_deactivated column';
+            END IF;
+        END $$;
+
+        -- Migration: Add missing scrape tracking for safe auto-deactivation
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name='members' AND column_name='missing_scrapes'
+            ) THEN
+                ALTER TABLE members ADD COLUMN missing_scrapes INTEGER NOT NULL DEFAULT 0;
+                RAISE NOTICE 'Added missing_scrapes column';
             END IF;
         END $$;
         
@@ -383,6 +411,10 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_members_club_id ON members(club_id);
         CREATE INDEX IF NOT EXISTS idx_quota_history_club_id ON quota_history(club_id);
         CREATE INDEX IF NOT EXISTS idx_quota_requirements_club_id ON quota_requirements(club_id);
+        CREATE INDEX IF NOT EXISTS idx_quota_history_club_date
+            ON quota_history(club_id, date DESC);
+        CREATE INDEX IF NOT EXISTS idx_quota_requirements_club_date
+            ON quota_requirements(club_id, effective_date DESC);
         CREATE INDEX IF NOT EXISTS idx_quota_history_member_date 
             ON quota_history(member_id, date DESC);
         CREATE INDEX IF NOT EXISTS idx_members_active 
@@ -391,8 +423,38 @@ class Database:
             ON members(trainer_id);
         CREATE INDEX IF NOT EXISTS idx_quota_requirements_date
             ON quota_requirements(effective_date DESC);
+
+        -- Only one quota can be effective for a club on a given day. Older
+        -- versions allowed duplicates, which made the winning value depend on
+        -- PostgreSQL's unspecified ordering for equal effective dates.
+        WITH duplicate_quotas AS (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY club_id, effective_date
+                       ORDER BY created_at DESC NULLS LAST, id DESC
+                   ) AS duplicate_number
+            FROM quota_requirements
+        )
+        DELETE FROM quota_requirements
+        WHERE id IN (
+            SELECT id FROM duplicate_quotas WHERE duplicate_number > 1
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS quota_requirements_club_effective_unique
+            ON quota_requirements(club_id, effective_date);
         CREATE INDEX IF NOT EXISTS idx_user_links_member_id
             ON user_links(member_id);
+
+        -- Cross-process notification idempotency. A pending claim may be
+        -- reclaimed after 15 minutes if a worker dies before sending.
+        CREATE TABLE IF NOT EXISTS notification_deliveries (
+            discord_user_id BIGINT NOT NULL,
+            member_id UUID NOT NULL REFERENCES members(member_id) ON DELETE CASCADE,
+            delivery_date DATE NOT NULL,
+            notification_type VARCHAR(50) NOT NULL,
+            claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            sent_at TIMESTAMPTZ,
+            PRIMARY KEY (discord_user_id, member_id, delivery_date, notification_type)
+        );
         
         -- Unique constraint for trainer_id per club
         DROP INDEX IF EXISTS members_trainer_id_key;

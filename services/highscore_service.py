@@ -1,16 +1,16 @@
 """
-Highscore Service — generates an embed showing all-time club highscores:
+Highscore Service — generates an embed showing recorded club highscores:
 best single-day fan gain, best monthly total, best club rank achieved.
 
-Uses Uma.moe API for member-level data (lifetime cumulative fans, no monthly
-reset issue) and the database for club rank history.
+Uses Uma.moe lifetime snapshots with conservative uncertainty bounds and
+bot-recorded club rank history. Missing data is not evidence of departure.
 """
 import logging
 import calendar
 import json
 import asyncio
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
@@ -29,6 +29,8 @@ EARLIEST_MONTH = 6
 
 class HighscoreService:
     """Computes and assembles all-time club highscore data into a Discord embed."""
+
+    MAX_REIGN_GAP_DAYS = 2
 
     # ── Public entry point ──────────────────────────────────────────────
 
@@ -64,10 +66,10 @@ class HighscoreService:
         now = datetime.now(timezone.utc)
         current_key = (now.year, now.month)
         best_monthly_rank: Optional[Tuple[int, date]] = None  # (rank, date)
-        for (year, month), rank in monthly_ranks.items():
+        for (year, month), rank in sorted(monthly_ranks.items()):
             if (year, month) == current_key:
                 continue  # skip current incomplete month
-            if rank is not None:
+            if type(rank) is int and rank > 0:
                 if best_monthly_rank is None or rank < best_monthly_rank[0]:
                     # Use the 1st of the month as the achievement date
                     best_monthly_rank = (rank, date(year, month, 1))
@@ -77,8 +79,11 @@ class HighscoreService:
 
         # 4. Assemble Embed
         embed = discord.Embed(
-            title=f"🏆 All-Time Club Highscores — {club_name}",
-            description=f"Records spanning all available history for **{club_name}**.",
+            title=f"🏆 Recorded Club Highscores — {club_name}",
+            description=(
+                f"Records from available snapshots for **{club_name}**. "
+                "Daily dates use the source snapshot dates; club rank uses bot-recorded history."
+            ),
             color=COLOR_INFO,
             timestamp=discord.utils.utcnow(),
         )
@@ -105,6 +110,10 @@ class HighscoreService:
                 f"{cls._fmt_fans(best_monthly['total'])} fans "
                 f"(achieved {best_monthly['month']})"
             )
+            if best_monthly.get("incomplete"):
+                monthly_value += "\nIncomplete coverage — not a verified full-month total."
+            if best_monthly.get("provisional"):
+                monthly_value += "\nProvisional: current month is still in progress."
         else:
             monthly_value = "_No data available._"
         embed.add_field(
@@ -118,11 +127,18 @@ class HighscoreService:
             rank_date = best_rank["best_club_rank_date"]
             date_str = rank_date.strftime("%B %d, %Y") if rank_date else "Unknown"
             club_rank_value = f"**#{best_rank['best_club_rank']}** (achieved {date_str})"
+            history_start = best_rank.get("club_rank_history_start")
+            history_end = best_rank.get("club_rank_history_end")
+            if history_start and history_end:
+                club_rank_value += (
+                    f"\nRecorded snapshots: {history_start:%B %d, %Y}"
+                    f" → {history_end:%B %d, %Y}"
+                )
         else:
             club_rank_value = "_No rank data available._"
         
         embed.add_field(
-            name="👑 Club Rank:",
+            name="👑 Best Recorded Club Rank",
             value=club_rank_value,
             inline=False,
         )
@@ -135,7 +151,7 @@ class HighscoreService:
             monthly_rank_value = "_No rank data available._"
         
         embed.add_field(
-            name="📊 Monthly Club Rank:",
+            name="📊 Best Completed-Month Club Rank",
             value=monthly_rank_value,
             inline=False,
         )
@@ -165,15 +181,39 @@ class HighscoreService:
                 f"**{longest_total_streak['name']}** — {longest_total_streak['streak']} consecutive days in 1st place\n"
                 f"({start_str} → {end_str})"
             )
+            inferred = longest_total_streak.get("inferred_days", 0)
+            if inferred:
+                total_streak_value += (
+                    f"\nIncludes {inferred} inferred day(s) across gaps of at most "
+                    f"{cls.MAX_REIGN_GAP_DAYS} days, with the same leader on both sides."
+                )
         else:
-            total_streak_value = "_No streak data available._"
+            total_streak_value = "_Insufficient reliable coverage to establish a reign._"
         embed.add_field(
             name="👑 Longest #1 Reign",
             value=total_streak_value,
             inline=False,
         )
 
-        embed.set_footer(text=f"{club_name} · All-Time Records")
+        verified_reign = cls._compute_longest_first_place_streak_by_total(api_rows, verified_only=True)
+        if verified_reign:
+            embed.add_field(
+                name="👑 Longest Verified #1 Reign",
+                value=(f"**{verified_reign['name']}** — {verified_reign['streak']} days, no inferred days\n"
+                       f"({verified_reign['start_date']:%B %d, %Y} → {verified_reign['end_date']:%B %d, %Y})"),
+                inline=False,
+            )
+        regular_dates = [r["date"] for r in api_rows if not r.get("is_end_of_month")]
+        if regular_dates:
+            embed.add_field(
+                name="Data coverage",
+                value=(f"Member snapshots: {min(regular_dates):%B %d, %Y} → "
+                       f"{max(regular_dates):%B %d, %Y}. Gaps may exist.\n"
+                       "Verified means supported by available API snapshots, not independent game verification. "
+                       "Missing membership or contradictory values can prevent a record from being verified."),
+                inline=False,
+            )
+        embed.set_footer(text=f"{club_name} · Recorded history")
         return embed
 
     # ── API Fetching ────────────────────────────────────────────────────
@@ -195,23 +235,28 @@ class HighscoreService:
         year = now.year
         month = now.month
 
-        while (year > EARLIEST_YEAR) or (year == EARLIEST_YEAR and month >= EARLIEST_MONTH):
-            logger.info(f"Fetching API data for {year}-{month:02d}...")
-            rows, monthly_rank = await cls._fetch_and_parse_api_month(circle_id, year, month)
-            all_ranks[(year, month)] = monthly_rank
-            if rows:
-                all_rows.extend(rows)
-            else:
-                # No data for this month — club didn't exist yet, stop
-                logger.info(f"No data for {year}-{month:02d}, club likely didn't exist yet.")
-                break
-            year, month = cls._prev_month(year, month)
+        timeout = aiohttp.ClientTimeout(total=30)
+        headers = {"accept": "application/json", "X-API-Key": UMAMOE_API_KEY}
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            while (year > EARLIEST_YEAR) or (year == EARLIEST_YEAR and month >= EARLIEST_MONTH):
+                logger.info(f"Fetching API data for {year}-{month:02d}...")
+                rows, monthly_rank = await cls._fetch_and_parse_api_month(
+                    circle_id, year, month, session=session
+                )
+                all_ranks[(year, month)] = monthly_rank
+                if rows:
+                    all_rows.extend(rows)
+                year, month = cls._prev_month(year, month)
 
         return all_rows, all_ranks
 
     @classmethod
     async def _fetch_and_parse_api_month(
-        cls, circle_id: str, year: int, month: int
+        cls,
+        circle_id: str,
+        year: int,
+        month: int,
+        session: Optional[aiohttp.ClientSession] = None,
     ) -> Tuple[List[Dict[str, Any]], Optional[int]]:
         """
         Fetch a single month from Uma.moe API.
@@ -222,30 +267,36 @@ class HighscoreService:
         base_url = "https://uma.moe/api/v4/circles"
         api_url = f"{base_url}?circle_id={circle_id}&year={year}&month={month}"
 
-        headers = {
-            "accept": "application/json",
-            "X-API-Key": UMAMOE_API_KEY,
-        }
+        async def fetch(active_session: aiohttp.ClientSession):
+            async with active_session.get(api_url) as response:
+                if response.status != 200:
+                    raise RuntimeError(
+                        f"Uma.moe API returned HTTP {response.status} "
+                        f"for {year}-{month:02d}"
+                    )
+                return await response.json()
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(api_url, headers=headers, timeout=30) as response:
-                    if response.status != 200:
-                        logger.warning(
-                            f"API returned status {response.status} for {year}-{month:02d}"
-                        )
-                        return [], None
-
-                    data = await response.json()
+            if session is None:
+                timeout = aiohttp.ClientTimeout(total=30)
+                headers = {"accept": "application/json", "X-API-Key": UMAMOE_API_KEY}
+                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as owned_session:
+                    data = await fetch(owned_session)
+            else:
+                data = await fetch(session)
         except (asyncio.TimeoutError, aiohttp.ClientError, json.JSONDecodeError) as e:
-            logger.warning(f"API request failed for {year}-{month:02d}: {e}")
-            return [], None
+            raise RuntimeError(
+                f"Uma.moe API request failed for {year}-{month:02d}"
+            ) from e
         except Exception as e:
-            logger.warning(f"Unexpected API error for {year}-{month:02d}: {e}")
-            return [], None
+            raise RuntimeError(
+                f"Unexpected Uma.moe API error for {year}-{month:02d}"
+            ) from e
 
         # Extract top-level monthly rank
-        monthly_rank: Optional[int] = data.get("circle", {}).get("monthly_rank")
+        monthly_rank = (data.get("circle") or {}).get("monthly_rank")
+        if type(monthly_rank) is not int or monthly_rank <= 0:
+            monthly_rank = None
 
         members = data.get("members", [])
         if not members:
@@ -256,10 +307,11 @@ class HighscoreService:
 
         for member in members:
             trainer_name = member.get("trainer_name")
+            trainer_id = member.get("viewer_id")
             daily_fans = member.get("daily_fans", [])
             next_month_start = member.get("next_month_start")
 
-            if not trainer_name or not daily_fans:
+            if not trainer_id or not trainer_name or not daily_fans:
                 continue
 
             # daily_fans is lifetime cumulative — store as-is
@@ -267,24 +319,30 @@ class HighscoreService:
                 day_num = day_idx + 1
                 if day_num > last_day:
                     break
-                if lifetime_total <= 0:
+                if not isinstance(lifetime_total, int) or lifetime_total <= 0:
                     continue
 
                 row_date = date(year, month, day_num)
+                if row_date > datetime.now(timezone.utc).date():
+                    continue
                 rows.append({
                     "date": row_date,
                     "lifetime_fans": lifetime_total,
                     "trainer_name": trainer_name,
+                    "trainer_id": str(trainer_id),
                 })
 
             # If next_month_start is available, append a synthetic end-of-month
             # entry so _compute_best_monthly_total can use the true final value.
-            if next_month_start is not None and next_month_start > 0:
+            if (isinstance(next_month_start, int) and next_month_start > 0
+                    and (year, month) < (datetime.now(timezone.utc).year,
+                                         datetime.now(timezone.utc).month)):
                 end_of_month = date(year, month, last_day)
                 rows.append({
                     "date": end_of_month,
                     "lifetime_fans": next_month_start,
                     "trainer_name": trainer_name,
+                    "trainer_id": str(trainer_id),
                     "is_end_of_month": True,
                 })
 
@@ -293,420 +351,209 @@ class HighscoreService:
     # ── Computation Logic ───────────────────────────────────────────────
 
     @classmethod
-    def _compute_best_daily_gain(
-        cls, rows: list
-    ) -> Optional[Dict[str, Any]]:
+    def _history(cls, rows):
+        """Index by stable ID and quarantine contradictory lifetime snapshots.
+
+        Name fallback supports legacy callers; API rows always require an ID.
+        A drop is unknown until the last trusted lifetime total is recovered.
+        The first recovery observation cannot create a one-day rebound record.
         """
-        Compute the best single-day fan gain from lifetime cumulative values.
-        Groups by member, sorts by date, computes deltas between consecutive
-        days. Only counts deltas where dates are exactly 1 day apart.
-        Uses lifetime values (no monthly reset issues).
-        """
-        member_data: Dict[str, List[Tuple[date, int]]] = defaultdict(list)
-        for row in rows:
-            member_data[row["trainer_name"]].append(
-                (row["date"], row["lifetime_fans"])
-            )
-
-        best: Optional[Dict[str, Any]] = None
-
-        for name, entries in member_data.items():
-            entries.sort(key=lambda x: x[0])
-            for i in range(1, len(entries)):
-                prev_date, prev_fans = entries[i - 1]
-                curr_date, curr_fans = entries[i]
-
-                # Must be consecutive calendar days
-                days_diff = (curr_date - prev_date).days
-                if days_diff != 1:
+        raw = defaultdict(lambda: defaultdict(list))
+        endpoints = {}
+        names = {}
+        today = datetime.now(timezone.utc).date()
+        for row in sorted(rows, key=lambda r: (r['date'], bool(r.get('is_end_of_month')))):
+            key = str(row.get('trainer_id') or row['trainer_name'])
+            d, fans = row['date'], row['lifetime_fans']
+            if d > today or type(fans) is not int or fans <= 0:
+                continue
+            names[key] = row['trainer_name']
+            if row.get('is_end_of_month'):
+                if (d.year, d.month) < (today.year, today.month):
+                    endpoints[key, d.year, d.month] = fans
+            else:
+                raw[key][d].append(fans)
+        members = {}
+        for key, dates in raw.items():
+            high = 0
+            members[key] = {}
+            for d, values in sorted(dates.items()):
+                if len(set(values)) != 1 or values[0] < high:
                     continue
+                high = values[0]
+                members[key][d] = high
+        return members, endpoints, names
 
-                delta = curr_fans - prev_fans
-                if delta > 0 and (best is None or delta > best["delta"]):
-                    best = {
-                        "name": name,
-                        "delta": delta,
-                        "date": curr_date,
-                    }
+    @classmethod
+    def _daily_gains(cls, rows):
+        members, _, names = cls._history(rows)
+        gains = defaultdict(dict)
+        for key, dates in members.items():
+            for d, fans in dates.items():
+                previous = dates.get(d - timedelta(days=1))
+                if previous is not None:
+                    gains[d][key] = fans - previous
+        return members, names, gains
 
+    @classmethod
+    def _compute_best_daily_gain(cls, rows):
+        _, names, gains = cls._daily_gains(rows)
+        best = None
+        for d, values in sorted(gains.items()):
+            for key, value in sorted(values.items()):
+                if value > 0 and (best is None or value > best['delta']):
+                    best = dict(name=names[key], delta=value, date=d)
         return best
 
     @classmethod
-    def _compute_best_monthly_total(
-        cls, rows: list
-    ) -> Optional[Dict[str, Any]]:
+    def _monthly_history(cls, rows):
+        """Lower bounds count observed membership intervals only.
+
+        Upper bounds include unobserved gains and are used only to avoid false
+        leaders. They are never credited as club contributions. A preceding
+        month's endpoint can restore a missing start-of-month baseline.
         """
-        Compute the best monthly fan total per member using lifetime values.
-        For each member+month pair, uses the difference between the last
-        day's lifetime value (preferring next_month_start if available)
-        and the previous month's last value.
-        """
-        # Group by trainer_name, then by (year, month)
-        member_data: Dict[str, List[Tuple[date, int]]] = defaultdict(list)
-        for row in rows:
-            member_data[row["trainer_name"]].append(
-                (row["date"], row["lifetime_fans"])
-            )
-
-        best: Optional[Dict[str, Any]] = None
-
-        for name, entries in member_data.items():
-            # Sort by (date, lifetime_fans) so that for the same date,
-            # the synthetic end-of-month entry (higher fans) comes after
-            # the regular daily entry. This ensures monthly_last picks
-            # next_month_start when available.
-            entries.sort(key=lambda x: (x[0], x[1]))
-
-            # For each month, find the first and last entry's lifetime value.
-            # This allows computing the actual gain within the month.
-            monthly_first: Dict[Tuple[int, int], int] = {}
-            monthly_last: Dict[Tuple[int, int], int] = {}
-            for d, fans in entries:
-                key = (d.year, d.month)
-                if key not in monthly_first:
-                    monthly_first[key] = fans  # first day's value
-                monthly_last[key] = fans       # last entry's value (keeps updating)
-
-            # Compute monthly total = last entry of month - first entry of month
-            # (or last entry of current month - last entry of previous month for
-            #  subsequent months, which is equivalent via transitive subtraction)
-            sorted_keys = sorted(monthly_last.keys())
-            for idx, (year, month) in enumerate(sorted_keys):
-                curr_lifetime = monthly_last[(year, month)]
-
-                if idx == 0:
-                    # First month — subtract the first day's value to strip
-                    # any pre-existing lifetime before this month
-                    month_start = monthly_first[(year, month)]
-                    monthly_total = curr_lifetime - month_start
+        members, endpoints, names = cls._history(rows)
+        months = defaultdict(dict)
+        for key, dates in members.items():
+            groups = defaultdict(list)
+            for d, fans in sorted(dates.items()):
+                groups[d.year, d.month].append((d, fans))
+            for (year, month), entries in groups.items():
+                first, first_fans = entries[0]
+                previous_key = cls._prev_month(year, month)
+                endpoint = endpoints.get((key, *previous_key))
+                recovered = first.day > 1 and first.day <= 3 and endpoint is not None
+                baseline = endpoint if recovered else first_fans
+                if baseline > first_fans:
+                    baseline = first_fans
+                    recovered = False
+                partial = first.day > 1
+                total = first_fans - baseline
+                points = {}
+                previous_date, previous_fans = first, first_fans
+                for d, fans in entries:
+                    if d != first:
+                        if d == previous_date + timedelta(days=1):
+                            total += fans - previous_fans
+                        else:
+                            partial = True
+                    points[d] = (total, fans - baseline if first.day == 1 or recovered else float('inf'))
+                    previous_date, previous_fans = d, fans
+                final = endpoints.get((key, year, month))
+                last_day = calendar.monthrange(year, month)[1]
+                if final is not None and final >= previous_fans and previous_date.day == last_day:
+                    total += final - previous_fans
                 else:
-                    prev_key = sorted_keys[idx - 1]
-                    prev_lifetime = monthly_last[prev_key]
-                    monthly_total = curr_lifetime - prev_lifetime
+                    partial = True
+                months[year, month][key] = dict(
+                    points=points, baseline=baseline, total=total, partial=partial,
+                    recovered=recovered, first=first,
+                )
+        return members, names, months
 
-                if monthly_total > 0 and (best is None or monthly_total > best["total"]):
-                    month_name = calendar.month_name[month]
-                    best = {
-                        "name": name,
-                        "total": monthly_total,
-                        "month": f"{month_name} {year}",
-                    }
-
+    @classmethod
+    def _compute_best_monthly_total(cls, rows):
+        _, names, months = cls._monthly_history(rows)
+        best = None
+        today = datetime.now(timezone.utc).date()
+        for (year, month), entries in sorted(months.items()):
+            for key, entry in sorted(entries.items()):
+                if entry['total'] > 0 and (best is None or entry['total'] > best['total']):
+                    best = dict(name=names[key], total=entry['total'],
+                                month=f'{calendar.month_name[month]} {year}',
+                                incomplete=entry['partial'],
+                                provisional=(year, month) == (today.year, today.month))
         return best
 
     @classmethod
-    def _compute_longest_first_place_streak(
-        cls, rows: list
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Compute the longest consecutive streak of holding 1st place (highest
-        daily fan gain) across all dates in the data.
-
-        Uses daily gains (delta between consecutive days' lifetime values)
-        to determine who gained the most fans each day, matching the in-game
-        ranking system.
-
-        Returns a dict with keys:
-          - name: the member who held #1
-          - streak: number of consecutive days
-          - start_date: first day of the streak
-          - end_date: last day of the streak
-        or None if insufficient data.
-        """
-        # 1. Group rows by member, sorted by date
-        member_data: Dict[str, List[Tuple[date, int]]] = defaultdict(list)
-        for row in rows:
-            member_data[row["trainer_name"]].append(
-                (row["date"], row["lifetime_fans"])
-            )
-
-        # 2. Compute daily gain per member per date
-        # daily_gain[date][member] = fans gained on that date
-        daily_gain: Dict[date, Dict[str, int]] = defaultdict(dict)
-        for name, entries in member_data.items():
-            entries.sort(key=lambda x: x[0])
-            for i in range(1, len(entries)):
-                prev_date, prev_fans = entries[i - 1]
-                curr_date, curr_fans = entries[i]
-
-                # Must be consecutive calendar days
-                days_diff = (curr_date - prev_date).days
-                if days_diff != 1:
-                    continue
-
-                delta = curr_fans - prev_fans
-                if delta > 0:
-                    # If multiple entries exist for the same member on the same
-                    # date (e.g. regular + end-of-month synthetic), keep the
-                    # larger delta (which comes from the later entry)
-                    existing = daily_gain[curr_date].get(name, 0)
-                    if delta > existing:
-                        daily_gain[curr_date][name] = delta
-
-        sorted_dates = sorted(daily_gain.keys())
-        if len(sorted_dates) < 2:
-            return None
-
-        # 3. For each date, find the member with the highest daily gain.
-        #    If there's a tie, no single clear #1 for that day.
-        daily_leader: Dict[date, Optional[str]] = {}
-        for d in sorted_dates:
-            gains = daily_gain[d]
-            if not gains:
-                daily_leader[d] = None
-                continue
-            max_gain = max(gains.values())
-            leaders = [name for name, g in gains.items() if g == max_gain]
-            if len(leaders) == 1:
-                daily_leader[d] = leaders[0]
-            else:
-                daily_leader[d] = None  # tie — no clear leader
-
-        # 4. Walk through dates tracking streaks
-        best_streak = 0
-        best_name: Optional[str] = None
-        best_start: Optional[date] = None
-        best_end: Optional[date] = None
-
-        current_name: Optional[str] = None
-        current_streak = 0
-        current_start: Optional[date] = None
-
-        for d in sorted_dates:
-            leader = daily_leader[d]
+    def _walk_leaders(cls, states, names, max_gap):
+        """Unknown dates are pending; a known defeat always breaks the reign."""
+        best = None
+        current = None
+        start = last = None
+        inferred = 0
+        for d, (leader, defeated) in sorted(states.items()):
+            if current in defeated:
+                current = None
+                last = None
             if leader is None:
-                # Tie or no data — reset
-                current_name = None
-                current_streak = 0
-                current_start = None
                 continue
-
-            if leader == current_name:
-                # Same leader — extend streak
-                current_streak += 1
+            gap = (d - last).days - 1 if last else 0
+            if leader == current and gap <= max_gap:
+                inferred += gap
             else:
-                # New leader — start new streak
-                current_name = leader
-                current_streak = 1
-                current_start = d
-
-            if current_streak > best_streak:
-                best_streak = current_streak
-                best_name = current_name
-                best_start = current_start
-                best_end = d
-
-        if best_streak < 2:
-            return None
-
-        return {
-            "name": best_name,
-            "streak": best_streak,
-            "start_date": best_start,
-            "end_date": best_end,
-        }
+                current, start, inferred = leader, d, 0
+            last = d
+            length = (d - start).days + 1
+            if length >= 2 and (best is None or length > best['streak']):
+                best = dict(name=names[leader], streak=length, start_date=start,
+                            end_date=d, inferred_days=inferred)
+        return best
 
     @classmethod
-    def _compute_longest_first_place_streak_by_total(
-        cls, rows: list
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Compute the longest consecutive streak of holding 1st place by cumulative
-        club fan gain within each month.
+    def _compute_longest_first_place_streak(cls, rows):
+        members, names, gains = cls._daily_gains(rows)
+        states = {}
+        for d, values in sorted(gains.items()):
+            # A member already seen this month may still be active during a
+            # trailing outage. Do not silently remove them from competition.
+            expected = {key for key, dates in members.items()
+                        if any((p.year, p.month) == (d.year, d.month) and p <= d
+                               for p in dates)}
+            highest = max(values.values(), default=0)
+            winners = [key for key, gain in values.items() if gain == highest]
+            leader = winners[0] if highest > 0 and len(winners) == 1 and expected <= values.keys() else None
+            states[d] = (leader, set(values) if leader is None else set(values) - {leader})
+        return cls._walk_leaders(states, names, 0)
 
-        For each member, cumulative gain since the start of the current month is
-        calculated as (lifetime_fans on date) - (lifetime_fans at end of previous
-        month). The member with the highest cumulative gain is #1. At month
-        boundaries, cumulative gains reset.
-
-        On the first day of a month (or any day where multiple members have the
-        same cumulative gain), ties are broken by the member's absolute lifetime
-        fans on that date.
-
-        Returns a dict with keys:
-          - name: the member who held #1
-          - streak: number of consecutive days
-          - start_date: first day of the streak
-          - end_date: last day of the streak
-        or None if insufficient data.
-        """
-        # 1. Group rows by member, sorted by date
-        member_data: Dict[str, List[Tuple[date, int]]] = defaultdict(list)
-        for row in rows:
-            member_data[row["trainer_name"]].append(
-                (row["date"], row["lifetime_fans"])
-            )
-
-        # 2. Compute daily gain per member per date (needed for day-1 tiebreaker)
-        daily_gain: Dict[date, Dict[str, int]] = defaultdict(dict)
-        for name, entries in member_data.items():
-            entries.sort(key=lambda x: x[0])
-            for i in range(1, len(entries)):
-                prev_date, prev_fans = entries[i - 1]
-                curr_date, curr_fans = entries[i]
-                days_diff = (curr_date - prev_date).days
-                if days_diff != 1:
-                    continue
-                delta = curr_fans - prev_fans
-                if delta > 0:
-                    existing = daily_gain[curr_date].get(name, 0)
-                    if delta > existing:
-                        daily_gain[curr_date][name] = delta
-
-        # 3. Build next_month_start mapping from synthetic end-of-month entries
-        next_month_start_map: Dict[str, Dict[Tuple[int, int], int]] = defaultdict(dict)
-        for row in rows:
-            if row.get("is_end_of_month"):
-                member = row["trainer_name"]
-                month_key = (row["date"].year, row["date"].month)
-                next_month_start_map[member][month_key] = row["lifetime_fans"]
-
-        # 4. Determine month_start_lifetime for each member+month.
-        #    month_start = lifetime_fans at end of previous month.
-        #    For the first month a member appears, use their first day's value.
-        member_active_months: Dict[str, List[int]] = {}
-        for name, entries in member_data.items():
-            months = sorted({d.year * 12 + d.month for d, _ in entries})
-            member_active_months[name] = list(set(months))
-
-        all_months = sorted({(row["date"].year, row["date"].month) for row in rows})
-        month_start_lifetime: Dict[Tuple[int, int], Dict[str, int]] = {}
-        for year, month in all_months:
-            month_key = (year, month)
-            month_start_lifetime[month_key] = {}
-            for name in member_data:
-                prev_month_key = None
-                for pm in member_active_months[name]:
-                    if pm < year * 12 + month:
-                        prev_month_key = pm
-                    else:
-                        break
-                if prev_month_key is not None:
-                    pm_year = prev_month_key // 12
-                    pm_month = prev_month_key % 12
-                    if pm_month == 0:
-                        pm_month = 12
-                        pm_year -= 1
-                    val = next_month_start_map.get(name, {}).get((pm_year, pm_month))
-                    if val is not None:
-                        month_start_lifetime[month_key][name] = val
-                        continue
-                # Fallback: first entry of current month
-                for d, fans in member_data[name]:
-                    if d.year == year and d.month == month:
-                        month_start_lifetime[month_key][name] = fans
-                        break
-
-        # 5. For EVERY date in the data, compute cumulative gain and leader
-        all_dates = sorted({row["date"] for row in rows})
-        if len(all_dates) < 2:
+    @classmethod
+    def _compute_longest_first_place_streak_by_total(cls, rows, *, verified_only=False):
+        members, names, months = cls._monthly_history(rows)
+        dates = [d for values in members.values() for d in values]
+        if not dates:
             return None
-
-        cumulative_gains: Dict[str, int] = defaultdict(int)
-        current_month = None
-        daily_leader: Dict[date, Optional[str]] = {}
-
-        for d in all_dates:
-            month_key = (d.year, d.month)
-
-            # Reset cumulative gains at month boundary
-            if month_key != current_month:
-                cumulative_gains.clear()
-                current_month = month_key
-
-            # Compute gain for each member on this date:
-            # gain = lifetime_fans_today - month_start_lifetime
-            # This gives the true cumulative gain from month start.
-            today_gains: Dict[str, int] = {}
-            member_fans_today: Dict[str, int] = {}
-            for name, entries in member_data.items():
-                for d2, fans in entries:
-                    if d2 == d:
-                        member_fans_today[name] = fans
-                        break
-
-            for name, fans_today in member_fans_today.items():
-                start_val = month_start_lifetime.get(month_key, {}).get(name)
-                if start_val is None:
+        states = {}
+        d, end = min(dates), max(dates)
+        while d <= end:
+            bounds = {}
+            for key, entry in months.get((d.year, d.month), {}).items():
+                points = entry['points']
+                if d < entry['first']:
+                    # Without membership evidence this may be a missing early
+                    # snapshot rather than a later join.
+                    bounds[key] = (0, float('inf'))
                     continue
-                gain = fans_today - start_val
-                # Record even if 0 so we can break ties by absolute fans
-                today_gains[name] = gain
+                if d in points:
+                    bounds[key] = points[d]
+                else:
+                    future = [p for p in points if p > d]
+                    upper = points[min(future)][1] if future else float('inf')
+                    bounds[key] = (0, upper)
+            # Carry prior-month members as unknown at a reset until their first
+            # observation. Absence alone is not evidence of departure.
+            previous = months.get(cls._prev_month(d.year, d.month), {})
+            for key, prior in previous.items():
+                prior_last = max(prior['points'])
+                if prior_last.day != calendar.monthrange(prior_last.year, prior_last.month)[1]:
+                    continue
+                if key not in bounds and (key not in months.get((d.year, d.month), {})
+                        or d < months[d.year, d.month][key]['first']):
+                    bounds[key] = (0, float('inf'))
+            highest = max((v[0] for v in bounds.values()), default=0)
+            winners = [key for key, (low, _) in bounds.items()
+                       if low > 0 and all(low > upper for other, (_, upper) in bounds.items()
+                                          if other != key)]
+            leader = winners[0] if len(winners) == 1 else None
+            # Even if a third member is unknown, a definite overtake or tie
+            # prevents bridging the previous leader across this date.
+            defeated = {key for key, (_, upper) in bounds.items()
+                        if highest > 0 and any(other != key and low >= upper
+                                               for other, (low, _) in bounds.items())}
+            states[d] = (leader, defeated)
+            d += timedelta(days=1)
+        return cls._walk_leaders(states, names, 0 if verified_only else cls.MAX_REIGN_GAP_DAYS)
 
-            for name, gain in today_gains.items():
-                cumulative_gains[name] = gain
-
-            if not cumulative_gains:
-                daily_leader[d] = None
-                continue
-
-            max_cumulative = max(cumulative_gains.values())
-            leaders = [name for name, g in cumulative_gains.items() if g == max_cumulative]
-            if len(leaders) == 1:
-                daily_leader[d] = leaders[0]
-            else:
-                # Tie: break by highest absolute lifetime fans today
-                best = None
-                best_fans = -1
-                for name in leaders:
-                    fans = member_fans_today.get(name, 0)
-                    if fans > best_fans:
-                        best_fans = fans
-                        best = name
-                daily_leader[d] = best
-
-        # 6. Walk through dates tracking streaks
-        best_streak = 0
-        best_name: Optional[str] = None
-        best_start: Optional[date] = None
-        best_end: Optional[date] = None
-
-        current_name: Optional[str] = None
-        current_streak = 0
-        current_start: Optional[date] = None
-
-        for d in all_dates:
-            month_key = (d.year, d.month)
-
-            # Streaks cannot cross month boundaries
-            if month_key != current_month:
-                current_name = None
-                current_streak = 0
-                current_start = None
-                current_month = month_key
-
-            leader = daily_leader.get(d)
-            if leader is None:
-                # Tie or no data — reset
-                current_name = None
-                current_streak = 0
-                current_start = None
-                continue
-
-            if leader == current_name:
-                # Same leader — extend streak
-                current_streak += 1
-            else:
-                # New leader — start new streak
-                current_name = leader
-                current_streak = 1
-                current_start = d
-
-            if current_streak > best_streak:
-                best_streak = current_streak
-                best_name = current_name
-                best_start = current_start
-                best_end = d
-
-        if best_streak < 2:
-            return None
-
-        return {
-            "name": best_name,
-            "streak": best_streak,
-            "start_date": best_start,
-            "end_date": best_end,
-        }
 
     # ── Date Helpers ────────────────────────────────────────────────────
 

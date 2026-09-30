@@ -69,7 +69,7 @@ class GachaCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in gacha command: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error fetching gacha data: {str(e)}")
+            await interaction.followup.send("❌ Unable to fetch gacha data right now. Please try again later.")
 
 
 async def setup(bot):

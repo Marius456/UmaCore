@@ -201,7 +201,10 @@ class TriviaCommands(commands.Cog):
 
     async def _get_next_question(self, used_question_ids: set[int]) -> Optional[TriviaQuestion]:
         """Get an unused question, beginning a new cycle when the bank is exhausted."""
-        question = await TriviaQuestion.get_random(excluded_ids=used_question_ids)
+        # Pass a snapshot because this set is mutated after the query.
+        question = await TriviaQuestion.get_random(
+            excluded_ids=set(used_question_ids)
+        )
         if question is None and used_question_ids:
             used_question_ids.clear()
             question = await TriviaQuestion.get_random()
@@ -262,11 +265,9 @@ class TriviaCommands(commands.Cog):
                 else:
                     # Game over — update leaderboard and show result
                     if current_streak > 0:
-                        entry = await TriviaLeaderboardEntry.upsert(
+                        _, is_new_record = await TriviaLeaderboardEntry.record_result(
                             user_id, current_streak, total_correct
                         )
-                        # Check if this is a new personal best record
-                        is_new_record = (current_streak >= entry.highest_streak)
                     else:
                         is_new_record = False
 
@@ -299,7 +300,7 @@ class TriviaCommands(commands.Cog):
             await interaction.followup.send(embed=embed)
         except Exception as e:
             logger.error(f"Error in leaderboard command: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error fetching leaderboard: {str(e)}")
+            await interaction.followup.send("❌ Unable to fetch the leaderboard right now. Please try again later.")
 
     @trivia.command(name="add", description="Add a trivia question (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -346,7 +347,7 @@ class TriviaCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error adding trivia question: {e}", exc_info=True)
             await interaction.followup.send(
-                f"❌ Failed to add question: {str(e)}",
+                "❌ Failed to add the question. Please try again later.",
                 ephemeral=True
             )
 
@@ -362,7 +363,7 @@ class TriviaCommands(commands.Cog):
             logger.error(f"Unexpected error in add_question: {error}", exc_info=True)
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    f"❌ An unexpected error occurred: {str(error)}",
+                "❌ An unexpected error occurred. Please try again later.",
                     ephemeral=True
                 )
 
@@ -400,7 +401,7 @@ class TriviaCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error listing trivia questions: {e}", exc_info=True)
             await interaction.followup.send(
-                f"❌ Failed to fetch questions: {str(e)}", ephemeral=True
+                "❌ Failed to fetch questions. Please try again later.", ephemeral=True
             )
 
     @trivia.command(name="delete", description="Delete a trivia question (Admin only)")
@@ -424,7 +425,7 @@ class TriviaCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error deleting trivia question #{question_id}: {e}", exc_info=True)
             await interaction.followup.send(
-                f"❌ Failed to delete question: {str(e)}", ephemeral=True
+                "❌ Failed to delete the question. Please try again later.", ephemeral=True
             )
 
 

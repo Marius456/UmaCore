@@ -1,7 +1,7 @@
 """
 Timezone helper utilities
 """
-from datetime import datetime, date, time
+from datetime import datetime, time
 import pytz
 from config.settings import TIMEZONE
 

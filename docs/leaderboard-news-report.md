@@ -34,11 +34,14 @@ SELECT qh.date,
 FROM quota_history qh
 JOIN members m ON m.member_id = qh.member_id
 WHERE qh.club_id = $1
-  AND date_part('year', qh.date) = $2
-  AND date_part('month', qh.date) = $3
+  AND qh.date >= $2
+  AND qh.date < $3
   AND m.is_active = TRUE
 ORDER BY qh.date ASC
 ```
+
+`$2` is the first day of the requested month and `$3` is the first day of the
+next month. This range form uses the `(club_id, date)` index.
 
 | Column | Type | Description |
 |---|---|---|
@@ -427,11 +430,82 @@ The final embed has 5 fields, plus a title, description, and footer.
 | `timestamp` | `discord.utils.utcnow()` | |
 
 ### Section 1: 🔥 HEADLINE NEWS
-**Priority order:**
-1. If a leader change happened: `🏆 [NewLeader] has overtaken [OldLeader] for #1!` (with streak context)
-2. If both Efficiency King and Brick Wall exist: `[KingName] is today's breakout star, while the battle for #[Rank] intensifies!`
-3. If only Efficiency King exists: The full efficiency king narrative sentence
-4. Fallback: `👑 [TopPlayer] holds the #1 spot with [Fans] fans.`
+
+One **bold, playful hook**, followed by a newline and one factual detail sentence.
+The section header supplies the emoji. Each story type has three hook variants;
+the tone is friendly competition using running, pace, field, and lead imagery,
+without teasing inactivity or poor performance. Avoid automotive and unrelated
+metaphors, or suggesting a finished race when reporting an ongoing chase.
+
+**Selection:**
+
+1. A verified change of sole leader takes priority. Both members must appear on
+   consecutive calendar dates, with a unique #1 on each date.
+2. Otherwise, a new single-day club record **this month** leads. It must exceed
+   the highest earlier verified daily gain; matching it does not qualify.
+   Simultaneous record setters are described as jointly setting the record.
+3. Otherwise, rotate among qualifying types in this order: a climb of at least
+   two places ending in the top three, a new personal best this month, an
+   adjacent-rank chase for #1–#3 within two days, a breakout at least 50% above
+   this month's average, and a sole-leader
+   streak reaching 5/10/15/20/25/30 consecutive days.
+4. With no qualifying story, highlight the highest verified positive daily gain;
+   otherwise show the current leader or shared lead. Empty snapshots get an
+   explicit no-observations message.
+
+Within a type, choose the largest climb, highest new PB/club-record daily gain,
+shortest unrounded chase ETA, or highest breakout percentage. Resolve equal
+strength by current rank, then member name. Chases only consider adjacent pairs
+whose contested position is #1–#3; pairs involving tied ranks are excluded.
+These podium restrictions apply to headline climbs and chases in every club.
+Records and exceptional fan gains remain eligible at any rank. Other movement
+and Battle Zone sections retain their own eligibility rules.
+
+The rotation index is `report_date.toordinal() + club_id.int`, modulo the number
+of eligible rotating types. Hook variants advance on each tour through those
+types (daily for priority/fallback stories), offset by story type. Results are
+stable for identical inputs, independent of process randomness or input order.
+No delivery history is stored, so changed candidate pools can repeat a subject.
+
+**Evidence and formatting:**
+
+- Headline evidence is computed separately from other sections, using only
+  snapshots from the report month through the report date. Daily gains require
+  consecutive calendar-day observations; totals on day one count as that day's
+  gain. Missing intervals and negative corrections are excluded.
+- Records require at least one earlier valid observation. Breakouts require at
+  least three valid daily observations (including today), at least 1M fans today,
+  and nonnegative quota surplus. The average includes today's verified gain.
+- Streaks include today and break on missing dates or shared first place.
+- Chases require valid daily gains for both members, a positive gap, and a
+  positive closing rate. Copy says **could** and **at today's pace**, with
+  “within a day” or “within two days,” never a guaranteed or completed overtake.
+- Names are normalized to one line, shortened before Markdown escaping, and
+  mentions are neutralized. The complete hook, detail, and separator fit the
+  1,024-character field limit. Records use exact numbers if compact rounding
+  would make the old and new values look identical.
+
+**Illustrative headlines** (fixture values, not live announcements):
+
+> **Ace is the new front-runner.**
+>
+> **Ace** takes **#1** from **Mike**, with a **200.0K-fan** lead.
+
+> **Ace surged through the field.**
+>
+> **Ace** climbs **3 places** today, from **#6** to **#3**.
+
+> **Ace set a new personal pace.**
+>
+> **+3.0M fans** gives **Ace** a **new personal best this month**, up from **+2.0M**.
+
+> **sesbianlex is closing on Mike.**
+>
+> Just **910.9K fans** separate them for **#3**—at today's pace, that spot could change hands within a day.
+
+> **Ace leads the field.**
+>
+> **Ace** sits at **#1** with **40.0M fans** this month.
 
 ### Section 2: 📈 THE MOMENTUM SHIFT
 Sub-sections (each with a bold label):
@@ -519,7 +593,7 @@ Formats a date as `"Jun 10"` using `d.strftime("%b %d")`.
 | Only 1 day of data | No daily deltas → no efficiency king, no overtakes, no consistency |
 | Only 1 member | No brick wall, no rivalries, no overtakes |
 | No rank changes today | Movers section shows `_No rank changes today._` |
-| No efficiency king candidate | Falls back to leader-based headline |
+| No efficiency king candidate | Headlines can still feature climbs, records, chases, streaks, or a verified daily gain before falling back to the leader/shared lead |
 | No overtakes within 14 days | Shows `_No imminent overtakes detected._` |
 | No milestones within 5% | Shows `_No members approaching major milestones._` |
 | No rivalries (no swaps) | Shows `_No notable rivalries this month — the leaderboard has been stable._` |

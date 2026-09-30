@@ -2,7 +2,7 @@
 Quota History data model
 """
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional, List
 from uuid import UUID
 import logging
@@ -44,6 +44,20 @@ class QuotaHistory:
                                 expected_fans, deficit_surplus, days_behind)
         return cls(**dict(row))
     
+    @classmethod
+    async def get_for_member_range(cls, member_id: UUID, start: date, end: date) -> List['QuotaHistory']:
+        """Observed daily records in an inclusive membership range, oldest first."""
+        rows = await db.fetch(
+            """
+            SELECT id, member_id, club_id, date, cumulative_fans, expected_fans,
+                   deficit_surplus, days_behind
+            FROM quota_history
+            WHERE member_id = $1 AND date BETWEEN $2 AND $3
+            ORDER BY date ASC
+            """, member_id, start, end,
+        )
+        return [cls(**dict(row)) for row in rows]
+
     @classmethod
     async def get_latest_for_member(cls, member_id: UUID) -> Optional['QuotaHistory']:
         """Get the most recent quota history for a member"""
@@ -119,67 +133,61 @@ class QuotaHistory:
         February history carrying over into March.
         Returns: number of consecutive days behind (0 if currently on track)
         """
+        if check_days <= 0:
+            return 0
         if current_date is not None:
             query = """
-                WITH recent_days AS (
-                    SELECT date, deficit_surplus
-                    FROM quota_history
-                    WHERE member_id = $1
-                      AND date_part('year', date) = date_part('year', $3::date)
-                      AND date_part('month', date) = date_part('month', $3::date)
-                    ORDER BY date DESC
-                    LIMIT $2
-                )
-                SELECT COUNT(*) as consecutive_behind
-                FROM (
-                    SELECT date, deficit_surplus,
-                           ROW_NUMBER() OVER (ORDER BY date DESC) as rn
-                    FROM recent_days
-                    WHERE deficit_surplus < 0
-                    ORDER BY date DESC
-                ) sub
-                WHERE rn <= $2
-                AND (SELECT deficit_surplus FROM recent_days ORDER BY date DESC LIMIT 1) < 0
+                SELECT date, deficit_surplus
+                FROM quota_history
+                WHERE member_id = $1 AND date <= $3
+                  AND date_part('year', date) = date_part('year', $3::date)
+                  AND date_part('month', date) = date_part('month', $3::date)
+                ORDER BY date DESC
+                LIMIT $2
             """
-            result = await db.fetchval(query, member_id, check_days, current_date)
+            rows = await db.fetch(query, member_id, check_days, current_date)
         else:
             query = """
-                WITH recent_days AS (
-                    SELECT date, deficit_surplus
-                    FROM quota_history
-                    WHERE member_id = $1
-                    ORDER BY date DESC
-                    LIMIT $2
-                )
-                SELECT COUNT(*) as consecutive_behind
-                FROM (
-                    SELECT date, deficit_surplus,
-                           ROW_NUMBER() OVER (ORDER BY date DESC) as rn
-                    FROM recent_days
-                    WHERE deficit_surplus < 0
-                    ORDER BY date DESC
-                ) sub
-                WHERE rn <= $2
-                AND (SELECT deficit_surplus FROM recent_days ORDER BY date DESC LIMIT 1) < 0
+                SELECT date, deficit_surplus
+                FROM quota_history
+                WHERE member_id = $1
+                ORDER BY date DESC
+                LIMIT $2
             """
-            result = await db.fetchval(query, member_id, check_days)
-        return result or 0
+            rows = await db.fetch(query, member_id, check_days)
+
+        if not rows:
+            return 0
+        expected_date = current_date or rows[0]['date']
+        consecutive = 0
+        for row in rows:
+            if row['date'] != expected_date or row['deficit_surplus'] >= 0:
+                break
+            consecutive += 1
+            expected_date -= timedelta(days=1)
+        return consecutive
     
     @classmethod
     async def get_current_month_for_club(cls, club_id: UUID, year: int, month: int):
         """Get all quota history rows for a club in a given month, joined with trainer names.
         Returns raw asyncpg records with (date, cumulative_fans, trainer_name)."""
+        month_start = date(year, month, 1)
+        next_month = (
+            date(year + 1, 1, 1)
+            if month == 12
+            else date(year, month + 1, 1)
+        )
         query = """
             SELECT qh.date, qh.cumulative_fans, qh.deficit_surplus, m.trainer_name
             FROM quota_history qh
             JOIN members m ON m.member_id = qh.member_id
             WHERE qh.club_id = $1
-              AND date_part('year', qh.date) = $2
-              AND date_part('month', qh.date) = $3
+              AND qh.date >= $2
+              AND qh.date < $3
               AND m.is_active = TRUE
             ORDER BY qh.date ASC
         """
-        return await db.fetch(query, club_id, year, month)
+        return await db.fetch(query, club_id, month_start, next_month)
 
     @classmethod
     async def clear_all(cls, club_id: UUID):

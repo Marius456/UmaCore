@@ -35,6 +35,7 @@ class DataNotAvailableError(Exception):
 _browser = None
 _browser_context = None
 _playwright = None
+_browser_lifecycle_lock = asyncio.Lock()
 
 # Shared launch args for bundled Chromium
 LAUNCH_ARGS = [
@@ -117,23 +118,28 @@ async def _get_browser_context() -> BrowserContext:
     The context stores Cloudflare clearance cookies so they survive restarts.
     """
     global _browser_context, _browser
-    if _browser_context is None or not _browser_context.browser or not _browser_context.browser.is_connected():
-        browser = await _get_browser()
-        cookie_dir = _get_cookie_dir()
-        _browser_context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1920, "height": 1080},
-            locale="en-US",
-            timezone_id="America/New_York",
-            storage_state=os.path.join(cookie_dir, "storage_state.json") if os.path.exists(
-                os.path.join(cookie_dir, "storage_state.json")) else None,
-        )
-        logger.info("Created persistent Playwright browser context (headless)")
-    return _browser_context
+    async with _browser_lifecycle_lock:
+        if (
+            _browser_context is None
+            or not _browser_context.browser
+            or not _browser_context.browser.is_connected()
+        ):
+            browser = await _get_browser()
+            cookie_dir = _get_cookie_dir()
+            storage_path = os.path.join(cookie_dir, "storage_state.json")
+            _browser_context = await browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+                timezone_id="America/New_York",
+                storage_state=storage_path if os.path.exists(storage_path) else None,
+            )
+            logger.info("Created persistent Playwright browser context (headless)")
+        return _browser_context
 
 
 async def _get_browser():
@@ -168,6 +174,12 @@ async def _get_browser():
 
 async def _close_browser():
     """Close the shared browser instance (call on bot shutdown)."""
+    async with _browser_lifecycle_lock:
+        await _close_browser_unlocked()
+
+
+async def _close_browser_unlocked():
+    """Close the shared browser while holding the lifecycle lock."""
     global _browser, _browser_context, _playwright
 
     # Save storage state (cookies + localStorage) before closing
@@ -222,11 +234,12 @@ class UmaMoeAPIScraper(BaseScraper):
         # Set to a date object when the scraper fell back to the previous month;
         # None when the fetched data matches the current calendar date.
         self._data_date: Optional[date] = None
-        # Club/monthly rank fields from the API response (nested inside "circle" key)
+        # Club tier code is at the response root; monthly positions are in "circle".
+        self._club_rank: Optional[int] = None
         self._monthly_rank: Optional[int] = None
         self._last_month_rank: Optional[int] = None
         self._yesterday_rank: Optional[int] = None
-        # Club tier progress fields from the API response (nested inside "circle" key)
+        # Club tier boundary distances are at the response root.
         self._fans_to_next_tier: Optional[int] = None
         self._fans_to_lower_tier: Optional[int] = None
         super().__init__(self.base_url)
@@ -282,6 +295,91 @@ class UmaMoeAPIScraper(BaseScraper):
         except Exception as e:
             logger.warning(f"Direct API unexpected error for {year}-{month:02d}: {e}")
             return None
+
+    @staticmethod
+    def _extract_tier_progress(data: Optional[dict]) -> Optional[Dict[str, int]]:
+        """Return validated live tier distances from an uma.moe response."""
+        if not isinstance(data, dict):
+            return None
+        # Unlike rank metadata, uma.moe returns tier distances at the response
+        # root rather than inside the nested ``circle`` object.
+        fans_to_next_tier = data.get("fans_to_next_tier")
+        fans_to_lower_tier = data.get("fans_to_lower_tier")
+        values = (fans_to_next_tier, fans_to_lower_tier)
+
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in values
+        ):
+            return None
+        if fans_to_next_tier + fans_to_lower_tier <= 0:
+            return None
+
+        return {
+            "fans_to_next_tier": fans_to_next_tier,
+            "fans_to_lower_tier": fans_to_lower_tier,
+        }
+
+    @staticmethod
+    def _extract_club_rank_metadata(data: Optional[dict]) -> Dict[str, int]:
+        """Return independently validated club tier and monthly rank metadata."""
+        if not isinstance(data, dict):
+            return {}
+
+        result: Dict[str, int] = {}
+        club_rank = data.get("club_rank")
+        if (
+            isinstance(club_rank, int)
+            and not isinstance(club_rank, bool)
+            and 1 <= club_rank <= 11
+        ):
+            result["club_rank"] = club_rank
+
+        circle = data.get("circle")
+        monthly_rank = circle.get("monthly_rank") if isinstance(circle, dict) else None
+        if (
+            isinstance(monthly_rank, int)
+            and not isinstance(monthly_rank, bool)
+            and monthly_rank > 0
+        ):
+            result["monthly_rank"] = monthly_rank
+
+        return result
+
+    async def fetch_tier_progress(
+        self, year: int, month: int
+    ) -> Optional[Dict[str, int]]:
+        """
+        Fetch the authoritative live tier distances from uma.moe.
+
+        The direct API is preferred. If both it and the existing Playwright
+        fallback fail, return None so callers can omit tier progress without
+        substituting an estimate.
+        """
+        data = await self._fetch_via_direct_api(year, month)
+        if data is None:
+            try:
+                data = await self._fetch_via_playwright(year, month)
+            except Exception as e:
+                logger.warning(
+                    "Unable to fetch uma.moe tier progress for %s-%02d: %s",
+                    year,
+                    month,
+                    e,
+                )
+                return None
+
+        tier_progress = self._extract_tier_progress(data)
+        if tier_progress is None:
+            logger.warning(
+                "Uma.moe returned missing or invalid tier progress for %s-%02d",
+                year,
+                month,
+            )
+            return None
+
+        tier_progress.update(self._extract_club_rank_metadata(data))
+        return tier_progress
 
     async def _fetch_via_playwright(self, year: int, month: int) -> dict:
         """
@@ -486,13 +584,21 @@ class UmaMoeAPIScraper(BaseScraper):
             # On Day 1 prefer the current-month endpoint (more timely), fall back to primary.
             rank_source = (endpoint_data if (now.day == 1 and endpoint_data) else primary_data) or {}
             circle_data = rank_source.get("circle") or {}
-            self._monthly_rank = circle_data.get("monthly_rank")
+            rank_metadata = self._extract_club_rank_metadata(rank_source)
+            self._club_rank = rank_metadata.get("club_rank")
+            self._monthly_rank = rank_metadata.get("monthly_rank")
             self._last_month_rank = circle_data.get("last_month_rank")
             self._yesterday_rank = circle_data.get("yesterday_rank")
-            self._fans_to_next_tier = circle_data.get("fans_to_next_tier")
-            self._fans_to_lower_tier = circle_data.get("fans_to_lower_tier")
+            tier_progress = self._extract_tier_progress(rank_source)
+            self._fans_to_next_tier = (
+                tier_progress["fans_to_next_tier"] if tier_progress else None
+            )
+            self._fans_to_lower_tier = (
+                tier_progress["fans_to_lower_tier"] if tier_progress else None
+            )
             logger.info(
-                f"Club ranks: monthly_rank={self._monthly_rank}, "
+                f"Club ranks: club_rank={self._club_rank}, "
+                f"monthly_rank={self._monthly_rank}, "
                 f"last_month_rank={self._last_month_rank}, "
                 f"yesterday_rank={self._yesterday_rank}"
             )
@@ -515,8 +621,11 @@ class UmaMoeAPIScraper(BaseScraper):
                     "the new competition period. Dropping all rank data to avoid false display."
                 )
                 self._monthly_rank = None
+                self._club_rank = None
                 self._last_month_rank = None
                 self._yesterday_rank = None
+                self._fans_to_next_tier = None
+                self._fans_to_lower_tier = None
 
             if not primary_data or "members" not in primary_data:
                 logger.error("API response missing 'members' field")
@@ -699,6 +808,10 @@ class UmaMoeAPIScraper(BaseScraper):
         """Return the club's current monthly position rank (from circle.monthly_rank)."""
         return self._monthly_rank
 
+    def get_club_rank(self) -> Optional[int]:
+        """Return the club's tier code (D=1 through SS=11)."""
+        return self._club_rank
+
     def get_last_month_rank(self) -> Optional[int]:
         """Return the club's previous month position rank (from circle.last_month_rank)."""
         return self._last_month_rank
@@ -708,11 +821,11 @@ class UmaMoeAPIScraper(BaseScraper):
         return self._yesterday_rank
 
     def get_fans_to_next_tier(self) -> Optional[int]:
-        """Return the fans needed to reach the next club tier (from circle.fans_to_next_tier)."""
+        """Return the fans needed to reach the next club tier."""
         return self._fans_to_next_tier
 
     def get_fans_to_lower_tier(self) -> Optional[int]:
-        """Return the fans above the lower club tier (from circle.fans_to_lower_tier)."""
+        """Return the fans above the lower club tier."""
         return self._fans_to_lower_tier
 
 

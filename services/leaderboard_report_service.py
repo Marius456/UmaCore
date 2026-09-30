@@ -3,10 +3,11 @@ Leaderboard Report Service — generates a "news segment" embed analyzing
 today's leaderboard position changes (with month-long context for
 rivalries and leader changes).
 """
+import asyncio
 import logging
 import calendar
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple, NamedTuple
 from enum import Enum
@@ -16,7 +17,10 @@ import discord
 
 from config.settings import COLOR_INFO
 from models import QuotaHistory
-from services.prediction_store import save_predictions, load_predictions
+from services.prediction_store import (
+    load_prediction_snapshot,
+    save_prediction_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,14 +89,27 @@ class Achievement(NamedTuple):
 
 
 class HeadlineType(Enum):
-    COMEBACK = "comeback"
-    DOMINATION = "domination"
-    UPSET = "upset"
-    CLUTCH = "clutch"
+    LEADER_CHANGE = "leader_change"
+    CLUB_RECORD = "club_record"
+    CLIMB = "climb"
+    PERSONAL_BEST = "personal_best"
+    CHASE = "chase"
     STREAK = "streak"
-    CHAOS = "chaos"
     BREAKOUT = "breakout"
+    DAILY_GAIN = "daily_gain"
     QUIET = "quiet"
+    SHARED_LEAD = "shared_lead"
+    EMPTY = "empty"
+
+
+class HeadlineCandidate(NamedTuple):
+    """Verified facts for a story, independent of its eventual wording."""
+
+    kind: HeadlineType
+    names: Tuple[str, ...]
+    facts: Dict[str, Any]
+    strength: float = 0
+    rank: int = 0
 
 
 class BotMood(Enum):
@@ -103,12 +120,35 @@ class BotMood(Enum):
     NEUTRAL = "neutral"         # Default
 
 
+class ReportEmbeds(list):
+    """Embed list carrying the prediction snapshot to commit after delivery."""
+
+    def __init__(
+        self,
+        first_embed: discord.Embed,
+        club_id: UUID,
+        club_name: str,
+        report_date: date,
+        predictions: list[dict[str, Any]],
+    ):
+        super().__init__([first_embed])
+        self.club_id = club_id
+        self.club_name = club_name
+        self.report_date = report_date
+        self.predictions = predictions
+
+
 class LeaderboardReportService:
     """Generates a rich 'sports broadcast' style news report for club activity."""
 
     MILESTONES = [1_000_000, 5_000_000, 10_000_000, 25_000_000, 50_000_000, 100_000_000]
+    CLUB_TIERS = ("D", "D+", "C", "C+", "B", "B+", "A", "A+", "S", "S+", "SS")
 
     FIELD_MAX = 1024
+    HEADLINE_ROTATION = (
+        HeadlineType.CLIMB, HeadlineType.PERSONAL_BEST, HeadlineType.CHASE,
+        HeadlineType.BREAKOUT, HeadlineType.STREAK,
+    )
 
     # ── Public entry point ──────────────────────────────────────────────
 
@@ -117,6 +157,8 @@ class LeaderboardReportService:
         cls, club_id: UUID, club_name: str, year: int, month: int,
         fans_to_next_tier: Optional[int] = None,
         fans_to_lower_tier: Optional[int] = None,
+        club_rank: Optional[int] = None,
+        monthly_rank: Optional[int] = None,
     ) -> List[discord.Embed]:
         """
         Fetch the month's QuotaHistory, compute all analysis segments,
@@ -139,7 +181,6 @@ class LeaderboardReportService:
 
         # 2. Run Analytics
         # These are broken into small, testable methods
-        movers = cls._compute_today_movers(daily_rankings, latest_date)
         leader_change = cls._compute_leader_change(daily_rankings, latest_date, yesterday_date)
         rivalries = cls._compute_rivalries(daily_rankings, latest_date)
         today_records = cls._compute_today_records(daily_deltas, latest_date)
@@ -148,7 +189,6 @@ class LeaderboardReportService:
         king = cls._compute_efficiency_king(daily_rankings, daily_deltas, latest_date)
         tank = cls._compute_tank_analysis(daily_rankings, latest_date, daily_deltas)
         overtakes = cls._compute_projected_overtakes(daily_rankings, latest_date)
-        milestones = cls._compute_milestone_watch(daily_rankings, latest_date)
         consistency = cls._compute_consistency(daily_rankings, daily_deltas, latest_date)
         best_week = cls._compute_best_week(daily_deltas, latest_date)
 
@@ -160,7 +200,9 @@ class LeaderboardReportService:
         club_activity = cls._compute_club_activity(daily_rankings, latest_date, member_count)
         mvp = cls._compute_club_mvp(king, tank, daily_leader, consistency, latest_date, today_records)
         funny_awards = cls._compute_funny_awards(daily_rankings, daily_deltas, latest_date)
-        yesterday_results = cls._compute_yesterday_results(daily_rankings, latest_date, club_name)
+        yesterday_results = cls._compute_yesterday_results(
+            daily_rankings, latest_date, club_id
+        )
         # Export predictions for tomorrow's "Yesterday's Calls" section
         predictions_for_export = [
             {
@@ -180,36 +222,16 @@ class LeaderboardReportService:
             rivalries[0]["is_top"] = True
             rivalries[0]["month_context"] = month_name
 
-        # Compute milestone ETAs
-        milestone_etas = {}
-        for m in milestones:
-            eta = cls._compute_milestone_eta(m.name, m.total, m.milestone, daily_deltas)
-            if eta is not None:
-                milestone_etas[m.name] = eta
-
-        # Phase 3: Mood, rare achievements
-        mood = cls._determine_mood(movers, leader_change, len(overtakes))
-        rare_achievements = cls._compute_rare_achievements(daily_rankings, daily_deltas, club_record, latest_date)
-        all_awards = (funny_awards or []) + (rare_achievements or [])
-        total_movers_count = len(movers.get("climbers", [])) + len(movers.get("fallers", []))
-
-        # Phase 4: Newsworthiness scoring
-        news_events = cls._compute_newsworthiness(
-            leader_change, overtakes, tank, king, today_records, club_record,
-            movers, milestones, rare_achievements,
-        )
         # Club goal tracker
         club_goal = cls._compute_club_goal_tracker(
             daily_rankings, latest_date,
             fans_to_next_tier=fans_to_next_tier,
             fans_to_lower_tier=fans_to_lower_tier,
+            club_rank=club_rank,
+            monthly_rank=monthly_rank,
         )
         # History records
         history_records = cls._compute_history_records(daily_deltas, daily_rankings, latest_date)
-
-        # Save today's predictions for tomorrow's "Yesterday's Calls" section
-        if predictions_for_export:
-            save_predictions(club_name, latest_date, predictions_for_export)
 
         # 3. Assemble Embeds
         main_embed = discord.Embed(
@@ -223,7 +245,13 @@ class LeaderboardReportService:
         )
 
         # We'll build a list: [main_embed, overflow_embed_1, overflow_embed_2, ...]
-        embeds = [main_embed]
+        embeds = ReportEmbeds(
+            main_embed,
+            club_id,
+            club_name,
+            latest_date,
+            predictions_for_export,
+        )
         overflow_index = 1
 
         def add_field(name: str, value: str, inline: bool = False) -> None:
@@ -254,7 +282,7 @@ class LeaderboardReportService:
                 embeds.append(continuation)
 
         # --- Section 1: Headline ---
-        headline = cls._generate_headline(leader_change, king, tank, daily_rankings.get(latest_date), mood, overtakes, total_movers_count)
+        headline = cls._generate_headline(club_id, latest_date, daily_rankings)
         add_field(name="🔥 HEADLINE NEWS", value=headline + "\n\n───")
 
         # --- Section 2: Momentum ---
@@ -271,17 +299,7 @@ class LeaderboardReportService:
         if battles:
             add_field(name="THE BATTLE ZONE", value=battles + "\n\n───")
 
-        # --- Section 4: Milestones ---
-        milestone_text = cls._format_milestone_watch(milestones, milestone_etas)
-        if milestones:
-            add_field(name="MILESTONE TRACKER", value=milestone_text + "\n\n───")
-
-        # --- Section 5: Movers ---
-        condensed = cls._compute_condensed_movers(movers)
-        if condensed:
-            add_field(name="TOP MOVERS", value=cls._format_condensed_movers(condensed))
-
-        # --- Section 6: Club Activity ---
+        # --- Section 4: Club Activity ---
         if club_activity and club_activity["active_count"] > 0:
             activity_text = (
                 f"**Total fans gained today**: +{cls._fmt_fans(club_activity['total_gain'])}\n"
@@ -290,26 +308,42 @@ class LeaderboardReportService:
             )
             add_field(name="CLUB ACTIVITY", value=activity_text + "\n\n───")
 
-        # --- Section 7: History & Records ---
+        # --- Section 5: History & Records ---
         if history_records:
             add_field(name="📊 MONTHLY RECORDS", value="\n".join(history_records) + "\n\n───")
 
-        # --- Section 8: Club Goal ---
+        # --- Section 6: Club Goal ---
         if club_goal:
-            rank_str = ""
-            if club_goal.get("rank_delta") is not None and club_goal.get("monthly_rank") is not None:
-                delta = club_goal["rank_delta"]
-                arrow = "↑" if delta > 0 else "↓"
-                rank_str = f"\nRank: #{club_goal['monthly_rank']} {arrow}{abs(delta)} vs last month"
-            goal_text = (
-                f"**Progress**: [{club_goal['bar']}] {club_goal['progress_pct']:.1f}%"
-                f"{rank_str}"
+            goal_lines = []
+            tier_line = cls._format_club_tier_line(
+                club_goal.get("club_rank"), club_goal.get("monthly_rank")
             )
+            if tier_line:
+                goal_lines.append(tier_line)
+            goal_lines.extend((
+                f"**BUFFER:** {club_goal['fans_to_lower_tier']:,}",
+                f"**NEEDED:** {club_goal['fans_to_next_tier']:,}",
+            ))
+            goal_text = "\n".join(goal_lines)
             add_field(name="📈 CLUB GOAL", value=goal_text)
 
         # Set footer on the main embed
         main_embed.set_footer(text=f"{club_name} · Powering Through {month_name}")
         return embeds
+
+    @staticmethod
+    async def persist_delivered_predictions(embeds: List[discord.Embed]) -> None:
+        """Commit forecast state after every primary report embed was delivered."""
+        if not isinstance(embeds, ReportEmbeds):
+            raise TypeError("expected report embeds returned by generate_leaderboard_report")
+        # Persist an empty list too, replacing stale data from an earlier rerun.
+        await asyncio.to_thread(
+            save_prediction_snapshot,
+            embeds.club_id,
+            embeds.club_name,
+            embeds.report_date,
+            embeds.predictions,
+        )
 
     # --- Computation Logic ---
 
@@ -410,8 +444,6 @@ class LeaderboardReportService:
         if yesterday_date is not None:
             y_entries = daily_rankings.get(yesterday_date, [])
             if len(y_entries) >= 2:
-                y_top1 = y_entries[0]
-                y_top2 = y_entries[1]
                 # Find today's #1 and #2 in yesterday's data
                 y_fans_1 = next((e["fans"] for e in y_entries if e["name"] == name), None)
                 y_fans_2 = next((e["fans"] for e in y_entries if e["name"] == name_2nd), None)
@@ -830,9 +862,6 @@ class LeaderboardReportService:
             over = consistency.top_overperformer
             candidates.append(("overperformer", over["name"], f"**{over['name']}** — overperformed by +{over['pct_diff']}% today"))
 
-        # Candidate 4: Best climber
-        today_entries = []  # We don't have it here directly, skip for now
-
         if not candidates:
             return None
 
@@ -913,7 +942,7 @@ class LeaderboardReportService:
         cls,
         daily_rankings: Dict[date, List[Dict]],
         latest_date: date,
-        club_name: str,
+        club_id: UUID,
     ) -> List[Dict[str, Any]]:
         """
         Check if yesterday's predicted overtakes happened (OK / MISS).
@@ -929,7 +958,7 @@ class LeaderboardReportService:
             return []
 
         # Load yesterday's saved predictions
-        saved_predictions = load_predictions(club_name, yesterday_date)
+        saved_predictions = load_prediction_snapshot(club_id, yesterday_date)
         if saved_predictions is None:
             # No saved predictions — skip the "Yesterday's Calls" section entirely
             return []
@@ -1119,50 +1148,69 @@ class LeaderboardReportService:
         daily_rankings: Dict[date, List[Dict]],
         latest_date: date,
         monthly_rank: Optional[int] = None,
-        last_month_rank: Optional[int] = None,
         fans_to_next_tier: Optional[int] = None,
         fans_to_lower_tier: Optional[int] = None,
+        club_rank: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         """Generate club-level goal progress using API tier data."""
         today_entries = daily_rankings.get(latest_date, [])
         if not today_entries:
             return None
 
-        total_fans = sum(e["fans"] for e in today_entries)
+        tier_values = (fans_to_next_tier, fans_to_lower_tier)
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in tier_values
+        ):
+            return None
 
-        # Use real API tier data if available, otherwise fall back to estimate
-        if fans_to_next_tier is not None and fans_to_lower_tier is not None:
-            # Progress toward next tier: how far along we are between lower and next tier
-            # At the start of a tier, fans_to_lower_tier = 0, fans_to_next_tier = full gap
-            # As we progress, fans_to_lower_tier grows and fans_to_next_tier shrinks
-            total_tier_range = fans_to_next_tier + fans_to_lower_tier
-            if total_tier_range > 0:
-                progress_pct = min(100, round((fans_to_lower_tier / total_tier_range) * 100, 1))
-            else:
-                progress_pct = 0.0
-        else:
-            # Fallback: estimate S-rank target at roughly 3B for a 30-member club
-            s_rank_target = 3_000_000_000
-            progress_pct = min(100, round((total_fans / s_rank_target) * 100, 1))
+        # Uma.moe exposes the distances from the current total to both tier
+        # boundaries. Their sum is the complete range of the current tier.
+        total_tier_range = fans_to_next_tier + fans_to_lower_tier
+        if total_tier_range <= 0:
+            return None
 
-        filled = max(0, min(10, int((progress_pct / 100) * 10)))
-        bar = "▰" * filled + "▱" * (10 - filled)
+        valid_club_rank = (
+            club_rank
+            if isinstance(club_rank, int)
+            and not isinstance(club_rank, bool)
+            and 1 <= club_rank <= len(cls.CLUB_TIERS)
+            else None
+        )
+        valid_monthly_rank = (
+            monthly_rank
+            if isinstance(monthly_rank, int)
+            and not isinstance(monthly_rank, bool)
+            and monthly_rank > 0
+            else None
+        )
 
-        result = {
-            "total_fans": total_fans,
-            "progress_pct": progress_pct,
-            "bar": bar,
-            "monthly_rank": monthly_rank,
-            "last_month_rank": last_month_rank,
+        return {
+            "club_rank": valid_club_rank,
+            "monthly_rank": valid_monthly_rank,
             "fans_to_next_tier": fans_to_next_tier,
             "fans_to_lower_tier": fans_to_lower_tier,
         }
 
-        if monthly_rank is not None and last_month_rank is not None:
-            rank_delta = last_month_rank - monthly_rank  # positive = improved
-            result["rank_delta"] = rank_delta
+    @classmethod
+    def _format_club_tier_line(
+        cls, club_rank: Optional[int], monthly_rank: Optional[int]
+    ) -> str:
+        """Format lower/current/next club tiers with the live monthly rank."""
+        if club_rank is None:
+            return ""
 
-        return result
+        current = f"**{cls.CLUB_TIERS[club_rank - 1]}**"
+        if monthly_rank is not None:
+            current += f" (Rank #{monthly_rank:,})"
+
+        parts = []
+        if club_rank > 1:
+            parts.append(f"**{cls.CLUB_TIERS[club_rank - 2]}** ◀")
+        parts.append(current)
+        if club_rank < len(cls.CLUB_TIERS):
+            parts.append(f"▶ **{cls.CLUB_TIERS[club_rank]}**")
+        return " ".join(parts)
 
     @classmethod
     def _compute_history_records(
@@ -1171,31 +1219,32 @@ class LeaderboardReportService:
         daily_rankings: Dict[date, List[Dict]],
         latest_date: date,
     ) -> List[str]:
-        """Generate 'Biggest day this month', 'Highest weekly gain', etc."""
+        """Generate month-to-date records from every available daily ranking."""
         records = []
 
         # Biggest single-day gain this month
         best_delta = 0
         best_name = ""
-        for name, deltas in daily_deltas.items():
-            for d in deltas:
-                if d["delta"] > best_delta:
-                    best_delta = d["delta"]
-                    best_name = name
+        for entries in daily_rankings.values():
+            for entry in entries:
+                if entry["daily"] > best_delta:
+                    best_delta = entry["daily"]
+                    best_name = entry["name"]
         if best_delta > 0:
             records.append(f"📊 **Biggest Day**: **{best_name}** — +{best_delta:,} fans")
 
-        # Most improved position (largest single-day rank climb)
-        today_entries = daily_rankings.get(latest_date, [])
+        # Most improved position across the entire month
         best_climb = 0
         best_climber = ""
-        for e in today_entries:
-            prev = e.get("prev_rank")
-            if prev is not None:
-                climb = prev - e["rank"]
+        for entries in daily_rankings.values():
+            for entry in entries:
+                previous_rank = entry.get("prev_rank")
+                if previous_rank is None:
+                    continue
+                climb = previous_rank - entry["rank"]
                 if climb > best_climb:
                     best_climb = climb
-                    best_climber = e["name"]
+                    best_climber = entry["name"]
         if best_climb > 0:
             records.append(f"⬆️ **Biggest Climber**: **{best_climber}** — up {best_climb} spots")
 
@@ -1225,96 +1274,265 @@ class LeaderboardReportService:
         return BotMood.NEUTRAL
 
     @classmethod
+    def _headline_candidates(
+        cls, report_date: date, daily_rankings: Dict[date, List[Dict]]
+    ) -> List[HeadlineCandidate]:
+        """Use calendar-verified evidence without changing other report analytics."""
+        month_start = report_date.replace(day=1)
+        snapshots = {
+            day: {entry["name"]: entry for entry in entries}
+            for day, entries in daily_rankings.items()
+            if month_start <= day <= report_date
+        }
+        today = snapshots.get(report_date, {})
+        entries = sorted(today.values(), key=lambda e: (e["rank"], e["name"]))
+        if not entries:
+            return [HeadlineCandidate(HeadlineType.EMPTY, (), {})]
+
+        yesterday = snapshots.get(report_date - timedelta(days=1), {})
+        gains: Dict[str, Dict[date, int]] = defaultdict(dict)
+        for day, members in snapshots.items():
+            previous = snapshots.get(day - timedelta(days=1), {})
+            for name, entry in members.items():
+                if name in previous:
+                    gain = entry["fans"] - previous[name]["fans"]
+                elif day.day == 1:
+                    gain = entry["fans"]
+                else:
+                    continue
+                if gain >= 0:
+                    gains[name][day] = gain
+
+        candidates: List[HeadlineCandidate] = []
+        leaders = [e for e in entries if e["rank"] == 1]
+        old_leaders = [e for e in yesterday.values() if e["rank"] == 1]
+        if len(leaders) == len(old_leaders) == 1:
+            new, old = leaders[0], old_leaders[0]
+            if new["name"] != old["name"] and new["name"] in yesterday and old["name"] in today:
+                candidates.append(HeadlineCandidate(
+                    HeadlineType.LEADER_CHANGE, (new["name"], old["name"]),
+                    {"gap": new["fans"] - today[old["name"]]["fans"]}, rank=1,
+                ))
+
+        earlier_gains = [
+            gain for history in gains.values() for day, gain in history.items()
+            if day < report_date
+        ]
+        previous_club_best = max(earlier_gains) if earlier_gains else None
+        for entry in entries:
+            name, rank = entry["name"], entry["rank"]
+            previous = yesterday.get(name)
+            if previous and rank <= 3 and previous["rank"] - rank >= 2:
+                climb = previous["rank"] - rank
+                candidates.append(HeadlineCandidate(
+                    HeadlineType.CLIMB, (name,),
+                    {"old_rank": previous["rank"], "rank": rank, "climb": climb},
+                    climb, rank,
+                ))
+
+            gain = gains[name].get(report_date)
+            if gain is None or gain <= 0:
+                continue
+            candidates.append(HeadlineCandidate(
+                HeadlineType.DAILY_GAIN, (name,), {"gain": gain}, gain, rank,
+            ))
+            if previous_club_best is not None and gain > previous_club_best:
+                co_holders = sum(h.get(report_date) == gain for h in gains.values())
+                candidates.append(HeadlineCandidate(
+                    HeadlineType.CLUB_RECORD, (name,),
+                    {"gain": gain, "previous": previous_club_best, "shared": co_holders > 1},
+                    gain, rank,
+                ))
+            earlier = [value for day, value in gains[name].items() if day < report_date]
+            if earlier and gain > max(earlier):
+                candidates.append(HeadlineCandidate(
+                    HeadlineType.PERSONAL_BEST, (name,),
+                    {"gain": gain, "previous": max(earlier)}, gain, rank,
+                ))
+            # Match the efficiency king's sample, volume and surplus rules,
+            # but only use verified daily observations (including today).
+            history = list(gains[name].values())
+            if len(history) >= 3 and gain >= 1_000_000 and entry["surplus"] >= 0:
+                average = sum(history) / len(history)
+                pct = (gain - average) / average * 100
+                if pct >= 50:
+                    candidates.append(HeadlineCandidate(
+                        HeadlineType.BREAKOUT, (name,),
+                        {"gain": gain, "pct": pct}, pct, rank,
+                    ))
+
+        # Only podium positions are headline-worthy; Battle Zone has its own rules.
+        rank_counts: Dict[int, int] = defaultdict(int)
+        for entry in entries:
+            rank_counts[entry["rank"]] += 1
+        for target, challenger in zip(entries, entries[1:]):
+            if target["rank"] > 3:
+                continue
+            if rank_counts[target["rank"]] != 1 or rank_counts[challenger["rank"]] != 1:
+                continue
+            target_gain = gains[target["name"]].get(report_date)
+            challenger_gain = gains[challenger["name"]].get(report_date)
+            if target_gain is None or challenger_gain is None:
+                continue
+            gap = target["fans"] - challenger["fans"]
+            rate = challenger_gain - target_gain
+            if gap > 0 and rate > 0 and gap / rate <= 2:
+                candidates.append(HeadlineCandidate(
+                    HeadlineType.CHASE, (challenger["name"], target["name"]),
+                    {"gap": gap, "eta": gap / rate, "rank": target["rank"]},
+                    -(gap / rate), challenger["rank"],
+                ))
+
+        if len(leaders) == 1:
+            leader = leaders[0]
+            streak, day = 0, report_date
+            while day in snapshots:
+                day_leaders = [e["name"] for e in snapshots[day].values() if e["rank"] == 1]
+                if day_leaders != [leader["name"]]:
+                    break
+                streak += 1
+                day -= timedelta(days=1)
+            if streak in (5, 10, 15, 20, 25, 30):
+                candidates.append(HeadlineCandidate(
+                    HeadlineType.STREAK, (leader["name"],), {"streak": streak}, rank=1,
+                ))
+            candidates.append(HeadlineCandidate(
+                HeadlineType.QUIET, (leader["name"],), {"fans": leader["fans"]}, rank=1,
+            ))
+        else:
+            candidates.append(HeadlineCandidate(
+                HeadlineType.SHARED_LEAD, tuple(e["name"] for e in leaders[:2]),
+                {"fans": leaders[0]["fans"], "count": len(leaders)}, rank=1,
+            ))
+        return candidates
+
+    @classmethod
+    def _select_headline_candidate(
+        cls, candidates: List[HeadlineCandidate], rotation: int
+    ) -> HeadlineCandidate:
+        strongest: Dict[HeadlineType, HeadlineCandidate] = {}
+        for candidate in sorted(candidates, key=lambda c: (-c.strength, c.rank, c.names)):
+            strongest.setdefault(candidate.kind, candidate)
+        for kind in (HeadlineType.LEADER_CHANGE, HeadlineType.CLUB_RECORD):
+            if kind in strongest:
+                return strongest[kind]
+        stories = [strongest[kind] for kind in cls.HEADLINE_ROTATION if kind in strongest]
+        if stories:
+            return stories[rotation % len(stories)]
+        for kind in (HeadlineType.DAILY_GAIN, HeadlineType.QUIET,
+                     HeadlineType.SHARED_LEAD, HeadlineType.EMPTY):
+            if kind in strongest:
+                return strongest[kind]
+        raise ValueError("At least one headline candidate is required")
+
+    @classmethod
+    def _render_headline(cls, candidate: HeadlineCandidate, variant: int) -> str:
+        """Keep a complete hook and sentence; shorten names before escaping them."""
+        facts = candidate.facts
+        for name_limit in (80, 40, 20):
+            names = []
+            for name in candidate.names:
+                label = " ".join(name.split()) or "Trainer"
+                if len(label) > name_limit:
+                    label = label[:name_limit - 1] + "…"
+                names.append(discord.utils.escape_mentions(discord.utils.escape_markdown(
+                    label, ignore_links=False,
+                )))
+            name = names[0] if names else ""
+            other = names[1] if len(names) > 1 else ""
+            gain = cls._fmt_fans(facts.get("gain", 0))
+            previous = cls._fmt_fans(facts.get("previous", 0))
+            if "previous" in facts and gain == previous:
+                # A small real record must not read as beating the same rounded number.
+                gain = f"{facts['gain']:,}"
+                previous = f"{facts['previous']:,}"
+            kind = candidate.kind
+            if kind == HeadlineType.LEADER_CHANGE:
+                hooks = (f"{name} has taken the lead.",
+                         f"{name} moves to the front of the field.",
+                         f"{name} is the new front-runner.")
+                detail = (f"**{name}** takes **#1** from **{other}**, "
+                          f"with a **{cls._fmt_fans(facts['gap'])}-fan** lead.")
+            elif kind == HeadlineType.CLUB_RECORD:
+                hooks = (f"{name} set a record pace for the club.",
+                         f"{name} has a new entry in the club record book.",
+                         f"{name} pushed the club's daily record further.")
+                verb = "jointly sets" if facts["shared"] else "sets"
+                detail = (f"**{name}** {verb} **this month's club daily record** with "
+                          f"**+{gain} fans**, beating the previous **+{previous}**.")
+            elif kind == HeadlineType.CLIMB:
+                hooks = (f"{name} surged through the field.",
+                         f"{name} made a move into the leading three.",
+                         f"{name} gained ground among the front-runners.")
+                detail = (f"**{name}** climbs **{facts['climb']} places** today, "
+                          f"from **#{facts['old_rank']}** to **#{facts['rank']}**.")
+            elif kind == HeadlineType.PERSONAL_BEST:
+                hooks = (f"{name} just outdid their favourite rival: themselves.",
+                         f"{name} set a new personal pace.",
+                         f"{name} took their best stride yet this month.")
+                detail = (f"**+{gain} fans** gives **{name}** a **new personal best this month**, "
+                          f"up from **+{previous}**.")
+            elif kind == HeadlineType.CHASE:
+                hooks = (f"{name} is closing on {other}.",
+                         f"{name} is picking up the pace behind {other}.",
+                         f"{name} is chasing down {other}.")
+                horizon = "within a day" if facts["eta"] <= 1 else "within two days"
+                detail = (f"Just **{cls._fmt_fans(facts['gap'])} fans** separate them for "
+                          f"**#{facts['rank']}**—at today's pace, that spot could change hands {horizon}.")
+            elif kind == HeadlineType.BREAKOUT:
+                hooks = (f"{name} picked up the pace today.",
+                         f"{name} found a burst of speed.",
+                         f"{name} lengthened their stride today.")
+                detail = (f"**+{gain} fans** puts **{name}** **{facts['pct']:.1f}% above "
+                          "this month's average** daily gain.")
+            elif kind == HeadlineType.STREAK:
+                hooks = (f"{name} keeps leading the field.",
+                         f"{name} continues their run at the front.",
+                         f"{name} is holding the lead stride after stride.")
+                detail = (f"**{name}** reaches **{facts['streak']} consecutive days** "
+                          "as the sole **#1** this month, including today.")
+            elif kind == HeadlineType.DAILY_GAIN:
+                hooks = (f"{name} brought today's biggest fan haul.",
+                         f"{name} set the pace today.",
+                         f"{name} put a big number on the board.")
+                detail = (f"**{name}** posts **+{gain} fans**, "
+                          "the highest verified daily gain in this update.")
+            elif kind == HeadlineType.QUIET:
+                hooks = (f"{name} leads the field.",
+                         f"{name} holds the front-running position.",
+                         f"{name} heads the pack.")
+                detail = f"**{name}** sits at **#1** with **{cls._fmt_fans(facts['fans'])} fans** this month."
+            elif kind == HeadlineType.SHARED_LEAD:
+                hooks = ("The front-runners are level.", "It's neck and neck at the front.",
+                         "The lead is shared at this stage.")
+                remaining = facts["count"] - 2
+                participants = f"**{name}** and **{other}**"
+                if remaining > 0:
+                    participants = (f"**{name}**, **{other}** and {remaining} "
+                                    f"{'other' if remaining == 1 else 'others'}")
+                detail = (f"{participants} share **#1** "
+                          f"with **{cls._fmt_fans(facts['fans'])} fans each** this month.")
+            else:
+                hooks = ("The field is awaiting its first update.", "No pace to report just yet.",
+                         "The first leaderboard update is still to come.")
+                detail = "No leaderboard observations are available for this update."
+            headline = f"**{hooks[variant % len(hooks)]}**\n{detail}"
+            if len(headline + "\n\n───") <= cls.FIELD_MAX:
+                return headline
+        raise ValueError("Headline facts exceed the Discord field limit")
+
+    @classmethod
     def _generate_headline(
-        cls,
-        leader_change: Dict[str, Any],
-        king: Optional[EfficiencyKing],
-        tank: Optional[TankAnalysis],
-        today_entries: Optional[List[Dict]],
-        mood: BotMood,
-        overtakes: List[Overtake],
-        movers_count: int,
+        cls, club_id: UUID, report_date: date, daily_rankings: Dict[date, List[Dict]]
     ) -> str:
-        """Generate varied headline types based on the day's events."""
-        # Priority 1: Leader change
-        if leader_change["changed"]:
-            streak = leader_change["old_streak"]
-            old = leader_change["old_leader"]
-            new_ld = leader_change["new_leader"]
-            swaps = leader_change["swap_count_7d"]
-
-            if swaps >= 3:
-                return (
-                    f"🌪️ Absolute chaos at the top! **{new_ld}** retakes #1 from **{old}** "
-                    f"— the crown has changed hands {swaps} times this week!"
-                )
-            if streak >= 5:
-                return (
-                    f"👑 **{new_ld}** dethrones **{old}** after a dominant **{streak}-day reign**!"
-                )
-            if streak >= 3:
-                return (
-                    f"🏆 **{new_ld}** has overtaken **{old}** for #1! "
-                    f"({streak} day streak broken!)"
-                )
-            return (
-                f"🏆 **{new_ld}** has overtaken **{old}** for #1!"
-            )
-
-        # Priority 2: Domination (king is also #1)
-        if king and tank and king.name == tank.name:
-            return (
-                f"👑 **{king.name}** is dominating the field, "
-                f"leading in both momentum and defensive surplus!"
-            )
-
-        # Priority 3: Streak headline
-        if tank and tank.is_dynasty and tank.daily_gain > tank.daily_gain_2nd:
-            return (
-                f"🔥 **{tank.name}** extends their reign to **{tank.streak} days** at #1 — "
-                f"no one can keep up!"
-            )
-
-        # Priority 4: Clutch / milestone focus
-        if king and king.pct_above_avg > 100:
-            return (
-                f"🎯 **{king.name}** is on fire — performing **{king.pct_above_avg}%** above their average!"
-            )
-
-        # Priority 5: Chaos (many overtakes)
-        if len(overtakes) >= 2 and movers_count >= 3:
-            return (
-                f"🌪️ Four positions changed today — the most movement we've seen this week!"
-            )
-
-        # Priority 6: Comeback (leader losing ground)
-        if tank and tank.pressure_streak >= 2:
-            return (
-                f"⚔️ **{tank.name_2nd}** is breathing down **{tank.name}**'s neck — "
-                f"{tank.pressure_streak} days of mounting pressure!"
-            )
-
-        # Priority 7: Standard breakout star
-        if king:
-            return (
-                f"🔥 **{king.name}** is today's breakout star, "
-                f"performing {king.pct_above_avg}% above their usual pace!"
-            )
-
-        # Priority 8: Peaceful / quiet day
-        if today_entries:
-            top = today_entries[0]
-            if mood == BotMood.PEACEFUL:
-                return (
-                    f"😌 A quiet day across the leaderboard. "
-                    f"**{top['name']}** holds steady at #1 with {cls._fmt_fans(top['fans'])} fans."
-                )
-            return (
-                f"👑 **{top['name']}** remains steady at #1 "
-                f"with {cls._fmt_fans(top['fans'])} fans."
-            )
-
-        return "_Leaderboard remains stable._"
+        rotation = report_date.toordinal() + club_id.int
+        candidates = cls._headline_candidates(report_date, daily_rankings)
+        candidate = cls._select_headline_candidate(candidates, rotation)
+        type_count = len({c.kind for c in candidates if c.kind in cls.HEADLINE_ROTATION})
+        # Advance hooks on each tour through the eligible types, even with 3 types.
+        cadence = max(1, type_count) if candidate.kind in cls.HEADLINE_ROTATION else 1
+        variant = rotation // cadence + list(HeadlineType).index(candidate.kind)
+        return cls._render_headline(candidate, variant)
 
     @classmethod
     def _compute_rare_achievements(
@@ -1660,7 +1878,7 @@ class LeaderboardReportService:
             matched_pbs = [m for m in records["members"] if m["is_tie"]]
 
             if true_pbs:
-                pb_lines = [f"**🏆 New PBs**"]
+                pb_lines = ["**🏆 New PBs**"]
                 for m in true_pbs:
                     prev = cls._fmt_fans(m["prev_best_delta"]) if m["prev_best_delta"] is not None else "N/A"
                     pb_lines.append(
@@ -1670,7 +1888,7 @@ class LeaderboardReportService:
                 parts.append("\n".join(pb_lines))
 
             if matched_pbs:
-                matched_lines = [f"**⚖️ Matched PBs**"]
+                matched_lines = ["**⚖️ Matched PBs**"]
                 for m in matched_pbs:
                     matched_lines.append(
                         f"**{m['name']}** — matched their PB of **+{cls._fmt_fans(m['delta'])}**"

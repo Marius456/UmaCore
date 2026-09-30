@@ -35,8 +35,17 @@ class TriviaLeaderboardEntry:
     @classmethod
     async def upsert(cls, user_id: int, highest_streak: int, total_correct: int) -> 'TriviaLeaderboardEntry':
         """Insert or update a user's stats"""
+        entry, _ = await cls.record_result(user_id, highest_streak, total_correct)
+        return entry
+
+    @classmethod
+    async def record_result(
+        cls, user_id: int, streak: int, total_correct: int
+    ) -> tuple['TriviaLeaderboardEntry', bool]:
+        """Atomically update stats and report whether the streak beat the old PB."""
         query = """
-            INSERT INTO trivia_leaderboard (user_id, highest_streak, total_correct, last_played)
+            INSERT INTO trivia_leaderboard
+                (user_id, highest_streak, total_correct, last_played)
             VALUES ($1, $2, $3, NOW())
             ON CONFLICT (user_id) DO UPDATE
             SET highest_streak = GREATEST(trivia_leaderboard.highest_streak, $2),
@@ -44,9 +53,22 @@ class TriviaLeaderboardEntry:
                 last_played = NOW()
             RETURNING user_id, highest_streak, total_correct, last_played
         """
-        row = await db.fetchrow(query, user_id, highest_streak, total_correct)
-        logger.info(f"Updated trivia stats for user {user_id}: streak={highest_streak}, total_correct={total_correct}")
-        return cls(**dict(row))
+        async with db.transaction() as conn:
+            # SELECT FOR UPDATE cannot lock an absent row. The advisory lock
+            # covers both first insert and subsequent updates for this user.
+            await conn.execute("SELECT pg_advisory_xact_lock($1)", user_id)
+            previous = await conn.fetchval(
+                "SELECT highest_streak FROM trivia_leaderboard WHERE user_id = $1",
+                user_id,
+            )
+            row = await conn.fetchrow(query, user_id, streak, total_correct)
+        data = dict(row)
+        is_new_record = previous is None or streak > previous
+        logger.info(
+            f"Updated trivia stats for user {user_id}: "
+            f"streak={streak}, total_correct={total_correct}"
+        )
+        return cls(**data), is_new_record
 
     @classmethod
     async def get_top(cls, n: int = 10) -> List['TriviaLeaderboardEntry']:

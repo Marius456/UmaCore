@@ -36,13 +36,3 @@ Reactivate a previously deactivated member.
 |---|---|---|
 | `trainer_name` | Yes | Trainer name to reactivate |
 | `club` | Yes | Target club |
-
----
-
-## /bomb_status
-
-View all currently active bombs for a club, including how many days remain on each.
-
-| Parameter | Required | Description |
-|---|---|---|
-| `club` | Yes | Target club |

@@ -9,30 +9,20 @@ import logging
 import pytz
 
 from models import Club
-from services import MonthlyInfoService
+from services.monthly_info_service import MonthlyInfoService
+from .common import ClubAutocompleteMixin
 
 logger = logging.getLogger(__name__)
 
 
-class SettingsCommands(commands.Cog):
+class SettingsCommands(ClubAutocompleteMixin, commands.Cog):
     """Channel and bot configuration commands"""
+
+    club_autocomplete = ClubAutocompleteMixin.club_autocomplete
     
     def __init__(self, bot):
         self.bot = bot
         self.monthly_info_service = MonthlyInfoService()
-    
-    async def club_autocomplete(self, interaction: discord.Interaction, current: str):
-        """Autocomplete for club names visible in this guild"""
-        try:
-            club_names = await Club.get_names_for_guild(interaction.guild_id)
-            return [
-                app_commands.Choice(name=name, value=name)
-                for name in club_names
-                if current.lower() in name.lower()
-            ][:25]
-        except Exception as e:
-            logger.error(f"Error in club autocomplete: {e}")
-            return []
     
     @app_commands.command(name="set_report_channel", description="Set the channel for daily reports")
     @app_commands.checks.has_permissions(administrator=True)
@@ -41,7 +31,7 @@ class SettingsCommands(commands.Cog):
         await interaction.response.defer()
         
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -64,7 +54,7 @@ class SettingsCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in set_report_channel: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="set_alert_channel", description="Set the channel for alerts (kicks, warnings)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -73,7 +63,7 @@ class SettingsCommands(commands.Cog):
         await interaction.response.defer()
         
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -96,7 +86,7 @@ class SettingsCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in set_alert_channel: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="channel_settings", description="View current channel configuration")
     @app_commands.checks.has_permissions(administrator=True)
@@ -105,7 +95,7 @@ class SettingsCommands(commands.Cog):
         await interaction.response.defer()
         
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -237,7 +227,7 @@ class SettingsCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in channel_settings: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="post_monthly_info", description="Post the monthly info board (auto-updates)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -246,7 +236,7 @@ class SettingsCommands(commands.Cog):
         await interaction.response.defer()
         
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -294,7 +284,7 @@ class SettingsCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error in post_monthly_info: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
     
     @app_commands.command(name="set_leaderboard_channel", description="Set the channel for daily leaderboard news reports")
     @app_commands.checks.has_permissions(administrator=True)
@@ -303,7 +293,7 @@ class SettingsCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -326,7 +316,7 @@ class SettingsCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in set_leaderboard_channel: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     @app_commands.command(name="set_events_channel", description="Set the channel for event starting/ending-soon notifications")
     @app_commands.checks.has_permissions(administrator=True)
@@ -335,7 +325,7 @@ class SettingsCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            club_obj = await Club.get_by_name(club)
+            club_obj = await Club.get_by_name(club, interaction.guild_id)
             if not club_obj:
                 await interaction.followup.send(f"❌ Club '{club}' not found")
                 return
@@ -358,7 +348,7 @@ class SettingsCommands(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in set_events_channel: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send("❌ An unexpected error occurred. Please try again later.")
 
     # Apply autocomplete
     set_report_channel.autocomplete('club')(club_autocomplete)

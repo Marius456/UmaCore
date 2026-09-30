@@ -11,8 +11,8 @@ Register a new club to track.
 | Parameter | Required | Description |
 |---|---|---|
 | `club_name` | Yes | Name of the club |
-| `scrape_url` | Yes | ChronoGenesis URL for the club |
-| `circle_id` | No | Numeric ID from uma.moe (recommended) |
+| `circle_id` | Yes | Numeric ID from Uma.moe |
+| `scrape_url` | No | Legacy metadata URL; omitted values use the Uma.moe club URL |
 | `daily_quota` | No | Fan goal per period (default: 1,000,000) |
 | `quota_period` | No | `daily`, `weekly`, or `biweekly` (default: daily) |
 | `timezone` | No | IANA timezone (default: Europe/Amsterdam) |
@@ -65,8 +65,4 @@ Modify settings for an existing club.
 | `quota_period` | No | Update quota period (`daily`, `weekly`, `biweekly`) |
 | `scrape_time` | No | Update daily check time (HH:MM) |
 | `timezone` | No | Update timezone |
-| `bomb_trigger_days` | No | Days behind before bomb activates (default: 3) |
-| `bomb_countdown_days` | No | Days to get back on track (default: 7) |
-| `bombs_enabled` | No | Enable or disable bomb system (`true`/`false`) |
-
 Only include the parameters you want to change.
