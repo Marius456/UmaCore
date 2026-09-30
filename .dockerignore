@@ -3,6 +3,7 @@
 .env
 .env.*
 .runtime-deps
+.codex-remote-attachments
 node_modules
 .umamoe_cookies
 .umamusume_cookies

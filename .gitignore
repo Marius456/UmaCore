@@ -240,6 +240,8 @@ geckodriver
 # ============================================
 # Project Specific
 # ============================================
+.codex-remote-attachments/
+
 # Any personal test files
 test_*.py
 scratch_*.py
