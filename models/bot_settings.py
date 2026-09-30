@@ -83,7 +83,7 @@ class BotSettings:
         await cls.set('monthly_info_channel_id', str(channel_id))
         await cls.set('monthly_info_message_id', str(message_id))
 
-    # Note: leaderboard_channel_id and gacha_channel_id moved to per-club storage
-    # in the clubs table. Use club.leaderboard_channel_id / club.gacha_channel_id
-    # and club_obj.set_channels(leaderboard_channel_id=..., gacha_channel_id=...)
+    # Note: leaderboard_channel_id and events_channel_id moved to per-club storage
+    # in the clubs table. Use club.leaderboard_channel_id / club.events_channel_id
+    # and club_obj.set_channels(leaderboard_channel_id=..., events_channel_id=...)
     # instead of these global settings.

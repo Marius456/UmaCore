@@ -180,15 +180,15 @@ class Database:
             END IF;
         END $$;
 
-        -- Migration: Add gacha_channel_id column if it doesn't exist
+        -- Migration: Add events_channel_id column if it doesn't exist
         DO $$
         BEGIN
             IF NOT EXISTS (
                 SELECT 1 FROM information_schema.columns
-                WHERE table_name='clubs' AND column_name='gacha_channel_id'
+                WHERE table_name='clubs' AND column_name='events_channel_id'
             ) THEN
-                ALTER TABLE clubs ADD COLUMN gacha_channel_id BIGINT;
-                RAISE NOTICE 'Added gacha_channel_id column to clubs';
+                ALTER TABLE clubs ADD COLUMN events_channel_id BIGINT;
+                RAISE NOTICE 'Added events_channel_id column to clubs';
             END IF;
         END $$;
 

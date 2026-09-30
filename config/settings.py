@@ -24,6 +24,9 @@ USE_UMAMOE_API = os.getenv("USE_UMAMOE_API", "true").lower() == "true"
 # Playwright Configuration (for Cloudflare-bypassed scraping)
 PLAYWRIGHT_COOKIE_DIR = os.getenv("PLAYWRIGHT_COOKIE_DIR", ".umamoe_cookies")
 
+# Official Events Scraper Configuration
+EVENTS_JSON_PATH = os.getenv("EVENTS_JSON_PATH", "data/events.json")
+
 # Timezone Configuration
 TIMEZONE = "Europe/Amsterdam"  # CEST
 DAILY_REPORT_TIME = "16:00"
