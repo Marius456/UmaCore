@@ -926,7 +926,12 @@ class LeaderboardReportService:
                 prev_day_rank = previous_lookup.get(name)
                 # Compute daily delta: difference from previous available day
                 last_fans = prev_day_fans.get(name)
-                daily = fans - last_fans if last_fans is not None else 0
+                if last_fans is None:
+                    # First day of data for this member (e.g., month reset).
+                    # Treat cumulative_fans as today's gain.
+                    daily = fans
+                else:
+                    daily = fans - last_fans
 
                 entries.append({
                     "name": name,

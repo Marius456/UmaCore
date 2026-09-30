@@ -78,8 +78,17 @@ class NotificationService:
             except Exception as e:
                 logger.error(f"Error sending bomb notification to {user_link.discord_user_id}: {e}")
     
-    async def send_deficit_notifications(self, club_name: str, members_data: List[Dict]):
+    async def send_deficit_notifications(self, club_name: str, members_data: List[Dict], current_date=None):
         """Send DM notifications to users who are behind quota (once per day)"""
+        # Skip deficit notifications during the first 4 days of a new month
+        # to avoid noisy alerts while fresh month data is still settling.
+        if current_date is not None and current_date.day < 5:
+            logger.info(
+                f"Skipping deficit notifications for {club_name} "
+                f"(day {current_date.day} < 5, new month data settling)"
+            )
+            return
+
         user_links = await UserLink.get_all_with_deficit_notifications()
         
         for item in members_data:
