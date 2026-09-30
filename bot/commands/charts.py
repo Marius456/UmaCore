@@ -13,7 +13,6 @@ import pytz
 import aiohttp
 
 from models import Club, QuotaHistory, QuotaRequirement
-from scrapers import UmaMoeAPIScraper
 
 UMAMOE_API_URL = "https://uma.moe/api/v4/circles"
 
@@ -72,42 +71,6 @@ async def _fetch_previous_month_totals(circle_id: str, year: int, month: int) ->
     return results
 
 logger = logging.getLogger(__name__)
-
-
-async def _fetch_via_scraper(circle_id: str) -> tuple[dict[str, dict], int, int, int]:
-    """
-    Fetch full-month fan progression by reusing UmaMoeAPIScraper.
-
-    Returns (member_data, current_day, fetched_year, fetched_month) where
-    member_data maps trainer_name -> {dates: [str], fans: [int]} using
-    dd.mm date strings and monthly-cumulative fan values.
-    """
-    scraper = UmaMoeAPIScraper(circle_id)
-    parsed_data = await scraper.scrape()
-
-    current_day = scraper.current_day_count
-    year = scraper._fetched_year
-    month = scraper._fetched_month
-
-    member_data: dict[str, dict] = {}
-    for data in parsed_data.values():
-        name = data["name"]
-        join_day = data["join_day"]
-        fans_array: list[int] = data["fans"]  # monthly cumulative, index 0 = day 1
-
-        dates: list[str] = []
-        fans: list[int] = []
-        for day_idx, monthly_val in enumerate(fans_array):
-            day_num = day_idx + 1
-            if day_num < join_day:
-                continue  # skip pre-join zeros
-            dates.append(date(year, month, day_num).strftime("%d.%m"))
-            fans.append(monthly_val)
-
-        if dates:
-            member_data[name] = {"dates": dates, "fans": fans}
-
-    return member_data, current_day, year, month
 
 
 def _build_chart(member_data: dict[str, dict]) -> bytes:
@@ -233,41 +196,23 @@ class ChartCommands(commands.Cog):
             now = datetime.now(club_tz)
 
             display_month_label = now.strftime("%B %Y")
-            member_data: dict[str, dict] | None = None
 
-            # Uma.moe API path: full month data from the scraper
-            if club_obj.circle_id and club_obj.is_circle_id_valid():
-                try:
-                    member_data, _, fetched_year, fetched_month = await _fetch_via_scraper(
-                        club_obj.circle_id
-                    )
-                    display_month_label = datetime(fetched_year, fetched_month, 1).strftime("%B %Y")
-                    logger.info(
-                        f"progress_chart: fetched {len(member_data)} members from API for {club}"
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Uma.moe API fetch failed for chart ({club}), falling back to DB: {e}"
-                    )
-                    member_data = None
-
-            # DB fallback for ChronoGenesis clubs or API failures
-            if member_data is None:
-                rows = await QuotaHistory.get_current_month_for_club(
-                    club_obj.club_id, now.year, now.month
+            # Always use database (quota_history) for chart data
+            rows = await QuotaHistory.get_current_month_for_club(
+                club_obj.club_id, now.year, now.month
+            )
+            if not rows:
+                await interaction.followup.send(
+                    f"❌ No data available for **{club}** this month yet."
                 )
-                if not rows:
-                    await interaction.followup.send(
-                        f"❌ No data available for **{club}** this month yet."
-                    )
-                    return
-                member_data = {}
-                for row in rows:
-                    name = row["trainer_name"]
-                    if name not in member_data:
-                        member_data[name] = {"dates": [], "fans": []}
-                    member_data[name]["dates"].append(row["date"].strftime("%d.%m"))
-                    member_data[name]["fans"].append(row["cumulative_fans"])
+                return
+            member_data: dict[str, dict] = {}
+            for row in rows:
+                name = row["trainer_name"]
+                if name not in member_data:
+                    member_data[name] = {"dates": [], "fans": []}
+                member_data[name]["dates"].append(row["date"].strftime("%d.%m"))
+                member_data[name]["fans"].append(row["cumulative_fans"])
 
             if not member_data:
                 await interaction.followup.send(

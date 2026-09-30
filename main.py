@@ -10,6 +10,7 @@ from config.settings import DISCORD_TOKEN, DATABASE_URL, BOT_API_PORT
 from bot import create_bot
 from bot.api_server import start_api_server
 from utils.logger import setup_logging
+from scrapers.umamoe_api_scraper import _close_browser as _close_playwright
 
 # Setup logging
 setup_logging()
@@ -62,6 +63,10 @@ async def main():
         if db.pool:
             logger.info("Closing database connection...")
             await db.disconnect()
+        
+        # Clean up shared Playwright browser
+        logger.info("Closing Playwright browser...")
+        await _close_playwright()
         
         logger.info("Shutdown complete")
 

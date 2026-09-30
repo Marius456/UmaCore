@@ -170,7 +170,7 @@ class QuotaHistory:
         """Get all quota history rows for a club in a given month, joined with trainer names.
         Returns raw asyncpg records with (date, cumulative_fans, trainer_name)."""
         query = """
-            SELECT qh.date, qh.cumulative_fans, m.trainer_name
+            SELECT qh.date, qh.cumulative_fans, qh.deficit_surplus, m.trainer_name
             FROM quota_history qh
             JOIN members m ON m.member_id = qh.member_id
             WHERE qh.club_id = $1

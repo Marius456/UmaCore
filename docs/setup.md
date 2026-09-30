@@ -20,6 +20,7 @@ cd UmaCore
 
 ```bash
 pip install -r requirements.txt
+python -m playwright install chromium
 ```
 
 ### 3. Create a PostgreSQL database

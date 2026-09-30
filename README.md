@@ -95,6 +95,7 @@ After inviting, use `/add_club` to register your club and `/set_report_channel` 
    git clone https://github.com/oHaruki/UmaCore.git
    cd UmaCore
    pip install -r requirements.txt
+   python -m playwright install chromium
    ```
 
 2. Create a `.env` file:
