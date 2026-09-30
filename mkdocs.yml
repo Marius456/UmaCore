@@ -38,6 +38,7 @@ nav:
   - Architecture: architecture.md
   - Quota System: quota-system.md
   - Data Sources: data-sources.md
+  - Horse Photo Trivia: horse-trivia.md
   - Commands:
       - Overview: commands/README.md
       - Club Management: commands/club-management.md

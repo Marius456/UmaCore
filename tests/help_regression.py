@@ -55,6 +55,7 @@ class HelpCommandTests(unittest.IsolatedAsyncioTestCase):
                 "link_trainer", "unlink", "my_status", "notification_settings",
                 "list_clubs", "member_status", "progress_chart", "previous_month",
                 "gacha", "trivia play", "trivia leaderboard", "privacy",
+                "trivia horse", "trivia horse_leaderboard",
             })
             registered = {cmd.qualified_name: cmd for cmd in bot.tree.walk_commands()}
             for name, arguments in actual.items():

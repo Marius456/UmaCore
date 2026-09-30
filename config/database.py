@@ -494,6 +494,35 @@ class Database:
             total_correct INTEGER NOT NULL DEFAULT 0,
             last_played TIMESTAMPTZ DEFAULT NOW()
         );
+
+        CREATE TABLE IF NOT EXISTS horse_trivia_questions (
+            id SERIAL PRIMARY KEY,
+            seed_key TEXT UNIQUE,
+            options JSONB NOT NULL,
+            correct_answer TEXT NOT NULL,
+            image_reference TEXT NOT NULL,
+            source_url TEXT NOT NULL,
+            author TEXT NOT NULL,
+            license TEXT NOT NULL,
+            license_url TEXT NOT NULL DEFAULT '',
+            modifications TEXT NOT NULL DEFAULT 'None',
+            global_available BOOLEAN NOT NULL DEFAULT FALSE,
+            deleted_at TIMESTAMPTZ
+        );
+
+        ALTER TABLE horse_trivia_questions
+            ADD COLUMN IF NOT EXISTS global_available BOOLEAN NOT NULL DEFAULT FALSE;
+
+        CREATE TABLE IF NOT EXISTS horse_trivia_leaderboard (
+            user_id BIGINT PRIMARY KEY,
+            highest_streak INTEGER NOT NULL DEFAULT 0,
+            total_correct INTEGER NOT NULL DEFAULT 0,
+            best_mode TEXT NOT NULL DEFAULT 'japanese',
+            last_played TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        ALTER TABLE horse_trivia_leaderboard
+            ADD COLUMN IF NOT EXISTS best_mode TEXT NOT NULL DEFAULT 'japanese';
         """
         
         try:

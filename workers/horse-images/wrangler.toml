@@ -1,0 +1,10 @@
+name = "umacore-horse-images"
+main = "worker.mjs"
+compatibility_date = "2026-09-28"
+workers_dev = true
+preview_urls = false
+
+[vars]
+HORSE_IMAGE_ALLOWED_HOSTS = "assets.st-note.com,i.daily.jp,jbpress.ismcdn.jp,jra-van.jp,meiba.jp,pbs.twimg.com,stat.ameba.jp,tospo-keiba.jp,uma-furi.com,upload.wikimedia.org,www.meiba.jp"
+
+# Set HORSE_IMAGE_PROXY_KEY using `wrangler secret put`, never here.
