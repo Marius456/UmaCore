@@ -9,22 +9,29 @@ import json
 from pathlib import Path
 import re
 import time
+import unicodedata
 
 import aiohttp
 
 from services.trainer_profile_service import portrait_url
 
 
+def portrait_name_key(name):
+    # OCR and catalogues differ on spaces and punctuation (T.M. Opera O / T M Opera O).
+    normalized = unicodedata.normalize('NFKC', str(name)).casefold()
+    return ''.join(character for character in normalized if character.isalnum())
+
+
 @lru_cache(maxsize=1)
 def portrait_ids():
     roster = Path(__file__).resolve().parents[1] / 'assets/horse_trivia/gametora_support_roster.json'
     # The archive has names, not card IDs. Use each character's original outfit portrait.
-    return {row['name'].casefold(): row['char_id'] * 100 + 1
+    return {portrait_name_key(row['name']): row['char_id'] * 100 + 1
             for row in json.loads(roster.read_text('utf-8'))['horses']}
 
 
 def uma_portrait(name):
-    return portrait_url(portrait_ids().get(str(name).strip().casefold()))
+    return portrait_url(portrait_ids().get(portrait_name_key(name)))
 
 
 def grade_icon(grade):

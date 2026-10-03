@@ -133,6 +133,9 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
             logger.warning('Uma archive card rendering failed; using text', exc_info=True)
             return None
         embed.clear_fields()
+        embed.title = None
+        embed.description = None
+        embed.remove_footer()
         embed.set_image(url='attachment://uma-archive.png')
         return discord.File(io.BytesIO(image), 'uma-archive.png')
 

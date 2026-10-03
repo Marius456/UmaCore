@@ -14,6 +14,9 @@ class ArchiveCardTests(unittest.TestCase):
     def test_portrait_mapping_and_missing_character_fallback(self):
         self.assertTrue(uma_portrait('Special Week').endswith('chara_stand_100101.webp'))
         self.assertIsNone(uma_portrait('Unknown Uma'))
+        for name in ['T.M. Opera O', 'T M Opera O', 'TM Opera O', ' Ｔ．Ｍ． Opera O ']:
+            with self.subTest(name=name):
+                self.assertTrue(uma_portrait(name).endswith('chara_stand_101501.webp'))
 
     def test_card_escapes_user_text_and_includes_local_images_without_dates(self):
         row = dict(uma_name='Special Week', variant='Original', trainer_name='<script>alert(1)</script>',

@@ -133,6 +133,9 @@ class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response['file'].filename, 'uma-archive.png')
         self.assertEqual(response['embed'].image.url, 'attachment://uma-archive.png')
         self.assertEqual(response['embed'].fields, [])
+        self.assertIsNone(response['embed'].title)
+        self.assertIsNone(response['embed'].description)
+        self.assertIsNone(response['embed'].footer.text)
         self.assertNotIn('<t:', str(response['embed'].to_dict()))
         self.assertNotIn('Scanned', str(response['embed'].to_dict()))
         self.assertEqual(renderer.await_args.args[0], [row])
@@ -343,13 +346,13 @@ class ArchivePaginationTests(unittest.IsolatedAsyncioTestCase):
         club_id = uuid4()
         cog._club = AsyncMock(return_value=club_id)
         with patch.object(UmaArchive, 'leaderboard', new=AsyncMock(return_value=[entry()])) as fetch, \
-             patch('bot.commands.uma_archive.render_card', new=AsyncMock(return_value=b'png')):
+             patch('bot.commands.uma_archive.render_card', new=AsyncMock(return_value=b'png')) as renderer:
             await cog.leaderboard.callback(cog, ctx, 'Special Week', 'Original', 'Club')
             view = ctx.followup.send.await_args.kwargs['view']
             self.addCleanup(view.stop)
             await view.next.callback(ctx)
         fetch.assert_awaited_with(None, club_id, 'Special Week', 'Original', 2)
-        self.assertIn('Page 2/3', ctx.edit_original_response.await_args.kwargs['embed'].footer.text)
+        self.assertIn('Page 2/3', renderer.await_args.args[3])
 
     async def test_personal_buttons_stop_if_link_changes(self):
         cog, ctx = UmaArchiveCommands(None), interaction()
