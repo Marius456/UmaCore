@@ -97,38 +97,44 @@ def card_html(rows, title, subtitle, footer, images, *, personal=False):
                   text(''.join(word[0] for word in row['uma_name'].split()[:2])))
         grade = f'<img class="grade" src="{icon}" alt="{text(row["rank"])}">' if icon else ''
         name = row['uma_name'] if personal else row['trainer_name']
-        detail = row['variant'] if personal else row['club_name']
-        uma = '' if personal else f'<div class="uma">{text(row["uma_name"])} · {text(row["variant"])}</div>'
+        club = '' if personal else f'<span class="club"> · {text(row["club_name"])}</span>'
+        detail = (text(row['variant']) if personal else
+                  f'{text(row["uma_name"])} · {text(row["variant"])}')
         position = (f'#{row["position"]} / {row["participants"]}' if personal
                     else f'#{row["position"]}')
         parts.append(f'''<section class="row"><div class="position">{position}</div>
-            <div class="portrait">{avatar}</div><div class="identity"><h2>{text(name)}</h2>
-            <div class="muted">{text(detail)}</div>{uma}</div>
+            <div class="portrait">{avatar}</div><div class="identity"><h2>{text(name)}{club}</h2>
+            <div class="muted">{detail}</div></div>
             <div class="grade-box">{grade}<span>{text(row['rank'])}</span></div>
             <div class="score">{row['score']:,}</div></section>''')
     return f'''<!doctype html><html><head><meta charset="utf-8"><style>
         * {{box-sizing:border-box}} body {{margin:0;background:#0b0b0e;color:#e7e4ef;
-            font-family:Arial,sans-serif}} #card {{width:1024px;padding:32px 40px}}
-        header {{padding-bottom:24px;border-bottom:3px solid #2397d1;margin-bottom:20px}}
-        h1 {{font-size:32px;margin:0 0 12px;overflow-wrap:anywhere}}
-        .subtitle {{color:#a098b1;font-size:17px;line-height:26px;white-space:pre-line}}
-        .row {{display:flex;align-items:center;gap:18px;padding:16px 18px;
-            border-radius:14px;min-height:108px;margin-bottom:8px;background:#14131a}}
+            font-family:Arial,sans-serif}} #card {{width:1024px;padding:24px 32px}}
+        header {{padding-bottom:16px;border-bottom:3px solid #2397d1;margin-bottom:16px}}
+        h1 {{font-size:32px;margin:0 0 8px;overflow-wrap:anywhere}}
+        .subtitle {{color:#a098b1;font-size:17px;line-height:24px;white-space:pre-line;
+            overflow-wrap:anywhere}}
+        .row {{display:flex;align-items:center;gap:16px;padding:10px 16px;
+            border-radius:14px;height:80px;margin-bottom:6px;background:#14131a}}
         .row:nth-child(even) {{background:#1b1922}}
-        .position {{width:{'114' if personal else '58'}px;flex-shrink:0;color:#f7cc35;
-            font-size:{'19' if personal else '24'}px;font-weight:bold}}
-        .portrait {{width:72px;height:72px;flex-shrink:0;border-radius:50%;overflow:hidden;
+        .position {{width:{'160' if personal else '72'}px;flex-shrink:0;color:#f7cc35;
+            font-size:{'19' if personal else '24'}px;font-weight:bold;white-space:nowrap;
+            overflow:hidden;text-overflow:ellipsis}}
+        .portrait {{width:60px;height:60px;flex-shrink:0;border-radius:50%;overflow:hidden;
             background:#292337;border:2px solid #2397d1;display:flex;align-items:center;
             justify-content:center;font-size:24px;color:#aca2c5}}
         .portrait img {{width:100%;height:100%;object-fit:cover;transform:scale(1.6);
             transform-origin:50% 25%}}
-        .identity {{flex:1;min-width:0}} h2 {{font-size:23px;margin:0 0 6px;
-            overflow-wrap:anywhere}} .muted {{font-size:16px;color:#a098b1;overflow-wrap:anywhere}}
-        .uma {{font-size:16px;margin-top:6px;color:#c3bbd2;overflow-wrap:anywhere}}
+        .identity {{flex:1;min-width:0}} h2 {{font-size:23px;line-height:28px;margin:0 0 4px;
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+        .club {{font-size:16px;font-weight:normal;color:#a098b1}}
+        .muted {{font-size:16px;line-height:20px;color:#a098b1;white-space:nowrap;
+            overflow:hidden;text-overflow:ellipsis}}
         .grade-box {{width:80px;flex-shrink:0;text-align:center}} .grade {{width:76px;
             height:44px;object-fit:contain}} .grade-box span {{display:block;font-size:13px;color:#a098b1}}
         .score {{width:112px;flex-shrink:0;text-align:right;font-size:26px;font-weight:bold;color:#f7cc35}}
-        footer {{margin-top:22px;font-size:15px;line-height:23px;color:#8b829d}}
+        footer {{margin-top:14px;font-size:15px;line-height:22px;color:#8b829d;
+            overflow-wrap:anywhere}}
         </style></head><body><main id="card"><header><h1>{text(title)}</h1>
         <div class="subtitle">{text(subtitle)}</div></header>{''.join(parts)}
         <footer>{text(footer)}</footer></main></body></html>'''

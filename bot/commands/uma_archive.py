@@ -41,6 +41,28 @@ def add_score_fields(embed, rows, *, personal=False):
         embed.add_field(name=name, value=value, inline=False)
 
 
+def text_summary(embed):
+    """Keep every entry and the page footer inside Discord's content limit."""
+    def clipped(value, limit):
+        value = str(value or '').replace('**', '')
+        if len(value) <= limit:
+            return value
+        return value[:limit - 1].rstrip('\\') + '…'
+
+    header = '\n'.join(filter(None, [clipped(embed.title, 150),
+                                      clipped(embed.description, 500)]))
+    footer = clipped(embed.footer.text, 250)
+    fields = embed.fields
+    # Reserve two newlines around each entry, plus the header/footer separator.
+    budget = (2000 - len(header) - len(footer) - 2 - 2 * len(fields)) // max(1, len(fields))
+    entries = []
+    for field in fields:
+        name = clipped(field.name, budget // 2)
+        value = clipped(field.value, budget - len(name) - 1)
+        entries.append(f'{name}\n{value}')
+    return '\n\n'.join(filter(None, [header, *entries, footer]))
+
+
 class ArchivePaginationView(discord.ui.View):
     """Browse the same message, retaining filters and preventing overlapping edits."""
 
@@ -85,7 +107,8 @@ class ArchivePaginationView(discord.ui.View):
                 try:
                     # Replace attachments even on fallback, so an old page image cannot linger.
                     await interaction.edit_original_response(
-                        embed=embed, attachments=[file] if file else [], view=self,
+                        embed=None, content=None if file else text_summary(embed),
+                        attachments=[file] if file else [], view=self,
                         allowed_mentions=discord.AllowedMentions.none(),
                     )
                 except Exception:
@@ -132,19 +155,16 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
         except Exception:
             logger.warning('Uma archive card rendering failed; using text', exc_info=True)
             return None
-        embed.clear_fields()
-        embed.title = None
-        embed.description = None
-        embed.remove_footer()
-        embed.set_image(url='attachment://uma-archive.png')
         return discord.File(io.BytesIO(image), 'uma-archive.png')
 
     async def _send_card(self, interaction, embed, rows, view, *, personal=False):
         file = await self._render_card(embed, rows, personal=personal)
-        kwargs = dict(embed=embed, view=view, ephemeral=personal, wait=True,
+        kwargs = dict(view=view, ephemeral=personal, wait=True,
                       allowed_mentions=discord.AllowedMentions.none())
         if file:
             kwargs['file'] = file
+        else:
+            kwargs['content'] = text_summary(embed)
         try:
             view.message = await interaction.followup.send(**kwargs)
         except Exception:
@@ -182,7 +202,7 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
     @app_commands.describe(uma="Uma name; omit for overall rankings",
                            variant="Outfit; omit to include all outfits",
                            club="Club in this server; omit to include all scanned clubs across servers",
-                           page="Results page (10 trainers per page)")
+                           page="Results page (10 scores per page)")
     async def leaderboard(self, interaction: discord.Interaction, uma: str | None = None,
                           variant: str | None = None, club: str | None = None,
                           page: app_commands.Range[int, 1, 10000] = 1):
@@ -197,15 +217,17 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
                 )
                 return
             title = "Uma Archive — " + (label(uma, 70) if uma else "Overall")
+            entry_unit = 'trainers' if uma else 'scores'
             description = (
-                "Each trainer's highest recorded score; equal scores share a rank.\n"
+                ("Each trainer's highest score for this Uma; equal scores share a rank.\n" if uma else
+                 "All recorded Uma/outfit scores; trainers can appear more than once. Equal scores share a rank.\n")
                 + (f"Club: {label(club)}" if club else "All scanned clubs across Discord servers")
                 + (f" · Outfit: {label(variant)}" if variant else " · All outfits")
             )
             embed = discord.Embed(title=title, description=description, color=discord.Color.gold())
             add_score_fields(embed, rows)
             pages = (rows[0]['participants'] + 9) // 10
-            embed.set_footer(text=f"Page {page}/{pages} · {rows[0]['participants']} trainers · "
+            embed.set_footer(text=f"Page {page}/{pages} · {rows[0]['participants']} {entry_unit} · "
                              "/uma status for your ranks")
             async def load_page(target):
                 new_rows = await UmaArchive.leaderboard(None, club_id, uma, variant, target)
@@ -214,7 +236,7 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
                 new_pages = (new_rows[0]['participants'] + 9) // 10
                 new_embed = discord.Embed(title=title, description=description, color=discord.Color.gold())
                 add_score_fields(new_embed, new_rows)
-                new_embed.set_footer(text=f"Page {target}/{new_pages} · {new_rows[0]['participants']} trainers · "
+                new_embed.set_footer(text=f"Page {target}/{new_pages} · {new_rows[0]['participants']} {entry_unit} · "
                                     "/uma status for your ranks")
                 return new_embed, new_rows, new_pages
 
@@ -249,7 +271,7 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
             if standing:
                 description += (
                     f"{'Filtered' if uma else 'Overall'} global rank: "
-                    f"**#{standing['position']} / {standing['participants']}** "
+                    f"**#{standing['position']} / {standing['participants']}** {'trainers' if uma else 'scores'} "
                     f"· Best score: **{standing['score']:,}**\n"
                 )
             embed = discord.Embed(title="Your Uma Archive", description=description,
@@ -271,7 +293,7 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
                 if new_standing:
                     new_description += (
                         f"{'Filtered' if uma else 'Overall'} global rank: "
-                        f"**#{new_standing['position']} / {new_standing['participants']}** "
+                        f"**#{new_standing['position']} / {new_standing['participants']}** {'trainers' if uma else 'scores'} "
                         f"· Best score: **{new_standing['score']:,}**\n"
                     )
                 new_pages = (new_rows[0]['total_entries'] + 9) // 10

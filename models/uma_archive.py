@@ -16,11 +16,15 @@ class UmaArchive:
           AND ($4::text IS NULL OR s.variant = $4)
     """
     RANKED = """
-        WITH best AS (
-            SELECT DISTINCT ON (s.member_id)
-                s.*, m.trainer_name, c.club_name
+        WITH candidates AS (
+            SELECT s.*, m.trainer_name, c.club_name,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY s.member_id ORDER BY s.score DESC, s.uma_name, s.variant
+                   ) AS member_choice
     """ + SCOPE + """
-            ORDER BY s.member_id, s.score DESC, s.uma_name, s.variant
+        ), best AS (
+            -- Overall includes every archive entry. Per-Uma chooses each trainer's best outfit.
+            SELECT * FROM candidates WHERE $3::text IS NULL OR member_choice = 1
         ), ranked AS (
             SELECT *, RANK() OVER (ORDER BY score DESC) AS position,
                    COUNT(*) OVER () AS participants
@@ -33,7 +37,7 @@ class UmaArchive:
         return await db.fetch(
             cls.RANKED + """
             SELECT * FROM ranked
-            ORDER BY score DESC, trainer_name, member_id
+            ORDER BY score DESC, trainer_name, member_id, uma_name, variant
             LIMIT 10 OFFSET $5
             """,
             guild_id, club_id, uma, variant, (page - 1) * 10,
@@ -43,7 +47,10 @@ class UmaArchive:
     async def standing(cls, guild_id, member_id, uma=None, variant=None):
         # The member filter must come after the window functions, never before.
         return await db.fetchrow(
-            cls.RANKED + "SELECT * FROM ranked WHERE member_id = $5",
+            cls.RANKED + """
+            SELECT * FROM ranked WHERE member_id = $5
+            ORDER BY score DESC, uma_name, variant LIMIT 1
+            """,
             guild_id, None, uma, variant, member_id,
         )
 

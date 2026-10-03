@@ -5,7 +5,8 @@ These commands are available to all members.
 ## /uma leaderboard
 
 View public Hall of Fame archive rankings for active trainers in all scanned active clubs
-across Discord servers. Each trainer appears once, ranked by their highest single score.
+across Discord servers. Overall includes every recorded Uma/outfit score, so the same
+trainer can appear multiple times with different Uma or outfits.
 Equal scores share a competition rank (1, 1, 3). These are latest complete imported scans,
 not live scores or lifetime records; a new scan replaces the previous archive.
 
@@ -14,9 +15,10 @@ not live scores or lifetime records; a new scan replaces the previous archive.
 | `uma` | No | Uma name from autocomplete; omit for overall rankings |
 | `variant` | No | Outfit from autocomplete; requires `uma` |
 | `club` | No | Limit rankings to one club in this server; omit for all scanned clubs |
-| `page` | No | Page number, starting at 1; ten trainers per page |
+| `page` | No | Page number, starting at 1; ten scores per page |
 
-Without `variant`, each trainer's best outfit for the selected Uma is used.
+When filtering by `uma`, each trainer appears once. Without `variant`, each trainer's
+best outfit for the selected Uma is used.
 Every entry shows the trainer, club, Uma, outfit, grade icon, and score on a dark card
 with circular Uma portraits. Portraits show the character's original outfit because
 archive records contain outfit titles rather than image IDs. Scan times are hidden.
@@ -30,7 +32,8 @@ directly to a page.
 
 ## /uma status
 
-Privately view your linked trainer's highest score and overall global rank, plus each
+Privately view your linked trainer's highest score and its rank among all recorded
+scores globally, plus each
 Uma/outfit's score and rank against other trainers with that same Uma/outfit. Requires
 `/link_trainer` in your club's server and an active trainer. You can then check status from
 any Discord server with the bot. Optional `uma` and `variant` filters

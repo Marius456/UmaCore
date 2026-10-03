@@ -56,6 +56,8 @@ class ArchiveQueryTests(unittest.IsolatedAsyncioTestCase):
                     ('former', 'Uma', 'Original', 'S', 40000, '2026-10-01'),
                     ('closed', 'Uma', 'Original', 'S', 50000, '2026-10-01'),
                     ('me', 'Uma', 'Alternate', 'A', 18000, '2026-10-01');
+                ALTER TABLE clubs ADD COLUMN club_name TEXT DEFAULT 'Club';
+                ALTER TABLE members ADD COLUMN trainer_name TEXT DEFAULT 'Trainer';
             """)
             connection.row_factory = sqlite3.Row
 
@@ -79,6 +81,24 @@ class ArchiveQueryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(global_rows[0]['participants'], 4)
                 foreign_rows = await UmaArchive.personal_scores(None, 'other-server')
                 self.assertEqual(foreign_rows[0]['position'], 1)
+                overall = await UmaArchive.leaderboard(None)
+                self.assertEqual(len(overall), 5)
+                self.assertEqual(sum(r['member_id'] == 'me' for r in overall), 2)
+                self.assertEqual([r['position'] for r in overall], [1, 2, 2, 4, 5])
+                self.assertEqual(overall[0]['participants'], 5)
+                filtered = await UmaArchive.leaderboard(None, uma='Uma')
+                self.assertEqual(len(filtered), 4)
+                self.assertEqual(sum(r['member_id'] == 'me' for r in filtered), 1)
+
+            async def execute_one(query, *args):
+                rows = await execute(query, *args)
+                return rows[0] if rows else None
+
+            with patch('models.uma_archive.db.fetchrow', side_effect=execute_one):
+                standing = await UmaArchive.standing(None, 'me')
+                self.assertEqual(standing['score'], 20000)
+                self.assertEqual(standing['position'], 2)
+                self.assertEqual(standing['participants'], 5)
 
     async def test_rank_scope_and_bound_filters_and_pagination(self):
         club_id = uuid4()
@@ -88,7 +108,7 @@ class ArchiveQueryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(args, [123, club_id, "Uma'", "Outfit", 20])
         self.assertNotIn("Uma'", query)
         self.assertIn("($1::bigint IS NULL OR c.guild_id = $1) AND c.is_active AND m.is_active", query)
-        self.assertIn("DISTINCT ON (s.member_id)", query)
+        self.assertIn("WHERE $3::text IS NULL OR member_choice = 1", query)
         self.assertIn("RANK() OVER (ORDER BY score DESC)", query)
 
     async def test_personal_rank_is_computed_before_member_filter(self):
@@ -131,14 +151,13 @@ class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
             await cog.leaderboard.callback(cog, ctx)
         response = ctx.followup.send.await_args.kwargs
         self.assertEqual(response['file'].filename, 'uma-archive.png')
-        self.assertEqual(response['embed'].image.url, 'attachment://uma-archive.png')
-        self.assertEqual(response['embed'].fields, [])
-        self.assertIsNone(response['embed'].title)
-        self.assertIsNone(response['embed'].description)
-        self.assertIsNone(response['embed'].footer.text)
-        self.assertNotIn('<t:', str(response['embed'].to_dict()))
-        self.assertNotIn('Scanned', str(response['embed'].to_dict()))
+        self.assertNotIn('embed', response)
+        self.assertNotIn('content', response)
+        self.assertFalse(response['ephemeral'])
         self.assertEqual(renderer.await_args.args[0], [row])
+        self.assertNotIn('<t:', str(renderer.await_args.args))
+        self.assertNotIn('Scanned', str(renderer.await_args.args))
+        self.addCleanup(response['view'].stop)
         response['file'].close()
 
     async def test_registration_is_member_accessible_and_guild_only(self):
@@ -160,11 +179,13 @@ class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(UmaArchive, "leaderboard", new=AsyncMock(return_value=[entry()])) as fetch:
                     await cog.leaderboard.callback(cog, ctx, uma, variant, page=2)
                 fetch.assert_awaited_once_with(None, None, uma, variant, 2)
-                embed = ctx.followup.send.await_args.kwargs['embed']
-                self.assertIn("Page 2/3", embed.footer.text)
-                self.assertIn("20,000", embed.fields[0].value)
-                self.assertIn("#1", embed.fields[0].name)
-                self.assertIn("across Discord servers", embed.description)
+                response = ctx.followup.send.await_args.kwargs
+                self.assertNotIn('embed', response)
+                content = response['content']
+                self.assertIn("Page 2/3", content)
+                self.assertIn("20,000", content)
+                self.assertIn("#1", content)
+                self.assertIn("across Discord servers", content)
                 ctx.response.defer.assert_awaited_once_with()
                 view = ctx.followup.send.await_args.kwargs['view']
                 self.assertFalse(view.previous.disabled)
@@ -200,11 +221,29 @@ class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
         ctx.response.defer.assert_awaited_once_with(ephemeral=True)
         response = ctx.followup.send.await_args.kwargs
         self.assertTrue(response['ephemeral'])
-        self.assertIn("Overall global rank", response['embed'].description)
-        self.assertIn("Outfit rank", response['embed'].fields[0].value)
-        self.assertIn("Page 1/2", response['embed'].footer.text)
-        self.assertNotIn('<t:', str(response['embed'].to_dict()))
-        self.assertNotIn('Latest complete scan:', response['embed'].description)
+        self.assertNotIn('embed', response)
+        self.assertIn("Overall global rank", response['content'])
+        self.assertIn("Outfit rank", response['content'])
+        self.assertIn("Page 1/2", response['content'])
+        self.assertNotIn('<t:', response['content'])
+        self.assertNotIn('Latest complete scan:', response['content'])
+        self.addCleanup(response['view'].stop)
+
+    async def test_personal_image_is_private_without_embed(self):
+        cog, ctx = UmaArchiveCommands(None), interaction()
+        row = entry()
+        with patch.object(UmaArchive, 'linked_member', new=AsyncMock(return_value={**row, 'entry_count': 11})), \
+             patch.object(UmaArchive, 'personal_scores', new=AsyncMock(return_value=[row])), \
+             patch.object(UmaArchive, 'standing', new=AsyncMock(return_value=row)), \
+             patch('bot.commands.uma_archive.render_card', new=AsyncMock(return_value=b'png')) as renderer:
+            await cog.status.callback(cog, ctx)
+        response = ctx.followup.send.await_args.kwargs
+        self.addCleanup(response['view'].stop)
+        self.assertTrue(response['ephemeral'])
+        self.assertNotIn('embed', response)
+        self.assertEqual(response['file'].filename, 'uma-archive.png')
+        self.assertTrue(renderer.await_args.kwargs['personal'])
+        self.assertIn('Overall global rank', renderer.await_args.args[2])
 
     async def test_missing_link_unscanned_empty_scan_and_empty_filter(self):
         cog = UmaArchiveCommands(None)
@@ -247,20 +286,24 @@ class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await cog.variant_autocomplete(ctx, ""), [])
         fetch.assert_not_awaited()
 
-    async def test_long_user_text_stays_inside_embed_limits_and_disables_mentions(self):
+    async def test_long_user_text_fallback_keeps_all_rows_within_content_limit(self):
         cog, ctx = UmaArchiveCommands(None), interaction()
         row = entry()
         for key in ('trainer_name', 'club_name', 'uma_name', 'variant'):
             row[key] = "*_@everyone" * 40
-        with patch.object(UmaArchive, "leaderboard", new=AsyncMock(return_value=[row] * 10)):
+        rows = [{**row, 'position': position} for position in range(1, 11)]
+        with patch.object(UmaArchive, "leaderboard", new=AsyncMock(return_value=rows)):
             await cog.leaderboard.callback(cog, ctx)
         result = ctx.followup.send.await_args.kwargs
-        embed = result['embed']
-        self.assertLessEqual(len(embed), 6000)
-        for field in embed.fields:
-            self.assertLessEqual(len(field.name), 256)
-            self.assertLessEqual(len(field.value), 1024)
-            self.assertNotIn("@everyone", field.name)
+        self.addCleanup(result['view'].stop)
+        self.assertNotIn('embed', result)
+        content = result['content']
+        self.assertLessEqual(len(content), 2000)
+        self.assertEqual(content.count('20,000'), 10)
+        for position in range(1, 11):
+            self.assertIn(f'#{position} ·', content)
+        self.assertIn('Page 1/3', content)
+        self.assertNotIn('@everyone', content)
         self.assertFalse(result['allowed_mentions'].everyone)
 
 
@@ -296,6 +339,8 @@ class ArchivePaginationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(view.page, 2)
         ctx.response.defer.assert_awaited_once()
         self.assertEqual(ctx.edit_original_response.await_args.kwargs['attachments'], [])
+        self.assertIsNone(ctx.edit_original_response.await_args.kwargs['embed'])
+        self.assertIn('Page', ctx.edit_original_response.await_args.kwargs['content'])
         self.assertIs(ctx.edit_original_response.await_args.kwargs['view'], view)
         ctx.followup.send.assert_not_awaited()
         await view.previous.callback(ctx)
@@ -312,11 +357,36 @@ class ArchivePaginationTests(unittest.IsolatedAsyncioTestCase):
         ctx = interaction()
         await view.next.callback(ctx)
         self.assertEqual(ctx.edit_original_response.await_args.kwargs['attachments'], [file])
+        self.assertIsNone(ctx.edit_original_response.await_args.kwargs['embed'])
+        self.assertIsNone(ctx.edit_original_response.await_args.kwargs['content'])
         cog._render_card.return_value = None
         ctx.edit_original_response.side_effect = RuntimeError('Edit failed')
         await view.next.callback(ctx)
         self.assertEqual(view.page, 2)
+        self.assertEqual(view.pages, 3)
+        self.assertFalse(view.next.disabled)
         cog._error.assert_awaited_once()
+
+    async def test_image_fallback_and_recovery_clear_previous_message_content(self):
+        import io
+
+        view, cog, _ = self.make_view()
+        first = discord.File(io.BytesIO(b'first'), 'uma-archive.png')
+        recovered = discord.File(io.BytesIO(b'recovered'), 'uma-archive.png')
+        cog._render_card.side_effect = [first, None, recovered]
+        ctx = interaction()
+        await view.next.callback(ctx)
+        await view.previous.callback(ctx)
+        await view.next.callback(ctx)
+        image, fallback, recovery = [call.kwargs for call in ctx.edit_original_response.await_args_list]
+        self.assertEqual(image['attachments'], [first])
+        self.assertIsNone(image['content'])
+        self.assertEqual(fallback['attachments'], [])
+        self.assertIn('Page', fallback['content'])
+        self.assertEqual(recovery['attachments'], [recovered])
+        self.assertIsNone(recovery['content'])
+        for response in (image, fallback, recovery):
+            self.assertIsNone(response['embed'])
 
     async def test_only_original_user_can_control_pages(self):
         view, _, _ = self.make_view(personal=True)
