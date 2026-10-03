@@ -28,21 +28,18 @@ _playwright_lock = asyncio.Lock()
 async def _ensure_playwright_browser_async():
     """
     Ensure a healthy shared Playwright browser instance exists.
-    Performs a real health check (not just is_connected()) and re-launches
-    if the browser has died. Returns the browser instance.
+    Reuse a connected browser. Renderers retry failed page operations using a
+    fresh browser. Avoid creating and disposing a separate context for each probe.
     """
     global _playwright_browser, _playwright_context, _playwright
 
-    # If we have a browser, do a real health check by trying to use it
+    # browser.new_page() owns a temporary context. Closing that context for every
+    # health check can destabilize single-process Chromium during repeated renders.
     if _playwright_browser is not None:
-        try:
-            # Quick health check — try to create and close a page
-            page = await _playwright_browser.new_page()
-            await page.close()
+        if _playwright_browser.is_connected():
             return _playwright_browser
-        except Exception:
-            logger.warning("Playwright browser is dead, re-launching...")
-            await _close_playwright_browser_unlocked_async()
+        logger.warning("Playwright browser disconnected, re-launching...")
+        await _close_playwright_browser_unlocked_async()
 
     from playwright.async_api import async_playwright
 
@@ -55,8 +52,6 @@ async def _ensure_playwright_browser_async():
             "--no-sandbox",
             "--disable-dev-shm-usage",
             "--disable-gpu",
-            "--single-process",
-            "--no-zygote",
         ],
         timeout=30000,
     )

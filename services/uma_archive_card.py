@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import hashlib
 from collections import OrderedDict
 from functools import lru_cache
 from html import escape
@@ -133,7 +134,47 @@ def card_html(rows, title, subtitle, footer, images, *, personal=False):
         <footer>{text(footer)}</footer></main></body></html>'''
 
 
+_render_cache = OrderedDict()
+_render_cache_lock = asyncio.Lock()
+RENDER_CACHE_TTL = 300
+RENDER_CACHE_MAX_BYTES = 32 * 1024 * 1024
+
+
 async def render_card(rows, title, subtitle, footer, *, personal=False):
+    # Cache by visible content, not user or page alone, so changed scores/ranks never
+    # reuse an old image. Discord files are created separately for every upload.
+    fields = ('uma_name', 'variant', 'rank', 'score', 'position', 'participants')
+    if not personal:
+        fields += ('trainer_name', 'club_name')
+    payload = [title, subtitle, footer, personal,
+               [[row[field] for field in fields] for row in rows]]
+    key = hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode()).hexdigest()
+
+    def cached_image():
+        cached = _render_cache.get(key)
+        if cached and time.monotonic() - cached[0] < RENDER_CACHE_TTL:
+            _render_cache.move_to_end(key)
+            return cached[1]
+        if cached:
+            _render_cache.pop(key)
+        return None
+
+    cached = cached_image()
+    if cached is not None:
+        return cached
+    async with _render_cache_lock:
+        cached = cached_image()
+        if cached is not None:
+            return cached
+        image = await _render_uncached(rows, title, subtitle, footer, personal=personal)
+        if len(image) <= RENDER_CACHE_MAX_BYTES:
+            _render_cache[key] = (time.monotonic(), image)
+            while len(_render_cache) > 64 or sum(len(v[1]) for v in _render_cache.values()) > RENDER_CACHE_MAX_BYTES:
+                _render_cache.popitem(last=False)
+        return image
+
+
+async def _render_uncached(rows, title, subtitle, footer, *, personal=False):
     from services import report_generator as reports
 
     urls = [url for row in rows for url in (uma_portrait(row['uma_name']), grade_icon(row['rank']))]
