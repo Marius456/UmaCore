@@ -514,7 +514,9 @@ class QuotaCalculator:
             LEFT JOIN LATERAL (
                 SELECT cumulative_fans
                 FROM quota_history
-                WHERE member_id = m.member_id AND date < $2
+                WHERE member_id = m.member_id
+                  AND date >= date_trunc('month', $2::date)::date
+                  AND date < $2
                 ORDER BY date DESC
                 LIMIT 1
             ) previous ON TRUE
@@ -566,9 +568,9 @@ class QuotaCalculator:
                 'history': latest_history
             }
 
-            # Get the most recent cumulative_fans before today for daily progress calculation
-            # Using the latest record strictly before current_date (not necessarily yesterday)
-            # to properly compute today's delta even if a day was skipped
+            # Monthly totals reset, so only compare with an earlier row in the report month.
+            # Use the latest available row within that month if a day was skipped;
+            # without one, the month's starting baseline is zero.
             member_status['yesterday_cumulative_fans'] = (
                 row['previous_cumulative_fans'] or 0
             )

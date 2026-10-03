@@ -8,6 +8,7 @@ from uuid import UUID
 import logging
 
 from config.database import db
+from services.club_cache import active_club_cache
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,9 @@ class Club:
             scrape_time,
         )
         logger.info(f"Created new club: {club_name} (circle_id: {circle_id}, guild_id: {guild_id})")
-        return cls(**dict(row))
+        club = cls(**dict(row))
+        active_club_cache.add(club)
+        return club
     
     @classmethod
     async def get_by_id(cls, club_id: UUID) -> Optional['Club']:
@@ -252,6 +255,7 @@ class Club:
         
         for k, v in updates.items():
             setattr(self, k, v)
+        active_club_cache.update(self, **updates)
         
         logger.info(f"Updated club settings for {self.club_name}: {updates}")
     
@@ -292,6 +296,7 @@ class Club:
         
         for k, v in updates.items():
             setattr(self, k, v)
+        active_club_cache.update(self, **updates)
         logger.info(f"Updated channels for {self.club_name}: {updates}")
     
     async def set_monthly_info_location(self, channel_id: int, message_id: int):
@@ -304,6 +309,9 @@ class Club:
         await db.execute(query, self.club_id, channel_id, message_id)
         self.monthly_info_channel_id = channel_id
         self.monthly_info_message_id = message_id
+        active_club_cache.update(
+            self, monthly_info_channel_id=channel_id, monthly_info_message_id=message_id
+        )
         logger.info(f"Set monthly info location for {self.club_name}: channel={channel_id}, message={message_id}")
     
     async def get_monthly_info_location(self) -> tuple[Optional[int], Optional[int]]:
@@ -319,6 +327,7 @@ class Club:
         """
         await db.execute(query, self.club_id)
         self.is_active = False
+        active_club_cache.update(self, is_active=False)
         logger.info(f"Deactivated club: {self.club_name}")
     
     async def activate(self):
@@ -330,6 +339,7 @@ class Club:
         """
         await db.execute(query, self.club_id)
         self.is_active = True
+        active_club_cache.update(self, is_active=True)
         logger.info(f"Activated club: {self.club_name}")
     
     async def delete(self):
@@ -339,6 +349,7 @@ class Club:
         """
         query = "DELETE FROM clubs WHERE club_id = $1"
         await db.execute(query, self.club_id)
+        active_club_cache.remove(self.club_id)
         logger.warning(f"Permanently deleted club: {self.club_name} (club_id: {self.club_id})")
     
     def belongs_to_guild(self, guild_id: int) -> bool:

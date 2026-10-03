@@ -1,4 +1,5 @@
 import asyncio
+import sqlite3
 from datetime import date, datetime, time
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -342,6 +343,50 @@ class PredictionDeliveryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StatusSummaryQueryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_daily_baseline_is_bounded_to_report_month(self):
+        fetch = AsyncMock(return_value=[])
+        with patch("services.quota_calculator.db.fetch", new=fetch):
+            await QuotaCalculator().get_member_status_summary(CLUB_ID, date(2026, 10, 1))
+
+        query = fetch.await_args.args[0]
+        previous_query = query.split("LEFT JOIN LATERAL (")[2].split(") previous ON TRUE")[0]
+        self.assertIn("date >= date_trunc('month', $2::date)::date", previous_query)
+        self.assertIn("date < $2", previous_query)
+
+        # Execute the production baseline SELECT with SQLite's equivalent date function.
+        # Only PostgreSQL casts and the correlated member reference need translation.
+        previous_query = previous_query.replace("::date", "").replace("m.member_id", "$1")
+        with sqlite3.connect(":memory:") as connection:
+            connection.create_function("date_trunc", 2, lambda period, value: value[:8] + "01")
+            connection.execute(
+                "CREATE TABLE quota_history (member_id TEXT, date TEXT, cumulative_fans INTEGER)"
+            )
+            connection.executemany(
+                "INSERT INTO quota_history VALUES (?, ?, ?)",
+                [
+                    (str(MEMBER_ID), "2026-09-29", 470_000_000),
+                    (str(MEMBER_ID), "2026-09-30", 485_400_000),
+                    (str(MEMBER_ID), "2026-10-01", 28_000_000),
+                    (str(MEMBER_ID), "2026-10-02", 30_000_000),
+                    (str(MEMBER_ID), "2026-12-31", 500_000_000),
+                    (str(MEMBER_ID), "2027-01-01", 5_000_000),
+                    (str(CLUB_ID), "2026-10-03", 999_000_000),
+                ],
+            )
+            cases = [
+                ("2026-10-01", None),  # Monthly reset excludes September history.
+                ("2026-10-02", 28_000_000),  # Normal daily delta.
+                ("2026-10-04", 30_000_000),  # Latest available day after a gap.
+                ("2027-01-01", None),  # Year rollover excludes December history.
+                ("2026-09-30", 470_000_000),  # Previous-month scraper data date.
+            ]
+            for report_date, expected in cases:
+                with self.subTest(report_date=report_date):
+                    row = connection.execute(
+                        previous_query, {"1": str(MEMBER_ID), "2": report_date}
+                    ).fetchone()
+                    self.assertEqual(row[0] if row else None, expected)
+
     async def test_daily_summary_uses_one_set_based_database_query(self):
         row = {
             "member_id": MEMBER_ID,

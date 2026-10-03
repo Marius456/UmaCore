@@ -1,7 +1,40 @@
 import unittest
+from datetime import date
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.report_generator import ReportGenerator
+
+
+class ReportGeneratorDailyProgressTests(unittest.TestCase):
+    def test_daily_progress_in_both_tables(self):
+        cases = [
+            (date(2026, 10, 1), 28_000_000, 0, "+28.0M", "28.0M", "28.0M"),
+            (date(2027, 1, 1), 5_000_000, 0, "+5.0M", "5.0M", "5.0M"),
+            (date(2026, 10, 2), 30_000_000, 28_000_000, "+2.0M", "15.0M", "30.0M"),
+            (date(2026, 10, 4), 36_000_000, 30_000_000, "+6.0M", "9.0M", "36.0M"),
+            (date(2026, 10, 3), 30_000_000, 30_000_000, "+0", "10.0M", "30.0M"),
+        ]
+        report = ReportGenerator()
+        for report_date, total, baseline, daily, average, total_text in cases:
+            for behind in (False, True):
+                with self.subTest(report_date=report_date, behind=behind):
+                    item = {
+                        "member": SimpleNamespace(trainer_name="RanfeaR"),
+                        "history": SimpleNamespace(
+                            date=report_date,
+                            cumulative_fans=total,
+                            deficit_surplus=-1_000_000 if behind else 25_000_000,
+                        ),
+                        "yesterday_cumulative_fans": baseline,
+                    }
+                    prepare = (
+                        report._prepare_behind_table_data if behind else report._prepare_table_data
+                    )
+                    self.assertEqual(
+                        prepare([item])[0],
+                        [1, "RanfeaR", daily, "-1.0M" if behind else "+25.0M", average, total_text],
+                    )
 
 
 class ReportGeneratorResourceTests(unittest.IsolatedAsyncioTestCase):

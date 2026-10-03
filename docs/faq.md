@@ -23,8 +23,10 @@ club-local scrape time comfortably after that instant.
 
 ## The bot didn't scrape at the time I set
 
-The scheduler checks once per minute and runs during the configured minute in the
-club's timezone. If the bot is offline or starts after that minute, the automatic
+The scheduler checks cached club settings once per minute, without querying the
+database, and runs during the configured minute in the club's timezone. Bot edits
+update the cache immediately; direct database edits or edits by another process
+require a bot restart. If the bot is offline or starts after that minute, the automatic
 report is skipped for that day; an administrator can use `/force_check` to run it
 manually.
 

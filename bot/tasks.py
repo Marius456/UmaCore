@@ -23,6 +23,7 @@ from services.report_generator import ReportGenerator
 from services.scrape_lock_manager import ScrapeContext
 from services.leaderboard_report_service import LeaderboardReportService
 from config.settings import EVENTS_JSON_PATH
+from services.club_cache import active_club_cache
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,10 @@ LONG_RETRY_WINDOW_SECONDS = 6 * 60 * 60
 class BotTasks:
     """Manages scheduled tasks for the bot"""
 
-    def __init__(self, bot):
+    def __init__(self, bot, club_cache=None):
         self.bot = bot
+        self.club_cache = club_cache if club_cache is not None else active_club_cache
+        self._cache_load_task = None
         self.quota_calculator = QuotaCalculator()
         self.report_generator = ReportGenerator()
         self.notification_service = NotificationService(bot)
@@ -49,17 +52,35 @@ class BotTasks:
         # a transient failure while persisting the deduplication state.
         self._sent_event_notifications = set()
 
-        logger.info("Multi-club tasks configured - will check club schedules every minute")
+        logger.info("Multi-club tasks configured - minute schedule checks use cached settings")
 
     def start_tasks(self):
         """Start all scheduled tasks"""
+        self._cache_load_task = asyncio.create_task(self.initialize_club_cache())
         self.scheduled_report_check.start()
         self.hourly_event_notifications.start()
         self.daily_official_events_check.start()
         logger.info(
-            "Scheduled tasks started (minute-based report scheduling, hourly event notifications, "
+            "Scheduled tasks started (in-memory report scheduling, hourly event notifications, "
             "daily official event scraping)"
         )
+
+    async def initialize_club_cache(self):
+        """Load settings once, backing off on startup database failures."""
+        delay = 5
+        while not self.club_cache.loaded:
+            try:
+                clubs = await Club.get_all_active()
+                self.club_cache.load(clubs)
+                logger.info("Loaded %s active club(s) into the settings cache", len(clubs))
+            except Exception:
+                logger.exception("Could not load club settings; retrying in %s seconds", delay)
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 300)
+
+    async def _wait_for_club_cache(self):
+        if self._cache_load_task is not None:
+            await asyncio.shield(self._cache_load_task)
 
     @staticmethod
     def _is_daily_check_time(now_in_club_tz: datetime, scrape_time) -> bool:
@@ -96,6 +117,9 @@ class BotTasks:
         self.scheduled_report_check.cancel()
         self.hourly_event_notifications.cancel()
         self.daily_official_events_check.cancel()
+        if self._cache_load_task is not None:
+            self._cache_load_task.cancel()
+            loop_tasks.append(self._cache_load_task)
         scheduled_tasks = tuple(self._scheduled_tasks)
         for task in scheduled_tasks:
             task.cancel()
@@ -112,14 +136,11 @@ class BotTasks:
 
     @tasks.loop(minutes=1)
     async def scheduled_report_check(self):
-        """Check every minute for clubs whose daily report is scheduled now."""
-        logger.info("=" * 80)
-        logger.info("Scheduled report check - scanning all clubs...")
-        logger.info("=" * 80)
+        """Check cached schedules every minute without querying the database."""
+        logger.debug("Scheduled report check - checking cached club schedules")
 
         try:
-            clubs = await Club.get_all_active()
-            logger.info(f"Found {len(clubs)} active club(s)")
+            clubs = self.club_cache.active_clubs()
 
             active_run_keys = {
                 f"{club.club_id}_{datetime.now(pytz.timezone(club.timezone)).date()}"
@@ -522,7 +543,8 @@ class BotTasks:
     async def before_scheduled_report_check(self):
         """Wait for bot to be ready before starting tasks"""
         await self.bot.wait_until_ready()
-        logger.info("Bot ready, minute-based report schedule loop starting")
+        await self._wait_for_club_cache()
+        logger.info("Bot ready, in-memory report schedule loop starting")
 
     # ── Event Notification Helpers ─────────────────────────────────────
 
@@ -702,7 +724,7 @@ class BotTasks:
                 return
 
             now = datetime.now(pytz.UTC)
-            clubs = await Club.get_all_active()
+            clubs = self.club_cache.active_clubs()
 
             for event in events:
                 title = event.get("title", "Unknown event")
@@ -751,6 +773,7 @@ class BotTasks:
     async def before_hourly_event_notifications(self):
         """Wait for Discord readiness before checking event notifications."""
         await self.bot.wait_until_ready()
+        await self._wait_for_club_cache()
         logger.info("Bot ready, hourly event notification loop starting")
 
     @tasks.loop(hours=24)
