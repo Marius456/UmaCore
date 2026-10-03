@@ -84,6 +84,8 @@ After inviting, use `/add_club` with the club's Uma.moe circle ID, then `/set_re
 | `/previous_month` | Show previous-month final fan totals |
 | `/leaderboard_report` | Generate current-month leaderboard analysis |
 | `/club_highscores` | Show all-time club records |
+| `/uma leaderboard` | Rank archive scores overall or by Uma/outfit, with optional club and page filters |
+| `/uma status` | Privately show your linked trainer's archive scores and global ranks |
 | `/gacha` | Show current GameTora banners |
 | `/trivia play` | Start a survival trivia game |
 | `/trivia horse <mode>` | Guess Global or Japanese-version real racehorses from photos |

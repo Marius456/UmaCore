@@ -2,6 +2,36 @@
 
 These commands are available to all members.
 
+## /uma leaderboard
+
+View public Hall of Fame archive rankings for active trainers in all scanned active clubs
+across Discord servers. Each trainer appears once, ranked by their highest single score.
+Equal scores share a competition rank (1, 1, 3). These are latest complete imported scans,
+not live scores or lifetime records; a new scan replaces the previous archive.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `uma` | No | Uma name from autocomplete; omit for overall rankings |
+| `variant` | No | Outfit from autocomplete; requires `uma` |
+| `club` | No | Limit rankings to one club in this server; omit for all scanned clubs |
+| `page` | No | Page number, starting at 1; ten trainers per page |
+
+Without `variant`, each trainer's best outfit for the selected Uma is used.
+Every entry shows the trainer, club, Uma, outfit, grade, score, and scan age.
+
+## /uma status
+
+Privately view your linked trainer's highest score and overall global rank, plus each
+Uma/outfit's score and rank against other trainers with that same Uma/outfit. Requires
+`/link_trainer` in your club's server and an active trainer. You can then check status from
+any Discord server with the bot. Optional `uma` and `variant` filters
+also narrow the summary rank; `page` browses ten personal scores at a time.
+Unscanned trainers and completed scans with no scores are reported separately.
+
+The Hall of Fame scraper maintains `uma_archive_scans` and `uma_archive_scores` in the
+same PostgreSQL database as UmaCore. Import scans using the scraper before using these
+commands. UmaCore only reads these tables; running a command never triggers a new scan.
+
 ---
 
 ## /help

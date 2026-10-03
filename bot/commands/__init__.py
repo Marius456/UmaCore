@@ -14,6 +14,7 @@ async def setup(bot):
     from .gacha import GachaCommands
     from .trivia import TriviaCommands
     from .help import HelpCommands
+    from .uma_archive import UmaArchiveCommands
 
     await bot.add_cog(SettingsCommands(bot))
     await bot.add_cog(AdminCommands(bot))
@@ -25,3 +26,4 @@ async def setup(bot):
     await bot.add_cog(GachaCommands(bot))
     await bot.add_cog(TriviaCommands(bot))
     await bot.add_cog(HelpCommands(bot))
+    await bot.add_cog(UmaArchiveCommands(bot))
