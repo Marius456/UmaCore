@@ -57,6 +57,11 @@ an existing database and should have a rollback plan before deployment.
 
 ## Performance notes
 
+- Background report scheduling and event notifications share a process-local club
+  settings cache, loaded once after startup guild backfill. Successful Club model
+  writes patch the cache immediately; idle clock checks do not query PostgreSQL.
+  Direct database edits and edits by other processes require a restart. Failed
+  startup loads retry with exponential backoff capped at five minutes.
 - Report status data is loaded with one set-based query; do not reintroduce
   per-member history lookups.
 - Scrape reconciliation preloads the roster and previous-day streak state,

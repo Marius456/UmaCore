@@ -10,18 +10,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytz
 
 from bot.tasks import BotTasks
+from services.club_cache import ActiveClubCache
 
 
 class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.channel = SimpleNamespace(send=AsyncMock())
         self.bot = SimpleNamespace(get_channel=MagicMock(return_value=self.channel))
-        self.tasks = BotTasks(self.bot)
+        self.cache = ActiveClubCache()
+        self.tasks = BotTasks(self.bot, club_cache=self.cache)
         self.club = SimpleNamespace(
             club_id="club-1",
             club_name="Test Club",
             events_channel_id=123,
+            is_active=True,
         )
+        self.cache.load([self.club])
         self.temp_dir = tempfile.TemporaryDirectory()
         self.events_path = Path(self.temp_dir.name) / "events.json"
 
@@ -46,7 +50,6 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)),
-            patch("bot.tasks.Club.get_all_active", new=AsyncMock(return_value=[self.club])),
         ):
             await self.tasks.event_notifications()
             await self.tasks.event_notifications()
@@ -60,7 +63,6 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)),
-            patch("bot.tasks.Club.get_all_active", new=AsyncMock(return_value=[self.club])),
         ):
             await self.tasks.event_notifications()
             await self.tasks.event_notifications()
@@ -78,7 +80,6 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)),
-            patch("bot.tasks.Club.get_all_active", new=AsyncMock(return_value=[self.club])),
         ):
             self.write_events([within_24_hours])
             await self.tasks.event_notifications()
@@ -94,7 +95,6 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)),
-            patch("bot.tasks.Club.get_all_active", new=AsyncMock(return_value=[self.club])),
             patch.object(self.tasks, "_save_events_json", return_value=False),
         ):
             await self.tasks.event_notifications()
@@ -107,7 +107,6 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)),
-            patch("bot.tasks.Club.get_all_active", new=AsyncMock(return_value=[self.club])),
         ):
             await self.tasks.event_notifications()
 
