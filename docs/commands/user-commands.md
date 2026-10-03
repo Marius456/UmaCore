@@ -21,6 +21,12 @@ Every entry shows the trainer, club, Uma, outfit, grade icon, and score on a dar
 with circular Uma portraits. Portraits show the character's original outfit because
 archive records contain outfit titles rather than image IDs. Scan times are hidden.
 If image rendering is unavailable, the bot sends the scores as a text embed.
+Use the ◀ and ▶ buttons below the card to browse ten results at a time. Buttons edit
+the same message and keep your Uma, outfit, and club filters. Only the command's author
+can use its buttons; other members can run their own command. Controls disable at the
+first/last page and expire after five minutes of inactivity. Personal status has the
+same controls and remains private. The optional `page` argument still lets you jump
+directly to a page.
 
 ## /uma status
 

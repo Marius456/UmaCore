@@ -1,4 +1,5 @@
 import unittest
+import asyncio
 import re
 import sqlite3
 from datetime import datetime, timezone
@@ -11,7 +12,7 @@ import discord
 from discord.ext import commands
 
 from bot.commands import setup
-from bot.commands.uma_archive import UmaArchiveCommands
+from bot.commands.uma_archive import ArchivePaginationView, UmaArchiveCommands
 from models.uma_archive import UmaArchive
 
 
@@ -20,6 +21,7 @@ def interaction():
         guild_id=123, user=SimpleNamespace(id=456), namespace=SimpleNamespace(),
         response=SimpleNamespace(defer=AsyncMock()),
         followup=SimpleNamespace(send=AsyncMock()),
+        edit_original_response=AsyncMock(),
     )
 
 
@@ -161,6 +163,10 @@ class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("#1", embed.fields[0].name)
                 self.assertIn("across Discord servers", embed.description)
                 ctx.response.defer.assert_awaited_once_with()
+                view = ctx.followup.send.await_args.kwargs['view']
+                self.assertFalse(view.previous.disabled)
+                self.assertFalse(view.next.disabled)
+                view.stop()
 
     async def test_cross_server_club_is_rejected_before_score_query(self):
         cog, ctx = UmaArchiveCommands(None), interaction()
@@ -253,6 +259,114 @@ class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
             self.assertLessEqual(len(field.value), 1024)
             self.assertNotIn("@everyone", field.name)
         self.assertFalse(result['allowed_mentions'].everyone)
+
+
+class ArchivePaginationTests(unittest.IsolatedAsyncioTestCase):
+    def make_view(self, page=1, pages=3, *, personal=False):
+        cog = UmaArchiveCommands(None)
+        cog._render_card = AsyncMock(return_value=None)
+        cog._error = AsyncMock()
+        embed = discord.Embed(title='Page')
+        loader = AsyncMock(return_value=(embed, [entry()], pages))
+        view = ArchivePaginationView(cog, 456, page, pages, loader, personal=personal)
+        self.addCleanup(view.stop)
+        return view, cog, loader
+
+    async def test_buttons_match_reference_and_disable_at_boundaries(self):
+        view, _, _ = self.make_view()
+        self.assertEqual([b.label for b in view.children], ['◀', '▶'])
+        self.assertTrue(view.previous.disabled)
+        self.assertFalse(view.next.disabled)
+        view.page = 3
+        view._update_buttons()
+        self.assertFalse(view.previous.disabled)
+        self.assertTrue(view.next.disabled)
+        view.page, view.pages = 1, 1
+        view._update_buttons()
+        self.assertTrue(all(b.disabled for b in view.children))
+
+    async def test_next_then_previous_edit_same_message_and_clear_old_image_on_fallback(self):
+        view, _, loader = self.make_view()
+        ctx = interaction()
+        await view.next.callback(ctx)
+        loader.assert_awaited_with(2)
+        self.assertEqual(view.page, 2)
+        ctx.response.defer.assert_awaited_once()
+        self.assertEqual(ctx.edit_original_response.await_args.kwargs['attachments'], [])
+        self.assertIs(ctx.edit_original_response.await_args.kwargs['view'], view)
+        ctx.followup.send.assert_not_awaited()
+        await view.previous.callback(ctx)
+        loader.assert_awaited_with(1)
+        self.assertTrue(view.previous.disabled)
+
+    async def test_image_attachment_is_replaced_and_error_preserves_page(self):
+        import io
+
+        view, cog, _ = self.make_view()
+        file = discord.File(io.BytesIO(b'png'), 'uma-archive.png')
+        self.addCleanup(file.fp.close)
+        cog._render_card.return_value = file
+        ctx = interaction()
+        await view.next.callback(ctx)
+        self.assertEqual(ctx.edit_original_response.await_args.kwargs['attachments'], [file])
+        cog._render_card.return_value = None
+        ctx.edit_original_response.side_effect = RuntimeError('Edit failed')
+        await view.next.callback(ctx)
+        self.assertEqual(view.page, 2)
+        cog._error.assert_awaited_once()
+
+    async def test_only_original_user_can_control_pages(self):
+        view, _, _ = self.make_view(personal=True)
+        ctx = interaction()
+        self.assertTrue(await view.interaction_check(ctx))
+        ctx.user.id = 999
+        ctx.response.send_message = AsyncMock()
+        self.assertFalse(await view.interaction_check(ctx))
+        self.assertTrue(ctx.response.send_message.await_args.kwargs['ephemeral'])
+
+    async def test_timeout_disables_controls_and_edits_original_message(self):
+        view, _, _ = self.make_view()
+        view.message = SimpleNamespace(edit=AsyncMock())
+        await view.on_timeout()
+        self.assertTrue(all(b.disabled for b in view.children))
+        view.message.edit.assert_awaited_once_with(view=view)
+
+    async def test_concurrent_clicks_advance_without_duplicate_pages(self):
+        view, _, loader = self.make_view()
+        await asyncio.gather(view.next.callback(interaction()), view.next.callback(interaction()))
+        self.assertEqual([c.args[0] for c in loader.await_args_list], [2, 3])
+        self.assertEqual(view.page, 3)
+        self.assertTrue(view.next.disabled)
+
+    async def test_leaderboard_buttons_preserve_all_filters(self):
+        cog, ctx = UmaArchiveCommands(None), interaction()
+        club_id = uuid4()
+        cog._club = AsyncMock(return_value=club_id)
+        with patch.object(UmaArchive, 'leaderboard', new=AsyncMock(return_value=[entry()])) as fetch, \
+             patch('bot.commands.uma_archive.render_card', new=AsyncMock(return_value=b'png')):
+            await cog.leaderboard.callback(cog, ctx, 'Special Week', 'Original', 'Club')
+            view = ctx.followup.send.await_args.kwargs['view']
+            self.addCleanup(view.stop)
+            await view.next.callback(ctx)
+        fetch.assert_awaited_with(None, club_id, 'Special Week', 'Original', 2)
+        self.assertIn('Page 2/3', ctx.edit_original_response.await_args.kwargs['embed'].footer.text)
+
+    async def test_personal_buttons_stop_if_link_changes(self):
+        cog, ctx = UmaArchiveCommands(None), interaction()
+        row = entry()
+        member = {**row, 'entry_count': 11}
+        with patch.object(UmaArchive, 'linked_member', new=AsyncMock(side_effect=[member, None])), \
+             patch.object(UmaArchive, 'personal_scores', new=AsyncMock(return_value=[row])) as scores, \
+             patch.object(UmaArchive, 'standing', new=AsyncMock(return_value=row)), \
+             patch('bot.commands.uma_archive.render_card', new=AsyncMock(return_value=b'png')):
+            await cog.status.callback(cog, ctx)
+            view = ctx.followup.send.await_args.kwargs['view']
+            self.addCleanup(view.stop)
+            await view.next.callback(ctx)
+        scores.assert_awaited_once()
+        ctx.edit_original_response.assert_not_awaited()
+        self.assertIn('link has changed', ctx.followup.send.await_args.args[0])
+        self.assertTrue(ctx.followup.send.await_args.kwargs['ephemeral'])
 
 
 if __name__ == "__main__":

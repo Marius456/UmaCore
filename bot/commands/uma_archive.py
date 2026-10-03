@@ -29,6 +29,94 @@ def score_line(row):
     )
 
 
+def add_score_fields(embed, rows, *, personal=False):
+    for row in rows:
+        if personal:
+            name = f"{label(row['uma_name'])} — {label(row['variant'])}"
+            value = (f"**{row['score']:,}** · {label(row['rank'], 10)}\n"
+                     f"Outfit rank: **#{row['position']} / {row['participants']}** trainers")
+        else:
+            name = f"#{row['position']} · {label(row['trainer_name'])} · {label(row['club_name'])}"
+            value = score_line(row)
+        embed.add_field(name=name, value=value, inline=False)
+
+
+class ArchivePaginationView(discord.ui.View):
+    """Browse the same message, retaining filters and preventing overlapping edits."""
+
+    def __init__(self, cog, owner_id, page, pages, loader, *, personal=False):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.owner_id = owner_id
+        self.page = page
+        self.pages = pages
+        self.loader = loader
+        self.personal = personal
+        self.message = None
+        self.lock = asyncio.Lock()
+        self._update_buttons()
+
+    def _update_buttons(self):
+        self.previous.disabled = self.page <= 1
+        self.next.disabled = self.page >= self.pages
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id == self.owner_id:
+            return True
+        await interaction.response.send_message(
+            'Run /uma status or /uma leaderboard to browse your own pages.', ephemeral=True,
+        )
+        return False
+
+    async def change_page(self, interaction, delta):
+        await interaction.response.defer()
+        async with self.lock:
+            if self.is_finished():
+                return
+            target = self.page + delta
+            if not 1 <= target <= self.pages:
+                return
+            try:
+                embed, rows, pages = await self.loader(target)
+                file = await self.cog._render_card(embed, rows, personal=self.personal)
+                old_page, old_pages = self.page, self.pages
+                self.page, self.pages = target, pages
+                self._update_buttons()
+                try:
+                    # Replace attachments even on fallback, so an old page image cannot linger.
+                    await interaction.edit_original_response(
+                        embed=embed, attachments=[file] if file else [], view=self,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                except Exception:
+                    self.page, self.pages = old_page, old_pages
+                    self._update_buttons()
+                    raise
+                finally:
+                    if file:
+                        file.close()
+            except Exception as error:
+                await self.cog._error(interaction, error, private=True)
+
+    @discord.ui.button(label='◀', style=discord.ButtonStyle.secondary)
+    async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.change_page(interaction, -1)
+
+    @discord.ui.button(label='▶', style=discord.ButtonStyle.secondary)
+    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.change_page(interaction, 1)
+
+    async def on_timeout(self):
+        async with self.lock:
+            for button in self.children:
+                button.disabled = True
+            if self.message:
+                try:
+                    await self.message.edit(view=self)
+                except discord.HTTPException:
+                    pass
+
+
 class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
     uma = app_commands.Group(name="uma", description="Uma archive scores and rankings",
                              guild_only=True)
@@ -37,19 +125,31 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def _send_card(self, interaction, embed, rows, *, personal=False):
+    async def _render_card(self, embed, rows, *, personal=False):
         try:
             subtitle = embed.description.replace('**', '')
             image = await render_card(rows, embed.title, subtitle, embed.footer.text, personal=personal)
         except Exception:
             logger.warning('Uma archive card rendering failed; using text', exc_info=True)
-            await interaction.followup.send(embed=embed, ephemeral=personal,
-                                             allowed_mentions=discord.AllowedMentions.none())
-            return
+            return None
         embed.clear_fields()
         embed.set_image(url='attachment://uma-archive.png')
-        await interaction.followup.send(embed=embed, file=discord.File(io.BytesIO(image), 'uma-archive.png'),
-                                         ephemeral=personal, allowed_mentions=discord.AllowedMentions.none())
+        return discord.File(io.BytesIO(image), 'uma-archive.png')
+
+    async def _send_card(self, interaction, embed, rows, view, *, personal=False):
+        file = await self._render_card(embed, rows, personal=personal)
+        kwargs = dict(embed=embed, view=view, ephemeral=personal, wait=True,
+                      allowed_mentions=discord.AllowedMentions.none())
+        if file:
+            kwargs['file'] = file
+        try:
+            view.message = await interaction.followup.send(**kwargs)
+        except Exception:
+            view.stop()
+            raise
+        finally:
+            if file:
+                file.close()
 
     async def _club(self, interaction, club):
         if club is None:
@@ -100,15 +200,23 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
                 + (f" · Outfit: {label(variant)}" if variant else " · All outfits")
             )
             embed = discord.Embed(title=title, description=description, color=discord.Color.gold())
-            for row in rows:
-                embed.add_field(
-                    name=f"#{row['position']} · {label(row['trainer_name'])} · {label(row['club_name'])}",
-                    value=score_line(row), inline=False,
-                )
+            add_score_fields(embed, rows)
             pages = (rows[0]['participants'] + 9) // 10
             embed.set_footer(text=f"Page {page}/{pages} · {rows[0]['participants']} trainers · "
                              "/uma status for your ranks")
-            await self._send_card(interaction, embed, rows)
+            async def load_page(target):
+                new_rows = await UmaArchive.leaderboard(None, club_id, uma, variant, target)
+                if not new_rows:
+                    raise ValueError('Scores have changed. Run /uma leaderboard again to refresh.')
+                new_pages = (new_rows[0]['participants'] + 9) // 10
+                new_embed = discord.Embed(title=title, description=description, color=discord.Color.gold())
+                add_score_fields(new_embed, new_rows)
+                new_embed.set_footer(text=f"Page {target}/{new_pages} · {new_rows[0]['participants']} trainers · "
+                                    "/uma status for your ranks")
+                return new_embed, new_rows, new_pages
+
+            view = ArchivePaginationView(self, interaction.user.id, page, pages, load_page)
+            await self._send_card(interaction, embed, rows, view)
         except Exception as error:
             await self._error(interaction, error)
 
@@ -143,17 +251,36 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
                 )
             embed = discord.Embed(title="Your Uma Archive", description=description,
                                   color=discord.Color.blurple())
-            for row in rows:
-                embed.add_field(
-                    name=f"{label(row['uma_name'])} — {label(row['variant'])}",
-                    value=f"**{row['score']:,}** · {label(row['rank'], 10)}\n"
-                          f"Outfit rank: **#{row['position']} / {row['participants']}** trainers",
-                    inline=False,
-                )
+            add_score_fields(embed, rows, personal=True)
             pages = (rows[0]['total_entries'] + 9) // 10
             embed.set_footer(text=f"Page {page}/{pages} · {rows[0]['total_entries']} scores · "
                              "Ranks across all scanned clubs; ties share a rank")
-            await self._send_card(interaction, embed, rows, personal=True)
+            async def load_page(target):
+                # Revalidate the link, including active membership, before revealing another page.
+                current_member = await UmaArchive.linked_member(None, interaction.user.id)
+                if not current_member or current_member['member_id'] != member['member_id']:
+                    raise ValueError('Your trainer link has changed. Run /uma status again.')
+                new_rows = await UmaArchive.personal_scores(None, member['member_id'], uma, variant, target)
+                if not new_rows:
+                    raise ValueError('Scores have changed. Run /uma status again to refresh.')
+                new_standing = await UmaArchive.standing(None, member['member_id'], uma, variant)
+                new_description = f"{label(current_member['trainer_name'])} · {label(current_member['club_name'])}\n"
+                if new_standing:
+                    new_description += (
+                        f"{'Filtered' if uma else 'Overall'} global rank: "
+                        f"**#{new_standing['position']} / {new_standing['participants']}** "
+                        f"· Best score: **{new_standing['score']:,}**\n"
+                    )
+                new_pages = (new_rows[0]['total_entries'] + 9) // 10
+                new_embed = discord.Embed(title='Your Uma Archive', description=new_description,
+                                          color=discord.Color.blurple())
+                add_score_fields(new_embed, new_rows, personal=True)
+                new_embed.set_footer(text=f"Page {target}/{new_pages} · {new_rows[0]['total_entries']} scores · "
+                                    "Ranks across all scanned clubs; ties share a rank")
+                return new_embed, new_rows, new_pages
+
+            view = ArchivePaginationView(self, interaction.user.id, page, pages, load_page, personal=True)
+            await self._send_card(interaction, embed, rows, view, personal=True)
         except Exception as error:
             await self._error(interaction, error, private=True)
 
