@@ -17,7 +17,10 @@ not live scores or lifetime records; a new scan replaces the previous archive.
 | `page` | No | Page number, starting at 1; ten trainers per page |
 
 Without `variant`, each trainer's best outfit for the selected Uma is used.
-Every entry shows the trainer, club, Uma, outfit, grade, score, and scan age.
+Every entry shows the trainer, club, Uma, outfit, grade icon, and score on a dark card
+with circular Uma portraits. Portraits show the character's original outfit because
+archive records contain outfit titles rather than image IDs. Scan times are hidden.
+If image rendering is unavailable, the bot sends the scores as a text embed.
 
 ## /uma status
 

@@ -114,6 +114,28 @@ class ArchiveQueryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        # Exercise the text fallback offline unless a test explicitly supplies a rendered image.
+        self.renderer = patch('bot.commands.uma_archive.render_card',
+                              new=AsyncMock(side_effect=RuntimeError('Browser unavailable')))
+        self.renderer.start()
+        self.addCleanup(self.renderer.stop)
+
+    async def test_rendered_card_has_portraits_and_grade_icons_and_no_scan_times(self):
+        cog, ctx = UmaArchiveCommands(None), interaction()
+        row = entry()
+        with patch.object(UmaArchive, 'leaderboard', new=AsyncMock(return_value=[row])), \
+             patch('bot.commands.uma_archive.render_card', new=AsyncMock(return_value=b'png')) as renderer:
+            await cog.leaderboard.callback(cog, ctx)
+        response = ctx.followup.send.await_args.kwargs
+        self.assertEqual(response['file'].filename, 'uma-archive.png')
+        self.assertEqual(response['embed'].image.url, 'attachment://uma-archive.png')
+        self.assertEqual(response['embed'].fields, [])
+        self.assertNotIn('<t:', str(response['embed'].to_dict()))
+        self.assertNotIn('Scanned', str(response['embed'].to_dict()))
+        self.assertEqual(renderer.await_args.args[0], [row])
+        response['file'].close()
+
     async def test_registration_is_member_accessible_and_guild_only(self):
         async with commands.Bot(command_prefix="!", intents=discord.Intents.none()) as bot:
             with patch("bot.commands.trivia.TriviaCommands.cog_load", new=AsyncMock()):
@@ -172,6 +194,8 @@ class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Overall global rank", response['embed'].description)
         self.assertIn("Outfit rank", response['embed'].fields[0].value)
         self.assertIn("Page 1/2", response['embed'].footer.text)
+        self.assertNotIn('<t:', str(response['embed'].to_dict()))
+        self.assertNotIn('Latest complete scan:', response['embed'].description)
 
     async def test_missing_link_unscanned_empty_scan_and_empty_filter(self):
         cog = UmaArchiveCommands(None)

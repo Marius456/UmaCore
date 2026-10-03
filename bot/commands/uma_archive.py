@@ -1,6 +1,7 @@
 """Member-facing Discord leaderboards for imported Uma Hall of Fame archives."""
 
 import asyncio
+import io
 import logging
 
 import asyncpg
@@ -10,6 +11,7 @@ from discord.ext import commands
 
 from models import Club
 from models.uma_archive import UmaArchive
+from services.uma_archive_card import render_card
 from .common import ClubAutocompleteMixin
 
 logger = logging.getLogger(__name__)
@@ -23,8 +25,7 @@ def label(value, limit=100):
 def score_line(row):
     return (
         f"**{row['score']:,}** · {label(row['rank'], 10)}\n"
-        f"{label(row['uma_name'])} — {label(row['variant'])}\n"
-        f"Scanned <t:{int(row['observed_at'].timestamp())}:R>"
+        f"{label(row['uma_name'])} — {label(row['variant'])}"
     )
 
 
@@ -35,6 +36,20 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+
+    async def _send_card(self, interaction, embed, rows, *, personal=False):
+        try:
+            subtitle = embed.description.replace('**', '')
+            image = await render_card(rows, embed.title, subtitle, embed.footer.text, personal=personal)
+        except Exception:
+            logger.warning('Uma archive card rendering failed; using text', exc_info=True)
+            await interaction.followup.send(embed=embed, ephemeral=personal,
+                                             allowed_mentions=discord.AllowedMentions.none())
+            return
+        embed.clear_fields()
+        embed.set_image(url='attachment://uma-archive.png')
+        await interaction.followup.send(embed=embed, file=discord.File(io.BytesIO(image), 'uma-archive.png'),
+                                         ephemeral=personal, allowed_mentions=discord.AllowedMentions.none())
 
     async def _club(self, interaction, club):
         if club is None:
@@ -92,8 +107,8 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
                 )
             pages = (rows[0]['participants'] + 9) // 10
             embed.set_footer(text=f"Page {page}/{pages} · {rows[0]['participants']} trainers · "
-                             "Latest complete scans, not live scores · /uma status for your ranks")
-            await interaction.followup.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                             "/uma status for your ranks")
+            await self._send_card(interaction, embed, rows)
         except Exception as error:
             await self._error(interaction, error)
 
@@ -126,7 +141,6 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
                     f"**#{standing['position']} / {standing['participants']}** "
                     f"· Best score: **{standing['score']:,}**\n"
                 )
-            description += f"Latest complete scan: <t:{int(member['observed_at'].timestamp())}:f>"
             embed = discord.Embed(title="Your Uma Archive", description=description,
                                   color=discord.Color.blurple())
             for row in rows:
@@ -139,8 +153,7 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
             pages = (rows[0]['total_entries'] + 9) // 10
             embed.set_footer(text=f"Page {page}/{pages} · {rows[0]['total_entries']} scores · "
                              "Ranks across all scanned clubs; ties share a rank")
-            await interaction.followup.send(embed=embed, ephemeral=True,
-                                             allowed_mentions=discord.AllowedMentions.none())
+            await self._send_card(interaction, embed, rows, personal=True)
         except Exception as error:
             await self._error(interaction, error, private=True)
 
