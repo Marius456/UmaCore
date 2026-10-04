@@ -208,7 +208,7 @@ class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
         fetch.assert_not_awaited()
         self.assertIn("Choose an Uma", ctx.followup.send.await_args.args[0])
 
-    async def test_personal_status_is_private_and_shows_overall_and_outfit_rank(self):
+    async def test_personal_status_is_public_and_shows_overall_and_outfit_rank(self):
         cog, ctx = UmaArchiveCommands(None), interaction()
         row = entry()
         member = {**row, "entry_count": 11}
@@ -218,9 +218,9 @@ class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
             await cog.status.callback(cog, ctx)
         linked.assert_awaited_once_with(None, 456)
         scores.assert_awaited_once_with(None, row['member_id'], None, None, 1)
-        ctx.response.defer.assert_awaited_once_with(ephemeral=True)
+        ctx.response.defer.assert_awaited_once_with()
         response = ctx.followup.send.await_args.kwargs
-        self.assertTrue(response['ephemeral'])
+        self.assertFalse(response['ephemeral'])
         self.assertNotIn('embed', response)
         self.assertIn("Overall global rank", response['content'])
         self.assertIn("Outfit rank", response['content'])
@@ -229,7 +229,7 @@ class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('Latest complete scan:', response['content'])
         self.addCleanup(response['view'].stop)
 
-    async def test_personal_image_is_private_without_embed(self):
+    async def test_personal_image_is_public_without_embed(self):
         cog, ctx = UmaArchiveCommands(None), interaction()
         row = entry()
         with patch.object(UmaArchive, 'linked_member', new=AsyncMock(return_value={**row, 'entry_count': 11})), \
@@ -239,7 +239,7 @@ class ArchiveCommandTests(unittest.IsolatedAsyncioTestCase):
             await cog.status.callback(cog, ctx)
         response = ctx.followup.send.await_args.kwargs
         self.addCleanup(response['view'].stop)
-        self.assertTrue(response['ephemeral'])
+        self.assertFalse(response['ephemeral'])
         self.assertNotIn('embed', response)
         self.assertEqual(response['file'].filename, 'uma-archive.png')
         self.assertTrue(renderer.await_args.kwargs['personal'])

@@ -27,12 +27,12 @@ Use the ◀ and ▶ buttons below the card to browse ten results at a time. Butt
 the same message and keep your Uma, outfit, and club filters. Only the command's author
 can use its buttons; other members can run their own command. Controls disable at the
 first/last page and expire after five minutes of inactivity. Personal status has the
-same controls and remains private. The optional `page` argument still lets you jump
+same controls and is visible to everyone in the channel. The optional `page` argument still lets you jump
 directly to a page.
 
 ## /uma status
 
-Privately view your linked trainer's highest score and its rank among all recorded
+Show everyone in the channel your linked trainer's highest score and its rank among all recorded
 scores globally, plus each
 Uma/outfit's score and rank against other trainers with that same Uma/outfit. Requires
 `/link_trainer` in your club's server and an active trainer. You can then check status from

@@ -159,7 +159,7 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
 
     async def _send_card(self, interaction, embed, rows, view, *, personal=False):
         file = await self._render_card(embed, rows, personal=personal)
-        kwargs = dict(view=view, ephemeral=personal, wait=True,
+        kwargs = dict(view=view, ephemeral=False, wait=True,
                       allowed_mentions=discord.AllowedMentions.none())
         if file:
             kwargs['file'] = file
@@ -245,13 +245,13 @@ class UmaArchiveCommands(ClubAutocompleteMixin, commands.Cog):
         except Exception as error:
             await self._error(interaction, error)
 
-    @uma.command(name="status", description="Privately view your archive scores and global rankings")
+    @uma.command(name="status", description="Show your archive scores and global rankings in this channel")
     @app_commands.describe(uma="Uma name; omit to view your whole archive",
                            variant="Outfit; omit to include all outfits",
                            page="Results page (10 scores per page)")
     async def status(self, interaction: discord.Interaction, uma: str | None = None,
                      variant: str | None = None, page: app_commands.Range[int, 1, 10000] = 1):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
         try:
             self._validate_filter(uma, variant)
             member = await UmaArchive.linked_member(None, interaction.user.id)

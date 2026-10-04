@@ -59,7 +59,7 @@ class HelpCommands(commands.Cog):
             value=(
                 "`/uma leaderboard` — Rank all recorded Uma scores; trainers can appear multiple times.\n"
                 "Add `uma`, `variant`, or `club` to filter; use `page` to see more results.\n"
-                "`/uma status` — Privately view your scores and ranks after linking your trainer."
+                "`/uma status` — Show your scores and ranks in this channel after linking your trainer."
             ),
             inline=False,
         )
