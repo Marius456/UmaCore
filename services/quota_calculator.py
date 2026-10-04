@@ -470,7 +470,7 @@ class QuotaCalculator:
     async def get_member_status_summary(self, club_id: UUID, current_date: date,
                                         quota_period: str = 'daily') -> Dict:
         """
-        Get summary of all members' status for a club.
+        Get active members' status from snapshots on the requested report date.
 
         For weekly/biweekly quotas, each member_status entry will additionally
         contain 'period_start_fans' and 'period_info'.
@@ -488,6 +488,8 @@ class QuotaCalculator:
             period_info['period_quota'] = period_quota
 
         period_start = period_info['period_start'] if period_info else None
+        # Missing members retain active status during reconciliation's grace period.
+        # Do not carry their older snapshots into a new daily report.
         rows = await db.fetch(
             """
             SELECT
@@ -508,6 +510,7 @@ class QuotaCalculator:
                        deficit_surplus, days_behind
                 FROM quota_history
                 WHERE member_id = m.member_id
+                  AND date = $2
                 ORDER BY date DESC
                 LIMIT 1
             ) latest ON TRUE

@@ -343,6 +343,49 @@ class PredictionDeliveryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StatusSummaryQueryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_report_snapshot_requires_exact_report_date(self):
+        fetch = AsyncMock(return_value=[])
+        with patch("services.quota_calculator.db.fetch", new=fetch):
+            await QuotaCalculator().get_member_status_summary(CLUB_ID, date(2026, 10, 3))
+
+        query, _, report_date, _ = fetch.await_args.args
+        snapshot_query = query.split("LEFT JOIN LATERAL (")[1].split(") latest ON TRUE")[0]
+        snapshot_query = snapshot_query.replace("m.member_id", "$1")
+        with sqlite3.connect(":memory:") as connection:
+            connection.execute(
+                "CREATE TABLE quota_history (id TEXT, member_id TEXT, date TEXT, "
+                "cumulative_fans INTEGER, expected_fans INTEGER, "
+                "deficit_surplus INTEGER, days_behind INTEGER)"
+            )
+            connection.executemany(
+                "INSERT INTO quota_history VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    ("old", "departed", "2026-10-02", 0, 300, -300, 1),
+                    ("previous-month", "departed", "2026-09-30", 900, 300, 600, 0),
+                    ("current", "present", "2026-10-03", 800, 700, 100, 0),
+                    ("future", "present", "2026-10-04", 900, 800, 100, 0),
+                ],
+            )
+            # An active member awaiting deactivation has no report-day snapshot.
+            self.assertIsNone(connection.execute(
+                snapshot_query, {"1": "departed", "2": report_date.isoformat()}
+            ).fetchone())
+            # A historical report must select its own day, even with newer data stored.
+            current = connection.execute(
+                snapshot_query, {"1": "present", "2": report_date.isoformat()}
+            ).fetchone()
+            self.assertEqual(current[0], "current")
+
+    async def test_summary_omits_active_member_without_report_snapshot(self):
+        fetch = AsyncMock(return_value=[{"history_id": None}])
+        with patch("services.quota_calculator.db.fetch", new=fetch):
+            summary = await QuotaCalculator().get_member_status_summary(
+                CLUB_ID, date(2026, 10, 3)
+            )
+        self.assertEqual(summary["total_members"], 0)
+        self.assertEqual(summary["on_track"], [])
+        self.assertEqual(summary["behind"], [])
+
     async def test_daily_baseline_is_bounded_to_report_month(self):
         fetch = AsyncMock(return_value=[])
         with patch("services.quota_calculator.db.fetch", new=fetch):
