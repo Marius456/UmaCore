@@ -37,6 +37,32 @@ class ArchiveCardTests(unittest.TestCase):
         self.assertIn('#1 / 30', personal)
         self.assertIn('Special Week', personal)
 
+    def test_outfit_portraits_and_normalized_names(self):
+        for name, variant, card_id in [
+            ('Mihono Bourbon', 'CODE: ICING', 102602),
+            ('El Condor Pasa', 'Kukulkan Warrior', 101402),
+            ('Haru Urara', 'New Year ♪ New Urara!', 105202),
+            (' haru urara ', '[new year new urara]', 105202),
+            ('Mihono Bourbon', 'ＣＯＤＥ： ＩＣＩＮＧ', 102602),
+            ('Mihono Bourbon', 'Unknown outfit', 102601),
+            ('Mihono Bourbon', None, 102601),
+        ]:
+            with self.subTest(name=name, variant=variant):
+                self.assertTrue(uma_portrait(name, variant).endswith(f'chara_stand_{card_id}.webp'))
+        self.assertIsNone(uma_portrait('Unknown Uma', 'CODE: ICING'))
+        self.assertEqual(uma_portrait('Haru Urara', 'CODE: ICING'), uma_portrait('Haru Urara'))
+
+    def test_both_card_layouts_use_outfit_portraits(self):
+        row = dict(uma_name='Mihono Bourbon', variant='CODE: ICING', trainer_name='Trainer',
+                   club_name='Club', score=20000, rank='UG', position=1, participants=30)
+        images = {uma_portrait(row['uma_name']): 'data:image/webp;base64,base',
+                  uma_portrait(row['uma_name'], row['variant']): 'data:image/webp;base64,outfit'}
+        for personal in (False, True):
+            with self.subTest(personal=personal):
+                html = card_html([row], 'Title', 'Scope', 'Page 1', images, personal=personal)
+                self.assertIn('data:image/webp;base64,outfit', html)
+                self.assertNotIn('data:image/webp;base64,base', html)
+
 
 class ArchiveImageCacheTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -86,6 +112,17 @@ class ArchiveImageCacheTests(unittest.IsolatedAsyncioTestCase):
                 await cards.render_card(self.rows, 'Title', 'Scope', 'Page 1')
             self.assertEqual(await cards.render_card(self.rows, 'Title', 'Scope', 'Page 1'), b'png')
             self.assertEqual(renderer.await_count, 2)
+
+    async def test_image_fetch_includes_outfit_portrait(self):
+        self.rows[0].update(uma_name='Mihono Bourbon', variant='CODE: ICING')
+        # Stop after fetching, before starting the browser; verify the real fetch path.
+        with patch.object(cards, 'image_data', new=AsyncMock(return_value={})) as fetch, \
+             patch.object(cards, 'card_html', side_effect=RuntimeError('stop before browser')):
+            with self.assertRaisesRegex(RuntimeError, 'stop before browser'):
+                await cards._render_uncached(self.rows, 'Title', 'Scope', 'Page 1')
+        urls = fetch.await_args.args[0]
+        self.assertIn(uma_portrait('Mihono Bourbon', 'CODE: ICING'), urls)
+        self.assertNotIn(uma_portrait('Mihono Bourbon'), urls)
 
 
 if __name__ == '__main__':

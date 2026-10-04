@@ -1,0 +1,692 @@
+{
+  "source": "https://gametora.com/data/umamusume/character-cards.bc892aba.json",
+  "reviewed_on": "2026-10-03",
+  "selection": "Cards with Global English outfit titles; IDs select uma.moe character_stand portraits.",
+  "cards": [
+    {
+      "card_id": 100101,
+      "name": "Special Week",
+      "variant": "Special Dreamer"
+    },
+    {
+      "card_id": 100102,
+      "name": "Special Week",
+      "variant": "Hopp'n♪Happy Heart"
+    },
+    {
+      "card_id": 100103,
+      "name": "Special Week",
+      "variant": "Ruler of Japan"
+    },
+    {
+      "card_id": 100201,
+      "name": "Silence Suzuka",
+      "variant": "Innocent Silence"
+    },
+    {
+      "card_id": 100202,
+      "name": "Silence Suzuka",
+      "variant": "Emerald Tidings"
+    },
+    {
+      "card_id": 100301,
+      "name": "Tokai Teio",
+      "variant": "Peak Joy"
+    },
+    {
+      "card_id": 100302,
+      "name": "Tokai Teio",
+      "variant": "Beyond the Horizon"
+    },
+    {
+      "card_id": 100401,
+      "name": "Maruzensky",
+      "variant": "Formula R"
+    },
+    {
+      "card_id": 100402,
+      "name": "Maruzensky",
+      "variant": "Hot☆Summer Night"
+    },
+    {
+      "card_id": 100501,
+      "name": "Fuji Kiseki",
+      "variant": "Shooting Star Revue"
+    },
+    {
+      "card_id": 100502,
+      "name": "Fuji Kiseki",
+      "variant": "Succès Étoilé"
+    },
+    {
+      "card_id": 100601,
+      "name": "Oguri Cap",
+      "variant": "Starlight Beat"
+    },
+    {
+      "card_id": 100602,
+      "name": "Oguri Cap",
+      "variant": "Ashen Miracle"
+    },
+    {
+      "card_id": 100701,
+      "name": "Gold Ship",
+      "variant": "Red Strife"
+    },
+    {
+      "card_id": 100702,
+      "name": "Gold Ship",
+      "variant": "RUN! RUIN! LAUNCHER!"
+    },
+    {
+      "card_id": 100801,
+      "name": "Vodka",
+      "variant": "Wild Top Gear"
+    },
+    {
+      "card_id": 100802,
+      "name": "Vodka",
+      "variant": "Fiery Aqua Vitae"
+    },
+    {
+      "card_id": 100901,
+      "name": "Daiwa Scarlet",
+      "variant": "Peak Blue"
+    },
+    {
+      "card_id": 100902,
+      "name": "Daiwa Scarlet",
+      "variant": "Nuit Étoilée de Scarlet"
+    },
+    {
+      "card_id": 101001,
+      "name": "Taiki Shuttle",
+      "variant": "Wild Frontier"
+    },
+    {
+      "card_id": 101002,
+      "name": "Taiki Shuttle",
+      "variant": "Bubblegum☆Memories"
+    },
+    {
+      "card_id": 101101,
+      "name": "Grass Wonder",
+      "variant": "Stone-Piercing Blue"
+    },
+    {
+      "card_id": 101102,
+      "name": "Grass Wonder",
+      "variant": "Saintly Jade Cleric"
+    },
+    {
+      "card_id": 101201,
+      "name": "Hishi Amazon",
+      "variant": "Azure Amazon"
+    },
+    {
+      "card_id": 101202,
+      "name": "Hishi Amazon",
+      "variant": "Hungry Veil"
+    },
+    {
+      "card_id": 101301,
+      "name": "Mejiro McQueen",
+      "variant": "Frontline Elegance"
+    },
+    {
+      "card_id": 101302,
+      "name": "Mejiro McQueen",
+      "variant": "End of the Skies"
+    },
+    {
+      "card_id": 101303,
+      "name": "Mejiro McQueen",
+      "variant": "Fair Lady of the Waves"
+    },
+    {
+      "card_id": 101401,
+      "name": "El Condor Pasa",
+      "variant": "El☆Número 1"
+    },
+    {
+      "card_id": 101402,
+      "name": "El Condor Pasa",
+      "variant": "Kukulkan Warrior"
+    },
+    {
+      "card_id": 101501,
+      "name": "TM Opera O",
+      "variant": "O Sole Suo!"
+    },
+    {
+      "card_id": 101502,
+      "name": "TM Opera O",
+      "variant": "New Year, Same Radiance!"
+    },
+    {
+      "card_id": 101601,
+      "name": "Narita Brian",
+      "variant": "Maverick"
+    },
+    {
+      "card_id": 101602,
+      "name": "Narita Brian",
+      "variant": "Ravenous Wolf"
+    },
+    {
+      "card_id": 101701,
+      "name": "Symboli Rudolf",
+      "variant": "Emperor's Path"
+    },
+    {
+      "card_id": 101702,
+      "name": "Symboli Rudolf",
+      "variant": "Archer by Moonlight"
+    },
+    {
+      "card_id": 101801,
+      "name": "Air Groove",
+      "variant": "Empress Road"
+    },
+    {
+      "card_id": 101802,
+      "name": "Air Groove",
+      "variant": "Quercus Civilis"
+    },
+    {
+      "card_id": 101901,
+      "name": "Agnes Digital",
+      "variant": "Full-Color Fangirling"
+    },
+    {
+      "card_id": 101902,
+      "name": "Agnes Digital",
+      "variant": "Fanatic♡Jiangshi"
+    },
+    {
+      "card_id": 102001,
+      "name": "Seiun Sky",
+      "variant": "Reeling in the Big One"
+    },
+    {
+      "card_id": 102002,
+      "name": "Seiun Sky",
+      "variant": "Soirée des Chatons"
+    },
+    {
+      "card_id": 102101,
+      "name": "Tamamo Cross",
+      "variant": "Fast as Lightning"
+    },
+    {
+      "card_id": 102102,
+      "name": "Tamamo Cross",
+      "variant": "Raging Thunder"
+    },
+    {
+      "card_id": 102201,
+      "name": "Fine Motion",
+      "variant": "Noble Seamair"
+    },
+    {
+      "card_id": 102202,
+      "name": "Fine Motion",
+      "variant": "Titania"
+    },
+    {
+      "card_id": 102301,
+      "name": "Biwa Hayahide",
+      "variant": "pf. Winning Equation..."
+    },
+    {
+      "card_id": 102302,
+      "name": "Biwa Hayahide",
+      "variant": "Rouge Caroler"
+    },
+    {
+      "card_id": 102401,
+      "name": "Mayano Top Gun",
+      "variant": "Scramble☆Zone"
+    },
+    {
+      "card_id": 102402,
+      "name": "Mayano Top Gun",
+      "variant": "Sunlight Bouquet"
+    },
+    {
+      "card_id": 102501,
+      "name": "Manhattan Cafe",
+      "variant": "Creeping Shadow"
+    },
+    {
+      "card_id": 102601,
+      "name": "Mihono Bourbon",
+      "variant": "MB-19890425"
+    },
+    {
+      "card_id": 102602,
+      "name": "Mihono Bourbon",
+      "variant": "CODE: ICING"
+    },
+    {
+      "card_id": 102701,
+      "name": "Mejiro Ryan",
+      "variant": "Down the Line"
+    },
+    {
+      "card_id": 102702,
+      "name": "Mejiro Ryan",
+      "variant": "Marguerite Latte"
+    },
+    {
+      "card_id": 102801,
+      "name": "Hishi Akebono",
+      "variant": "Buono ☆ Alla Moda"
+    },
+    {
+      "card_id": 102901,
+      "name": "Yukino Bijin",
+      "variant": "Darl'n Snowflake"
+    },
+    {
+      "card_id": 103001,
+      "name": "Rice Shower",
+      "variant": "Rosy Dreams"
+    },
+    {
+      "card_id": 103002,
+      "name": "Rice Shower",
+      "variant": "Vampire Makeover!"
+    },
+    {
+      "card_id": 103101,
+      "name": "Ines Fujin",
+      "variant": "Always Electrifying"
+    },
+    {
+      "card_id": 103102,
+      "name": "Ines Fujin",
+      "variant": "Melt Your Heart"
+    },
+    {
+      "card_id": 103201,
+      "name": "Agnes Tachyon",
+      "variant": "tach-nology"
+    },
+    {
+      "card_id": 103202,
+      "name": "Agnes Tachyon",
+      "variant": "Lunatic Lab"
+    },
+    {
+      "card_id": 103301,
+      "name": "Admire Vega",
+      "variant": "Starry Nocturne"
+    },
+    {
+      "card_id": 103401,
+      "name": "Inari One",
+      "variant": "Edomurasaki"
+    },
+    {
+      "card_id": 103402,
+      "name": "Inari One",
+      "variant": "Golden Dream"
+    },
+    {
+      "card_id": 103501,
+      "name": "Winning Ticket",
+      "variant": "Get to Winning!"
+    },
+    {
+      "card_id": 103502,
+      "name": "Winning Ticket",
+      "variant": "Dream Deliverer"
+    },
+    {
+      "card_id": 103601,
+      "name": "Air Shakur",
+      "variant": "unsigned"
+    },
+    {
+      "card_id": 103701,
+      "name": "Eishin Flash",
+      "variant": "Meisterschaft"
+    },
+    {
+      "card_id": 103702,
+      "name": "Eishin Flash",
+      "variant": "Precise Chocolatier"
+    },
+    {
+      "card_id": 103801,
+      "name": "Curren Chan",
+      "variant": "Fille Éclair"
+    },
+    {
+      "card_id": 103802,
+      "name": "Curren Chan",
+      "variant": "Ma Chérie of the New Moon"
+    },
+    {
+      "card_id": 103901,
+      "name": "Kawakami Princess",
+      "variant": "Princess of Pink"
+    },
+    {
+      "card_id": 104001,
+      "name": "Gold City",
+      "variant": "Authentic / 1928"
+    },
+    {
+      "card_id": 104002,
+      "name": "Gold City",
+      "variant": "Autumn Cosmos"
+    },
+    {
+      "card_id": 104101,
+      "name": "Sakura Bakushin O",
+      "variant": "Blossom in Learning"
+    },
+    {
+      "card_id": 104102,
+      "name": "Sakura Bakushin O",
+      "variant": "Red Hot☆Leader"
+    },
+    {
+      "card_id": 104201,
+      "name": "Seeking the Pearl",
+      "variant": "Rocket☆Star"
+    },
+    {
+      "card_id": 104301,
+      "name": "Shinko Windy",
+      "variant": "Wicked Punk"
+    },
+    {
+      "card_id": 104401,
+      "name": "Sweep Tosho",
+      "variant": "Platanus Witch"
+    },
+    {
+      "card_id": 104501,
+      "name": "Super Creek",
+      "variant": "Murmuring Stream"
+    },
+    {
+      "card_id": 104502,
+      "name": "Super Creek",
+      "variant": "Chiffon-Wrapped Mummy"
+    },
+    {
+      "card_id": 104601,
+      "name": "Smart Falcon",
+      "variant": "LOVE☆4EVER"
+    },
+    {
+      "card_id": 104602,
+      "name": "Smart Falcon",
+      "variant": "Twilight Triumph"
+    },
+    {
+      "card_id": 104701,
+      "name": "Zenno Rob Roy",
+      "variant": "Heroic Author"
+    },
+    {
+      "card_id": 104801,
+      "name": "Tosen Jordan",
+      "variant": "Jokester ☆ Vibes"
+    },
+    {
+      "card_id": 104802,
+      "name": "Tosen Jordan",
+      "variant": "Aurore☆Vacances"
+    },
+    {
+      "card_id": 104901,
+      "name": "Nakayama Festa",
+      "variant": "Desperate Measures"
+    },
+    {
+      "card_id": 105001,
+      "name": "Narita Taishin",
+      "variant": "Nevertheless"
+    },
+    {
+      "card_id": 105002,
+      "name": "Narita Taishin",
+      "variant": "Difference Engineer"
+    },
+    {
+      "card_id": 105101,
+      "name": "Nishino Flower",
+      "variant": "Layered Petals"
+    },
+    {
+      "card_id": 105102,
+      "name": "Nishino Flower",
+      "variant": "Sweet Juneberry"
+    },
+    {
+      "card_id": 105201,
+      "name": "Haru Urara",
+      "variant": "Bestest Prize ♪"
+    },
+    {
+      "card_id": 105202,
+      "name": "Haru Urara",
+      "variant": "New Year ♪ New Urara!"
+    },
+    {
+      "card_id": 105301,
+      "name": "Bamboo Memory",
+      "variant": "Iron Ambition"
+    },
+    {
+      "card_id": 105302,
+      "name": "Bamboo Memory",
+      "variant": "Ultra☆Marine"
+    },
+    {
+      "card_id": 105501,
+      "name": "Marvelous Sunday",
+      "variant": "★Super∞Marvel∞Tastic☆"
+    },
+    {
+      "card_id": 105601,
+      "name": "Matikanefukukitaru",
+      "variant": "Rising☆Fortune"
+    },
+    {
+      "card_id": 105602,
+      "name": "Matikanefukukitaru",
+      "variant": "Lucky Tidings"
+    },
+    {
+      "card_id": 105701,
+      "name": "Mr. C.B.",
+      "variant": "Clear Bliss"
+    },
+    {
+      "card_id": 105801,
+      "name": "Meisho Doto",
+      "variant": "Turbulent Blue"
+    },
+    {
+      "card_id": 105802,
+      "name": "Meisho Doto",
+      "variant": "Dot-o'-Lantern"
+    },
+    {
+      "card_id": 105901,
+      "name": "Mejiro Dober",
+      "variant": "Off the Line"
+    },
+    {
+      "card_id": 105902,
+      "name": "Mejiro Dober",
+      "variant": "Sapphire Sojourn"
+    },
+    {
+      "card_id": 106001,
+      "name": "Nice Nature",
+      "variant": "Poinsettia Ribbon"
+    },
+    {
+      "card_id": 106002,
+      "name": "Nice Nature",
+      "variant": "Run & Win"
+    },
+    {
+      "card_id": 106101,
+      "name": "King Halo",
+      "variant": "King of Emeralds"
+    },
+    {
+      "card_id": 106102,
+      "name": "King Halo",
+      "variant": "Cheerleader in Noble White"
+    },
+    {
+      "card_id": 106201,
+      "name": "Matikanetannhauser",
+      "variant": "Clippety-Tippety-Clop"
+    },
+    {
+      "card_id": 106202,
+      "name": "Matikanetannhauser",
+      "variant": "Blue Turbulence"
+    },
+    {
+      "card_id": 106401,
+      "name": "Mejiro Palmer",
+      "variant": "Line Breakthrough"
+    },
+    {
+      "card_id": 106501,
+      "name": "Daitaku Helios",
+      "variant": "Fun☆Fun☆Party Night"
+    },
+    {
+      "card_id": 106601,
+      "name": "Twin Turbo",
+      "variant": "Turbo Engine! Full Throttle!"
+    },
+    {
+      "card_id": 106701,
+      "name": "Satono Diamond",
+      "variant": "Natural Brilliance"
+    },
+    {
+      "card_id": 106702,
+      "name": "Satono Diamond",
+      "variant": "Jade's Prosperity"
+    },
+    {
+      "card_id": 106801,
+      "name": "Kitasan Black",
+      "variant": "Gilded Shrine to Glory"
+    },
+    {
+      "card_id": 106802,
+      "name": "Kitasan Black",
+      "variant": "Crane's Ambition"
+    },
+    {
+      "card_id": 106901,
+      "name": "Sakura Chiyono O",
+      "variant": "Strength in Full Bloom"
+    },
+    {
+      "card_id": 106902,
+      "name": "Sakura Chiyono O",
+      "variant": "Fleur Enneigée"
+    },
+    {
+      "card_id": 107001,
+      "name": "Sirius Symboli",
+      "variant": "Féroce"
+    },
+    {
+      "card_id": 107101,
+      "name": "Mejiro Ardan",
+      "variant": "Crystalline"
+    },
+    {
+      "card_id": 107102,
+      "name": "Mejiro Ardan",
+      "variant": "Neige Émeraude"
+    },
+    {
+      "card_id": 107201,
+      "name": "Yaeno Muteki",
+      "variant": "Blazed Head, Covered Fists"
+    },
+    {
+      "card_id": 107401,
+      "name": "Mejiro Bright",
+      "variant": "Brunissage Line"
+    },
+    {
+      "card_id": 107601,
+      "name": "Sakura Laurel",
+      "variant": "Saisir le rêve"
+    },
+    {
+      "card_id": 107801,
+      "name": "Yamanin Zephyr",
+      "variant": "Fluttertail Spirit"
+    },
+    {
+      "card_id": 108301,
+      "name": "Symboli Kris S",
+      "variant": "Onyx Soldier"
+    },
+    {
+      "card_id": 108401,
+      "name": "Tanino Gimlet",
+      "variant": "Mantle of Keravnos"
+    },
+    {
+      "card_id": 108501,
+      "name": "Daiichi Ruby",
+      "variant": "Opulent Gem"
+    },
+    {
+      "card_id": 108701,
+      "name": "Aston Machan",
+      "variant": "Flare"
+    },
+    {
+      "card_id": 109801,
+      "name": "Copano Rickey",
+      "variant": "Eightfold☆Fortune"
+    },
+    {
+      "card_id": 109901,
+      "name": "Hokko Tarumae",
+      "variant": "Starry Lightship"
+    },
+    {
+      "card_id": 110001,
+      "name": "Wonder Acute",
+      "variant": "Butterfly Sting"
+    },
+    {
+      "card_id": 110401,
+      "name": "Katsuragi Ace",
+      "variant": "Dragon Rising"
+    },
+    {
+      "card_id": 110501,
+      "name": "Neo Universe",
+      "variant": "Universe-Naut"
+    },
+    {
+      "card_id": 110601,
+      "name": "Hishi Miracle",
+      "variant": "Miracle Maker"
+    }
+  ]
+}

@@ -26,13 +26,22 @@ def portrait_name_key(name):
 @lru_cache(maxsize=1)
 def portrait_ids():
     roster = Path(__file__).resolve().parents[1] / 'assets/horse_trivia/gametora_support_roster.json'
-    # The archive has names, not card IDs. Use each character's original outfit portrait.
+    # Original outfits remain the fallback for missing or unrecognized variants.
     return {portrait_name_key(row['name']): row['char_id'] * 100 + 1
             for row in json.loads(roster.read_text('utf-8'))['horses']}
 
 
-def uma_portrait(name):
-    return portrait_url(portrait_ids().get(portrait_name_key(name)))
+@lru_cache(maxsize=1)
+def variant_portrait_ids():
+    catalog = Path(__file__).resolve().parents[1] / 'assets/uma_archive/portraits.json'
+    return {(portrait_name_key(row['name']), portrait_name_key(row['variant'])): row['card_id']
+            for row in json.loads(catalog.read_text('utf-8'))['cards']}
+
+
+def uma_portrait(name, variant=None):
+    name_key = portrait_name_key(name)
+    card_id = variant_portrait_ids().get((name_key, portrait_name_key(variant or '')))
+    return portrait_url(card_id if card_id is not None else portrait_ids().get(name_key))
 
 
 def grade_icon(grade):
@@ -91,7 +100,7 @@ def card_html(rows, title, subtitle, footer, images, *, personal=False):
 
     parts = []
     for row in rows:
-        portrait = images.get(uma_portrait(row['uma_name']))
+        portrait = images.get(uma_portrait(row['uma_name'], row['variant']))
         icon = images.get(grade_icon(row['rank']))
         avatar = (f'<img src="{portrait}" alt="">' if portrait else
                   text(''.join(word[0] for word in row['uma_name'].split()[:2])))
@@ -183,7 +192,8 @@ async def render_card(rows, title, subtitle, footer, *, personal=False):
 async def _render_uncached(rows, title, subtitle, footer, *, personal=False):
     from services import report_generator as reports
 
-    urls = [url for row in rows for url in (uma_portrait(row['uma_name']), grade_icon(row['rank']))]
+    urls = [url for row in rows for url in
+            (uma_portrait(row['uma_name'], row['variant']), grade_icon(row['rank']))]
     try:
         images = await asyncio.wait_for(image_data(urls), timeout=6)
     except asyncio.TimeoutError:
