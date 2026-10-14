@@ -452,7 +452,8 @@ metaphors, or suggesting a finished race when reporting an ongoing chase.
    the highest earlier verified daily gain; matching it does not qualify.
    Simultaneous record setters are described as jointly setting the record.
 3. Otherwise, rotate among qualifying types in this order: a climb of at least
-   two places ending in the top three, a new personal best this month, an
+   two places ending in the top three, a new personal best this month exceeding
+   the previous best by at least **10% and 500,000 fans**, an
    adjacent-rank chase for #1–#3 within two days, a breakout at least 50% above
    this month's average, and a sole-leader
    streak reaching 5/10/15/20/25/30 consecutive days.

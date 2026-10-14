@@ -145,6 +145,8 @@ class LeaderboardReportService:
     CLUB_TIERS = ("D", "D+", "C", "C+", "B", "B+", "A", "A+", "S", "S+", "SS")
 
     FIELD_MAX = 1024
+    HEADLINE_PB_MIN_INCREASE = 500_000
+    HEADLINE_PB_MIN_PERCENT = 10
     HEADLINE_ROTATION = (
         HeadlineType.CLIMB, HeadlineType.PERSONAL_BEST, HeadlineType.CHASE,
         HeadlineType.BREAKOUT, HeadlineType.STREAK,
@@ -1367,11 +1369,16 @@ class LeaderboardReportService:
                     gain, rank,
                 ))
             earlier = [value for day, value in gains[name].items() if day < report_date]
-            if earlier and gain > max(earlier):
-                candidates.append(HeadlineCandidate(
-                    HeadlineType.PERSONAL_BEST, (name,),
-                    {"gain": gain, "previous": max(earlier)}, gain, rank,
-                ))
+            if earlier:
+                previous_best = max(earlier)
+                improvement = gain - previous_best
+                # Use integer comparisons so exact threshold boundaries qualify.
+                if (improvement >= cls.HEADLINE_PB_MIN_INCREASE
+                        and improvement * 100 >= previous_best * cls.HEADLINE_PB_MIN_PERCENT):
+                    candidates.append(HeadlineCandidate(
+                        HeadlineType.PERSONAL_BEST, (name,),
+                        {"gain": gain, "previous": previous_best}, gain, rank,
+                    ))
             # Match the efficiency king's sample, volume and surplus rules,
             # but only use verified daily observations (including today).
             history = list(gains[name].values())

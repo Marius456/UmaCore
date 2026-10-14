@@ -41,9 +41,9 @@ def selected(history, rotation=0):
 
 def test_new_leader_beats_club_record_and_rotating_stories():
     history = rankings(
-        {"Alpha": 10, "Bravo": 9, "Charlie": 1},
-        {"Alpha": 12, "Bravo": 10, "Charlie": 2},
-        {"Bravo": 30, "Alpha": 14, "Charlie": 8},
+        {"Alpha": 10_000_000, "Bravo": 9_000_000, "Charlie": 1_000_000},
+        {"Alpha": 12_000_000, "Bravo": 10_000_000, "Charlie": 2_000_000},
+        {"Bravo": 30_000_000, "Alpha": 14_000_000, "Charlie": 8_000_000},
     )
     assert of_kind(history, Kind.CLUB_RECORD)
     assert of_kind(history, Kind.PERSONAL_BEST)
@@ -51,7 +51,7 @@ def test_new_leader_beats_club_record_and_rotating_stories():
         story = selected(history, rotation)
         assert story.kind == Kind.LEADER_CHANGE
         assert story.names == ("Bravo", "Alpha")
-        assert story.facts["gap"] == 16
+        assert story.facts["gap"] == 16_000_000
 
 
 def test_club_record_beats_rotating_stories_and_uses_largest_gain():
@@ -98,13 +98,72 @@ def test_climb_uses_actual_previous_calendar_rank_not_cached_prev_rank():
 
 def test_personal_best_selects_largest_daily_gain_not_percentage_improvement():
     history = rankings(
-        {"Leader": 100, "A": 20, "B": 10},
-        {"Leader": 120, "A": 25, "B": 11},
-        {"Leader": 140, "A": 35, "B": 20},
+        {"Leader": 100_000_000, "A": 20_000_000, "B": 10_000_000},
+        {"Leader": 120_000_000, "A": 25_000_000, "B": 11_000_000},
+        {"Leader": 140_000_000, "A": 35_000_000, "B": 20_000_000},
     )
     stories = of_kind(history, Kind.PERSONAL_BEST)
     assert {c.names[0] for c in stories} == {"A", "B"}
     assert Report._select_headline_candidate(stories, 0).names == ("A",)
+
+
+@pytest.mark.parametrize("previous, gain, qualifies", [
+    (1_000_000, 1_499_999, False),  # Percentage alone is insufficient.
+    (1_000_000, 1_500_000, True),   # Exact absolute threshold.
+    (10_000_000, 10_500_000, False),  # Absolute increase alone is insufficient.
+    (10_000_000, 10_999_999, False),
+    (10_000_000, 11_000_000, True),  # Exact percentage threshold.
+    (5_000_000, 5_500_000, True),   # Both exact thresholds.
+    (5_000_001, 5_500_001, False),  # Do not round a sub-10% improvement up.
+    (5_000_001, 5_500_002, True),
+    (5_000_000, 6_000_000, True),
+    (5_000_000, 5_000_000, False),
+    (5_000_000, 4_999_999, False),
+    (0, 500_000, True),  # No division by a zero previous best.
+])
+def test_personal_best_headlines_require_both_improvement_thresholds(previous, gain, qualifies):
+    history = rankings(
+        {"Leader": 100_000_000, "A": 10_000_000},
+        {"Leader": 120_000_000, "A": 10_000_000 + previous},
+        {"Leader": 140_000_000, "A": 10_000_000 + previous + gain},
+    )
+    stories = of_kind(history, Kind.PERSONAL_BEST)
+    assert bool(stories) == qualifies
+    if qualifies:
+        assert stories[0].facts == {"gain": gain, "previous": previous}
+
+
+def test_chumsalmon_small_personal_best_falls_back_and_remains_in_today_records():
+    previous, gain = 5_193_736, 5_203_094
+    history = rankings(
+        {"Leader": 100_000_000, "Chumsalmon": 10_000_000},
+        {"Leader": 120_000_000, "Chumsalmon": 10_000_000 + previous},
+        {"Leader": 140_000_000, "Chumsalmon": 10_000_000 + previous + gain},
+        start=date(2026, 10, 11),
+    )
+    assert not of_kind(history, Kind.PERSONAL_BEST)
+    for rotation in range(10):
+        assert selected(history, rotation).kind == Kind.DAILY_GAIN
+    latest = max(history)
+    records = Report._compute_today_records({"Chumsalmon": [
+        {"date": latest - timedelta(days=1), "delta": previous},
+        {"date": latest, "delta": gain},
+    ]}, latest)
+    assert records["count"] == 1
+    assert records["members"][0]["name"] == "Chumsalmon"
+    assert not records["members"][0]["is_tie"]
+
+
+def test_rejected_personal_best_allows_a_qualifying_personal_best_headline():
+    history = rankings(
+        {"Leader": 100_000_000, "Small": 20_000_000, "Big": 10_000_000},
+        {"Leader": 120_000_000, "Small": 25_193_736, "Big": 12_000_000},
+        {"Leader": 140_000_000, "Small": 30_396_830, "Big": 15_000_000},
+    )
+    for rotation in range(10):
+        story = selected(history, rotation)
+        assert story.kind == Kind.PERSONAL_BEST
+        assert story.names == ("Big",)
 
 
 @pytest.mark.parametrize("old_rank, new_rank, qualifies", [
