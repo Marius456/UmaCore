@@ -405,3 +405,94 @@ def test_full_report_keeps_sections_and_uses_the_new_headline():
     assert "**Bravo** takes **#1** from **Alpha**" in fields[0].value
     assert fields[0].value.endswith("\n\n───")
     assert len(fields[0].value) <= Report.FIELD_MAX
+
+
+
+def test_month_start_percentage_matches_headline_mvp_and_consistency():
+    history = rankings(
+        {"Xzel": 1_000_000, "Other": 100_000},
+        {"Xzel": 3_000_000, "Other": 200_000},
+        {"Xzel": 9_000_000, "Other": 300_000},
+        start=date(2026, 10, 1),
+    )
+    latest = max(history)
+    # Legacy deltas omit day one; the shared sample must come from snapshots.
+    legacy = {"Xzel": [{"date": latest, "delta": 6_000_000},
+                       {"date": latest - timedelta(days=1), "delta": 2_000_000}]}
+    king = Report._compute_efficiency_king(history, legacy, latest)
+    consistency = Report._compute_consistency(history, legacy, latest)
+    story = of_kind(history, Kind.BREAKOUT)[0]
+    mvp = Report._compute_club_mvp(king, None, history[latest][0], consistency, latest, {})
+    assert king.avg_daily == 3_000_000
+    assert king.pct_above_avg == consistency.top_overperformer["pct_diff"] == 100.0
+    assert story.facts["pct"] == 100.0
+    assert "100.0% above their average daily gain this month" in mvp.description
+    assert "100.0% above their average daily gain this month" in Report._render_headline(story, 0)
+    assert Report._compute_tank_analysis(history, latest, legacy).leader_above_avg is True
+
+
+@pytest.mark.parametrize("start, days, offsets", [
+    (date(2026, 10, 1), [{"A": 10}, {"A": 10}, {"A": 20}], {0: 10, 1: 0, 2: 10}),
+    (date(2026, 10, 1), [{"A": 10}, None, {"A": 100}, {"A": 110}], {0: 10, 3: 10}),
+    (date(2026, 10, 10), [{"A": 100}, {"A": 110}], {1: 10}),
+    (date(2026, 10, 1), [{"A": 10}, {"A": 9}, {"A": 19}], {0: 10, 2: 10}),
+])
+def test_verified_monthly_sample(start, days, offsets):
+    history = rankings(*days, start=start)
+    actual = Report._verified_monthly_gains(history, max(history))
+    assert dict(actual) == {"A": {start + timedelta(days=i): gain for i, gain in offsets.items()}}
+
+
+def test_monthly_sample_excludes_previous_month_and_future():
+    history = rankings(
+        {"A": 100}, {"A": 1}, {"A": 3}, {"A": 1_000_000},
+        start=date(2026, 9, 30),
+    )
+    report_date = date(2026, 10, 2)
+    assert dict(Report._verified_monthly_gains(history, report_date)) == {
+        "A": {date(2026, 10, 1): 1, report_date: 2},
+    }
+    consistency = Report._compute_consistency(history, {}, report_date)
+    assert consistency.top_overperformer["pct_diff"] == 33.3
+
+
+@pytest.mark.parametrize("days", [
+    [{"A": 1_000_000, "B": 0}, {"A": 2_000_000, "B": 0}, None,
+     {"A": 9_000_000, "B": 100_000}],
+    [{"A": 1_000_000, "B": 0}, {"A": 2_000_000, "B": 0},
+     {"A": 9_000_000, "B": 0}, {"A": 8_000_000, "B": 100_000}],
+    [{"B": 0}, {"B": 0}, {"B": 0}, {"A": 8_000_000, "B": 100_000}],
+])
+def test_unverified_today_cannot_supply_monthly_comparisons(days):
+    history = rankings(*days, start=date(2026, 10, 1))
+    latest = max(history)
+    legacy = {"A": [{"date": latest, "delta": 1_000_000}] * 3}
+    assert Report._compute_efficiency_king(history, legacy, latest) is None
+    consistency = Report._compute_consistency(history, legacy, latest)
+    assert consistency.top_overperformer is None or consistency.top_overperformer["name"] != "A"
+    assert consistency.top_cooler is None or consistency.top_cooler["name"] != "A"
+    tank = Report._compute_tank_analysis(history, latest, legacy)
+    assert tank.leader_above_avg is None
+    text = Report._assemble_momentum(
+        None, tank._replace(daily_gain=0, daily_gain_2nd=100_000), consistency,
+        {"members": []}, None, latest,
+    )
+    assert "below-average day" not in text
+    assert "above their average" not in text
+
+
+@pytest.mark.parametrize("surplus, gains, qualifies", [
+    (0, [1_000_000, 1_000_000, 2_000_000], True),
+    (-1, [1_000_000, 1_000_000, 2_000_000], False),
+    (0, [100_000, 100_000, 900_000], False),
+    (0, [100_000, 2_000_000], False),
+    (0, [1_000_000, 1_000_000, 1_000_000], False),
+])
+def test_efficiency_eligibility_uses_verified_sample(surplus, gains, qualifies):
+    total, days = 0, []
+    for gain in gains:
+        total += gain
+        days.append({"A": total})
+    history = rankings(*days, start=date(2026, 10, 1))
+    history[max(history)][0]["surplus"] = surplus
+    assert bool(Report._compute_efficiency_king(history, {}, max(history))) == qualifies

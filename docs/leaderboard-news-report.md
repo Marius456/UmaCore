@@ -259,12 +259,17 @@ The member whose today's Daily is the highest percentage above their Avg.
 |---|---|---|
 | `name` | str | Member name |
 | `daily_gain` | int | Today's fan gain (delta on latest_date) |
-| `avg_daily` | float | Mean daily gain across all their recorded days |
+| `avg_daily` | float | Mean verified daily gain this month, including today |
 | `pct_above_avg` | float | `((daily_gain - avg_daily) / avg_daily) * 100` |
 
 **Logic:**
 1. For each member with data on the latest date:
-   - Compute `avg_daily = total_delta / len(deltas)`
+   - Use the shared verified monthly sample: include day-one totals, today,
+     and zero gains; exclude negative corrections, missing calendar-day
+     intervals, midmonth first observations, and out-of-month/future dates.
+   - Require a verified gain today and at least three verified observations,
+     at least 1M fans today, and nonnegative quota surplus.
+   - Compute the mean and percentage at full precision; display one decimal.
    - Skip if `avg_daily <= 0` or `today_delta <= 0`
    - Compute `pct_above`
 2. Return the member with the highest `pct_above_avg` (minimum threshold: > 0)
@@ -340,7 +345,9 @@ Members whose cumulative fans is within 5% of a major milestone.
 #### J) Consistency Check
 **Method:** `_compute_consistency(daily_rankings, daily_deltas, latest_date)`
 
-Compares today's Daily to the monthly Avg for every member.
+Compares today's verified daily gain to the same verified monthly average used
+by breakout headlines and Club MVP. Requires a verified gain today; the leader's
+above-average check also uses this sample and omits comparisons when unavailable.
 
 **Output:**
 ```python
@@ -469,8 +476,8 @@ No delivery history is stored, so changed candidate pools can repeat a subject.
 
 **Evidence and formatting:**
 
-- Headline evidence is computed separately from other sections, using only
-  snapshots from the report month through the report date. Daily gains require
+- Headlines, MVP/efficiency, consistency, and the leader's above-average check
+  share verified gains from the report month through the report date. Daily gains require
   consecutive calendar-day observations; totals on day one count as that day's
   gain. Missing intervals and negative corrections are excluded.
 - Records require at least one earlier valid observation. Breakouts require at
