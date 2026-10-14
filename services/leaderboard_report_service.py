@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple, NamedTuple
 from enum import Enum
+from fractions import Fraction
 from uuid import UUID
 
 import discord
@@ -100,6 +101,7 @@ class HeadlineType(Enum):
     QUIET = "quiet"
     SHARED_LEAD = "shared_lead"
     EMPTY = "empty"
+    SUSTAINED_BATTLE = "sustained_battle"
 
 
 class HeadlineCandidate(NamedTuple):
@@ -1289,6 +1291,58 @@ class LeaderboardReportService:
     # ── Phase 2.16 + Phase 3: Headlines, Mood, Rare Achievements ──────────
 
     @classmethod
+    def _sustained_battle_candidates(
+        cls, report_date: date, snapshots: Dict[date, Dict[str, Dict]],
+        gains: Dict[str, Dict[date, int]],
+    ) -> List[HeadlineCandidate]:
+        """Follow the same podium contenders across consecutive close days."""
+        today = sorted(
+            (e for e in snapshots.get(report_date, {}).values() if e["rank"] <= 4),
+            key=lambda e: (e["rank"], e["name"]),
+        )
+        candidates = []
+        for size in (2, 3):
+            for group in combinations(today, size):
+                names = tuple(e["name"] for e in group)
+                day, duration, swapped = report_date, 0, False
+                newer_order = names
+                while day in snapshots:
+                    snapshot = snapshots[day]
+                    if any(name not in snapshot for name in names):
+                        break
+                    members = sorted((snapshot[name] for name in names), key=lambda e: e["rank"])
+                    ranks = [e["rank"] for e in members]
+                    rank_counts = defaultdict(int)
+                    for entry in snapshot.values():
+                        rank_counts[entry["rank"]] += 1
+                    if (ranks[0] < 1 or ranks[-1] > 4
+                            or ranks != list(range(ranks[0], ranks[0] + size))
+                            or any(rank_counts[rank] != 1 for rank in ranks)):
+                        break
+                    daily_gains = [gains.get(name, {}).get(day, 0) for name in names]
+                    pace = min(daily_gains)
+                    gap = members[0]["fans"] - members[-1]["fans"]
+                    if pace <= 0 or gap * 5 > pace:
+                        break
+                    order = tuple(e["name"] for e in members)
+                    swapped = swapped or order != newer_order
+                    newer_order = order
+                    if duration == 0:
+                        facts = {
+                            "rank": ranks[0], "end_rank": ranks[-1], "gap": gap,
+                            "lead_gap": members[0]["fans"] - members[1]["fans"],
+                            "pace": pace,
+                        }
+                    duration += 1
+                    day -= timedelta(days=1)
+                if duration >= 3:
+                    facts.update(days=duration, swapped=swapped)
+                    candidates.append(HeadlineCandidate(
+                        HeadlineType.SUSTAINED_BATTLE, names, facts, duration, group[0]["rank"],
+                    ))
+        return candidates
+
+    @classmethod
     def _determine_mood(
         cls,
         movers: Dict[str, List[Dict]],
@@ -1328,7 +1382,7 @@ class LeaderboardReportService:
         yesterday = snapshots.get(report_date - timedelta(days=1), {})
         gains = cls._verified_monthly_gains(daily_rankings, report_date)
 
-        candidates: List[HeadlineCandidate] = []
+        candidates = cls._sustained_battle_candidates(report_date, snapshots, gains)
         leaders = [e for e in entries if e["rank"] == 1]
         old_leaders = [e for e in yesterday.values() if e["rank"] == 1]
         if len(leaders) == len(old_leaders) == 1:
@@ -1446,6 +1500,12 @@ class LeaderboardReportService:
         for kind in (HeadlineType.LEADER_CHANGE, HeadlineType.CLUB_RECORD):
             if kind in strongest:
                 return strongest[kind]
+        battles = [c for c in candidates if c.kind == HeadlineType.SUSTAINED_BATTLE]
+        if battles:
+            return min(battles, key=lambda c: (
+                -len(c.names), -c.facts["days"],
+                Fraction(c.facts["gap"], c.facts["pace"]), c.rank, c.names,
+            ))
         stories = [strongest[kind] for kind in cls.HEADLINE_ROTATION if kind in strongest]
         if stories:
             return stories[rotation % len(stories)]
@@ -1542,6 +1602,25 @@ class LeaderboardReportService:
                                     f"{'other' if remaining == 1 else 'others'}")
                 detail = (f"{participants} share **#1** "
                           f"with **{cls._fmt_fans(facts['fans'])} fans each** this month.")
+            elif kind == HeadlineType.SUSTAINED_BATTLE:
+                hooks = ("The podium battle stays tight.",
+                         "The podium contenders remain closely matched.",
+                         "The close podium race continues.")
+                participants = f"**{name}** and **{other}**"
+                if len(names) == 3:
+                    participants = f"**{name}**, **{other}** and **{names[2]}**"
+                detail = (
+                    f"{participants} have stayed closely matched for "
+                    f"**{facts['days']} consecutive days**, now occupying "
+                    f"**#{facts['rank']}–#{facts['end_rank']}**. "
+                    f"**{name}** holds **#{facts['rank']}**, just "
+                    f"**{cls._fmt_fans(facts['lead_gap'])} fans ahead of {other}**"
+                )
+                if len(names) == 3:
+                    detail += f", with **{cls._fmt_fans(facts['gap'])} fans separating the trio**"
+                detail += "."
+                if facts["swapped"]:
+                    detail += " They have swapped positions during this run."
             else:
                 hooks = ("The field is awaiting its first update.", "No pace to report just yet.",
                          "The first leaderboard update is still to come.")

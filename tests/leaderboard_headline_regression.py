@@ -372,6 +372,12 @@ SAMPLE_STORIES = [
     HeadlineCandidate(Kind.QUIET, ("Ace",), {"fans": 40_000_000}),
     HeadlineCandidate(Kind.SHARED_LEAD, ("Ace", "Mike"), {"fans": 40_000_000, "count": 2}),
     HeadlineCandidate(Kind.EMPTY, (), {}),
+    HeadlineCandidate(Kind.SUSTAINED_BATTLE, ("Ace", "Mike", "Bravo"),
+                      {"days": 3, "rank": 2, "end_rank": 4, "gap": 1_800_000,
+                       "lead_gap": 106_345, "pace": 20_000_000, "swapped": True}),
+    HeadlineCandidate(Kind.SUSTAINED_BATTLE, ("Ace", "Mike"),
+                      {"days": 4, "rank": 3, "end_rank": 4, "gap": 200_000,
+                       "lead_gap": 200_000, "pace": 10_000_000, "swapped": False}),
 ]
 
 
@@ -436,6 +442,151 @@ def test_hook_rotation_does_not_lock_three_story_types_to_one_variant():
             story = Report._select_headline_candidate(stories, day.toordinal() + CLUB.int)
             observed[story.kind].add(Report._generate_headline(CLUB, day, {}))
     assert all(len(variants) == 3 for variants in observed.values())
+
+
+def close_battle_history(size=2, gap=2_000_000, days=4, start=START):
+    return rankings(*[
+        {"Leader": 100_000_000 + i * 20_000_000,
+         "A": 50_000_000 + i * 10_000_000,
+         "B": 50_000_000 + i * 10_000_000 - (gap if size == 2 else gap // 2),
+         **({"C": 50_000_000 + i * 10_000_000 - gap} if size == 3 else {})}
+        for i in range(days)
+    ], start=start)
+
+
+def test_paragon_trio_stays_close_for_three_days_despite_swaps():
+    history = rankings(
+        {"RanfeaR": 244_787_733, "Mariartis": 209_531_690,
+         "Dragon": 208_271_056, "Secretariat": 205_971_211},
+        {"RanfeaR": 267_890_440, "Mariartis": 227_743_288,
+         "Dragon": 224_919_589, "Secretariat": 227_152_445},
+        {"RanfeaR": 289_786_772, "Mariartis": 246_700_803,
+         "Dragon": 246_788_378, "Secretariat": 245_435_381},
+        {"RanfeaR": 312_841_241, "Mariartis": 267_452_096,
+         "Dragon": 267_345_751, "Secretariat": 265_674_968},
+        start=date(2026, 10, 10),
+    )
+    story = selected(history)
+    assert story.kind == Kind.SUSTAINED_BATTLE
+    assert story.names == ("Mariartis", "Dragon", "Secretariat")
+    assert story.facts == {
+        "days": 3, "rank": 2, "end_rank": 4, "gap": 1_777_128,
+        "lead_gap": 106_345, "pace": 20_239_587, "swapped": True,
+    }
+    text = Report._generate_headline(CLUB, max(history), history)
+    assert "3 consecutive days" in text
+    assert "#2–#4" in text
+    assert "106.3K fans ahead of Dragon" in text
+    assert "1.8M fans separating the trio" in text
+    assert "swapped positions during this run" in text
+
+
+@pytest.mark.parametrize("size", [2, 3])
+@pytest.mark.parametrize("gap, qualifies", [(1_999_999, True), (2_000_000, True),
+                                         (2_000_001, False)])
+def test_sustained_battle_twenty_percent_boundary(size, gap, qualifies):
+    stories = [c for c in of_kind(close_battle_history(size, gap), Kind.SUSTAINED_BATTLE)
+               if len(c.names) == size]
+    assert bool(stories) == qualifies
+    if qualifies:
+        assert stories[0].facts["days"] == 3
+        assert not stories[0].facts["swapped"]
+        assert "swapped" not in Report._render_headline(stories[0], 0)
+
+
+def test_sustained_battle_requires_three_days_and_updates_daily():
+    assert not of_kind(close_battle_history(days=3), Kind.SUSTAINED_BATTLE)
+    story = selected(close_battle_history(days=5))
+    assert story.kind == Kind.SUSTAINED_BATTLE
+    assert story.facts["days"] == 4
+    # Appending the enum preserves all existing hook offsets.
+    assert list(Kind).index(Kind.EMPTY) == 10
+    assert list(Kind).index(Kind.SUSTAINED_BATTLE) == 11
+
+
+@pytest.mark.parametrize("interruption", [
+    "missing_date", "missing_member", "zero_gain", "negative_gain", "tied_rank",
+    "external_tie", "nonadjacent", "outside_podium", "wide_gap",
+])
+def test_sustained_battle_breaks_on_unverified_or_ineligible_history(interruption):
+    history = close_battle_history()
+    day = START + timedelta(days=1)
+    entries = {e["name"]: e for e in history[day]}
+    if interruption == "missing_date":
+        del history[day]
+    elif interruption == "missing_member":
+        history[day] = [e for e in history[day] if e["name"] != "B"]
+    elif interruption in ("zero_gain", "negative_gain"):
+        baseline = next(e["fans"] for e in history[START] if e["name"] == "B")
+        entries["B"]["fans"] = baseline - (interruption == "negative_gain")
+    elif interruption == "tied_rank":
+        entries["B"]["rank"] = 2
+    elif interruption == "external_tie":
+        history[day].append({"name": "Other", "rank": 3, "fans": entries["B"]["fans"]})
+    elif interruption == "nonadjacent":
+        entries["B"]["rank"] = 4
+    elif interruption == "outside_podium":
+        entries["A"]["rank"], entries["B"]["rank"] = 4, 5
+    elif interruption == "wide_gap":
+        entries["B"]["fans"] -= 1
+    assert not of_kind(history, Kind.SUSTAINED_BATTLE)
+
+
+def test_sustained_battle_does_not_cross_month_boundary_or_use_future_days():
+    history = close_battle_history(days=4, start=date(2026, 9, 29))
+    assert not of_kind(history, Kind.SUSTAINED_BATTLE)
+    history = close_battle_history(days=5)
+    assert not of_kind(history, Kind.SUSTAINED_BATTLE, START + timedelta(days=2))
+
+
+def test_sustained_battle_uses_slowest_member_and_rejects_lower_rank_groups():
+    history = close_battle_history()
+    # One member slows from 10M to 5M/day: the 2M gap is now too large.
+    for i, day in enumerate(sorted(history)):
+        next(e for e in history[day] if e["name"] == "B")["fans"] = 48_000_000 + i * 5_000_000
+    assert not of_kind(history, Kind.SUSTAINED_BATTLE)
+    history = close_battle_history()
+    for entries in history.values():
+        for entry in entries:
+            if entry["name"] != "Leader":
+                entry["rank"] += 3
+    assert not of_kind(history, Kind.SUSTAINED_BATTLE)
+
+
+@pytest.mark.parametrize("priority", [Kind.LEADER_CHANGE, Kind.CLUB_RECORD, None])
+def test_sustained_battle_priority_over_rotating_stories(priority):
+    battle = selected(close_battle_history())
+    stories = [battle, SAMPLE_STORIES[2], SAMPLE_STORIES[3], SAMPLE_STORIES[5]]
+    if priority:
+        stories.append(HeadlineCandidate(priority, ("Leader",), {}, 1, 1))
+    for rotation in range(10):
+        assert Report._select_headline_candidate(stories, rotation).kind == (
+            priority or Kind.SUSTAINED_BATTLE
+        )
+
+
+@pytest.mark.parametrize("criterion", ["size", "duration", "relative_gap", "rank", "names"])
+def test_sustained_battle_selection_is_deterministic(criterion):
+    best = HeadlineCandidate(Kind.SUSTAINED_BATTLE, ("A", "B", "C"),
+                             {"days": 4, "gap": 100, "pace": 1000}, 4, 1)
+    worse = best._replace(names=("D", "E", "F"))
+    if criterion == "size":
+        worse = worse._replace(names=("D", "E"), facts={"days": 20, "gap": 1, "pace": 1000})
+    elif criterion == "duration":
+        worse = worse._replace(facts={"days": 3, "gap": 1, "pace": 1000})
+    elif criterion == "relative_gap":
+        worse = worse._replace(facts={"days": 4, "gap": 100, "pace": 999})
+    elif criterion == "rank":
+        worse = worse._replace(rank=2)
+    for stories in ([worse, best], [best, worse]):
+        assert Report._select_headline_candidate(stories, 0) == best
+
+
+def test_sustained_battle_detection_is_independent_of_snapshot_order():
+    history = close_battle_history(size=3)
+    reversed_history = {day: list(reversed(entries)) for day, entries in reversed(list(history.items()))}
+    assert selected(history) == selected(reversed_history)
+    assert selected(history).names == ("A", "B", "C")
 
 
 def test_full_report_keeps_sections_and_uses_the_new_headline():
