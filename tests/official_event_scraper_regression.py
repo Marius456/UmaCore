@@ -18,10 +18,22 @@ from scrapers.official_event_scraper import (
     _reachable_proxy,
     _wait_for_news_cards,
     check_and_save,
+    event_display_name,
+    merge_saved_spotlight_events,
+    scrape_official_events,
 )
 
 
 class OfficialEventTimeParsingTests(unittest.TestCase):
+    def test_spotlight_title_cleanup_removes_preview_and_launch_wording(self):
+        title = "Spotlight Pretty Derby and Spotlight Support Card Scouts"
+        for announcement in (f"New {title} coming soon!", f"{title} out now!"):
+            self.assertEqual(event_display_name(announcement), title)
+            self.assertEqual(
+                _canonical_event_key(announcement, EventType.SPOTLIGHT),
+                _canonical_event_key(title, EventType.SPOTLIGHT),
+            )
+
     def test_extracts_utc_publication_time_from_news_card(self):
         parsed = _extract_card_published_at(
             "Game\n2026/09/18 22:00 (UTC)\nA news title\nDetails"
@@ -234,6 +246,111 @@ class OfficialEventTimeParsingTests(unittest.TestCase):
             saved = json.loads(path.read_text(encoding="utf-8"))
             self.assertFalse(changed)
             self.assertEqual(saved["events"], [])
+
+
+class SpotlightOccurrenceTests(unittest.IsolatedAsyncioTestCase):
+    now = datetime(2026, 11, 6, tzinfo=timezone.utc)
+
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.events_path = Path(temp_dir.name) / "events.json"
+
+    def article(self, news_id, *, preview=False, start_days=-7, end_days=1):
+        return Event(
+            title="Spotlight Support Card Scout" + (" coming soon!" if preview else ""),
+            type=EventType.SPOTLIGHT,
+            start_time=self.now + timedelta(days=start_days),
+            end_time=self.now + timedelta(days=end_days),
+            url=f"https://umamusume.com/news/{news_id}",
+        )
+
+    async def refresh(self, saved, scraped):
+        self.events_path.write_text(
+            json.dumps({"events": [event.to_record() for event in saved]}), encoding="utf-8"
+        )
+        with patch("scrapers.official_event_scraper.scrape_official_events", new=AsyncMock(
+            return_value=scraped
+        )):
+            changed = await check_and_save(str(self.events_path), now=self.now)
+        return changed, json.loads(self.events_path.read_text(encoding="utf-8"))["events"]
+
+    async def test_refresh_combines_history_and_prefers_launch_article(self):
+        preview = self.article(1130, preview=True)
+        preview.notified_clubs = ["club-1_starting"]
+        preview.banner_image = "https://example.invalid/preview.png"
+        saved_launch = self.article(1132)
+        saved_launch.notified_clubs = ["club-2_ending"]
+        launch = self.article(1132)
+        launch.start_time = None
+
+        changed, records = await self.refresh([preview, saved_launch], [launch, preview])
+
+        self.assertFalse(changed)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["url"], launch.url)
+        self.assertEqual(records[0]["start_time"], preview.start_time.isoformat())
+        self.assertEqual(records[0]["banner_image"], preview.banner_image)
+        self.assertCountEqual(records[0]["notified_clubs"], ["club-1_starting", "club-2_ending"])
+
+    async def test_refresh_preserves_preview_history_when_only_the_launch_is_scraped(self):
+        preview = self.article(1130, preview=True)
+        preview.notified_clubs = ["club-1_ending"]
+        launch = self.article(1132)
+
+        changed, records = await self.refresh([preview], [launch])
+
+        self.assertFalse(changed)
+        self.assertEqual(records[0]["url"], launch.url)
+        self.assertEqual(records[0]["notified_clubs"], ["club-1_ending"])
+
+    async def test_refresh_does_not_inherit_history_from_a_distinct_same_title_scout(self):
+        prior = self.article(1132, end_days=-1)
+        prior.notified_clubs = ["club-1_ending"]
+        later = self.article(1142, start_days=1, end_days=8)
+
+        changed, records = await self.refresh([prior], [later])
+
+        self.assertTrue(changed)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["url"], later.url)
+        self.assertEqual(records[0]["notified_clubs"], [])
+
+    def test_ambiguous_partial_schedule_cannot_join_either_conflicting_run(self):
+        first = self.article(1132)
+        second = self.article(1142, start_days=-4)
+        partial = self.article(1130, preview=True)
+        partial.start_time = None
+        records = [event.to_record() for event in (partial, first, second)]
+
+        self.assertEqual(len(merge_saved_spotlight_events(records)), 3)
+
+    async def test_scraper_only_skips_the_expired_spotlight_article_url(self):
+        expired = self.article(1132, end_days=-1)
+        later = self.article(1142, start_days=1, end_days=8)
+        page = MagicMock(goto=AsyncMock(), wait_for_timeout=AsyncMock(), close=AsyncMock())
+        page.locator.return_value.first.count = AsyncMock(return_value=0)
+        page.locator.return_value.inner_text = AsyncMock(return_value="")
+        context = MagicMock(new_page=AsyncMock(return_value=page))
+        browser = MagicMock(new_context=AsyncMock(return_value=context), close=AsyncMock())
+        playwright = MagicMock()
+        playwright.return_value.__aenter__.return_value.chromium.launch = AsyncMock(
+            return_value=browser
+        )
+        cards = [(event.title, event.url, None) for event in (expired, later)]
+
+        with (
+            patch("scrapers.official_event_scraper.async_playwright", playwright),
+            patch("scrapers.official_event_scraper._reachable_proxy", new=AsyncMock(return_value=None)),
+            patch("scrapers.official_event_scraper._setup_stealth_patches", new=AsyncMock()),
+            patch("scrapers.official_event_scraper._wait_for_news_cards", new=AsyncMock()),
+            patch("scrapers.official_event_scraper._collect_article_cards", new=AsyncMock(return_value=cards)),
+            patch("scrapers.official_event_scraper._extract_banner_image", new=AsyncMock(return_value=None)),
+        ):
+            events = await scrape_official_events(existing_events=[expired.to_record()], now=self.now)
+
+        self.assertEqual([event.url for event in events], [later.url])
+        self.assertEqual([call.args[0] for call in page.goto.await_args_list][1:], [later.url])
 
 
 if __name__ == "__main__":

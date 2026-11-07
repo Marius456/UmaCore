@@ -20,7 +20,7 @@ import os
 import re
 import tempfile
 from urllib.parse import urlparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import List, Optional, Tuple, Set
@@ -118,6 +118,40 @@ class Event:
     url: str
     banner_image: Optional[str] = None
     published_at: Optional[datetime] = None
+    notified_clubs: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_record(cls, record: dict) -> Event:
+        title = record.get("title") or ""
+        try:
+            event_type = EventType(record.get("type"))
+        except ValueError:
+            event_type = EventType.UNKNOWN
+        if event_type == EventType.UNKNOWN:
+            event_type = _classify_event(title)
+        return cls(
+            title=title,
+            type=event_type,
+            start_time=_read_event_time(record.get("start_time")),
+            end_time=_read_event_time(record.get("end_time")),
+            url=record.get("url") or "",
+            banner_image=record.get("banner_image"),
+            published_at=_read_event_time(record.get("published_at")),
+            notified_clubs=record.get("notified_clubs") or [],
+        )
+
+    def to_record(self) -> dict:
+        return {
+            "title": self.title,
+            "event_key": _canonical_event_key(self.title, self.type),
+            "type": self.type.value,
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "published_at": self.published_at.isoformat() if self.published_at else None,
+            "url": self.url,
+            "banner_image": self.banner_image,
+            "notified_clubs": self.notified_clubs,
+        }
 
 
 # ── Date Parsing ──────────────────────────────────────────────────────────────
@@ -255,19 +289,149 @@ def _classify_event(title: str) -> EventType:
     return EventType.UNKNOWN
 
 
+_PREVIEW_STATUS = re.compile(r"\s+(?:is\s+)?coming\s+soon!?$", re.IGNORECASE)
+_EVENT_STATUS = re.compile(r"\s+(?:is here|has ended|out now)!?$", re.IGNORECASE)
+
+
+def event_display_name(title: str) -> str:
+    """Remove official announcement wording from an event title."""
+    title = re.sub(r"^the\s+(?:story|race)\s+event\s+", "", title.strip(), flags=re.IGNORECASE)
+    if _PREVIEW_STATUS.search(title):
+        title = _PREVIEW_STATUS.sub("", title)
+        title = re.sub(r"^new\s+(?=spotlight\b)", "", title, flags=re.IGNORECASE)
+    return _EVENT_STATUS.sub("", title)
+
+
 def _canonical_event_key(title: str, event_type: EventType) -> str:
-    """Return a stable identity shared by announcement-status variants."""
-    key = title.strip().lower()
-    key = re.sub(r"^the\s+(?:story|race)\s+event\s+", "", key)
-    key = re.sub(
-        r"\s+(?:is coming soon|is here|has ended|out now)!?$",
-        "",
-        key,
-        flags=re.IGNORECASE,
-    )
+    """Return the name shared by announcement-status variants."""
+    key = event_display_name(title).lower()
     key = re.sub(r"[^\w\s]+", " ", key)
     key = re.sub(r"\s+", " ", key).strip()
     return f"{event_type.value}:{key}"
+
+
+def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _read_event_time(value: object) -> Optional[datetime]:
+    if isinstance(value, str):
+        try:
+            return _as_utc(datetime.fromisoformat(value))
+        except (ValueError, OverflowError):
+            pass
+    return None
+
+
+def _event_schedule(event: Event) -> tuple[Optional[datetime], Optional[datetime]]:
+    return _as_utc(event.start_time), _as_utc(event.end_time)
+
+
+def _shares_event_schedule(event: Event, other: Event) -> bool:
+    shared_times = [
+        (first, second)
+        for first, second in zip(_event_schedule(event), _event_schedule(other))
+        if first is not None and second is not None
+    ]
+    return bool(shared_times) and all(first == second for first, second in shared_times)
+
+
+def _spotlight_article_rank(event: Event) -> tuple[int, datetime, str]:
+    title = event.title.strip()
+    if re.search(r"\s+has ended!?$", title, re.IGNORECASE):
+        status = 0
+    elif _PREVIEW_STATUS.search(title):
+        status = 1
+    else:
+        status = 2
+    return status, _as_utc(event.published_at) or datetime.min.replace(tzinfo=timezone.utc), event.url
+
+
+def _fill_event_details(current: Event, fallback: Event) -> Event:
+    return replace(
+        current,
+        start_time=current.start_time or fallback.start_time,
+        end_time=current.end_time or fallback.end_time,
+        published_at=current.published_at or fallback.published_at,
+        banner_image=current.banner_image or fallback.banner_image,
+    )
+
+
+def _merge_spotlight_details(current: Event, fallback: Event) -> Event:
+    preferred = current
+    if current.url != fallback.url:
+        preferred = max((current, fallback), key=_spotlight_article_rank)
+    publication_times = [
+        _as_utc(event.published_at) for event in (current, fallback) if event.published_at
+    ]
+    return replace(
+        preferred,
+        url=preferred.url or current.url or fallback.url,
+        banner_image=preferred.banner_image or current.banner_image or fallback.banner_image,
+        start_time=current.start_time or fallback.start_time,
+        end_time=current.end_time or fallback.end_time,
+        published_at=max(publication_times, default=None),
+        notified_clubs=list(dict.fromkeys(current.notified_clubs + fallback.notified_clubs)),
+    )
+
+
+@dataclass
+class _SpotlightOccurrence:
+    event: Event
+    urls: set[str]
+
+
+def _find_spotlight_occurrence(
+    event: Event, occurrences: list[_SpotlightOccurrence], urls: set[str]
+) -> Optional[_SpotlightOccurrence]:
+    key = _canonical_event_key(event.title, event.type)
+    same_name = [
+        occurrence for occurrence in occurrences
+        if _canonical_event_key(occurrence.event.title, occurrence.event.type) == key
+    ]
+    for occurrence in same_name:
+        if urls & occurrence.urls:
+            return occurrence
+    compatible = [
+        occurrence for occurrence in same_name if _shares_event_schedule(event, occurrence.event)
+    ]
+    return compatible[0] if len(compatible) == 1 else None
+
+
+def _spotlight_occurrences(events: list[Event]) -> list[_SpotlightOccurrence]:
+    """Group complete schedules first so a partial schedule cannot pick an arbitrary run."""
+    occurrences: list[_SpotlightOccurrence] = []
+    for event in sorted(events, key=lambda e: bool(e.start_time) + bool(e.end_time), reverse=True):
+        urls = {event.url} if event.url else set()
+        match = _find_spotlight_occurrence(event, occurrences, urls)
+        if match is None:
+            occurrences.append(_SpotlightOccurrence(event, urls))
+        else:
+            match.event = _merge_spotlight_details(match.event, event)
+            match.urls.update(urls)
+    return occurrences
+
+
+def merge_saved_spotlight_events(records: list[dict]) -> list[dict]:
+    """Normalize legacy Spotlight records before checking reminder eligibility."""
+    spotlight = []
+    other = []
+    for record in records:
+        event = Event.from_record(record)
+        if event.type == EventType.SPOTLIGHT:
+            spotlight.append(event)
+        else:
+            other.append(record)
+    return other + [occurrence.event.to_record() for occurrence in _spotlight_occurrences(spotlight)]
+
+
+def spotlight_reminder_key(record: dict) -> tuple[str, Optional[datetime], Optional[datetime]]:
+    event = Event.from_record(record)
+    return _canonical_event_key(event.title, event.type), *_event_schedule(event)
 
 
 # ── Title Cleaning ───────────────────────────────────────────────────────────
@@ -504,7 +668,7 @@ async def _collect_article_cards(page: Page) -> List[Tuple[str, str, Optional[da
 
 async def scrape_official_events(
     known_titles: Optional[Set[str]] = None,
-    existing_events: Optional[dict[str, dict]] = None,
+    existing_events: Optional[list[dict] | dict[str, dict]] = None,
     now: Optional[datetime] = None,
 ) -> List[Event]:
     """
@@ -527,19 +691,22 @@ async def scrape_official_events(
         List of Event dataclass instances.
     """
     events: List[Event] = []
-    existing_events = existing_events or {}
+    if isinstance(existing_events, dict):
+        existing_events = [{"title": title, **record} for title, record in existing_events.items()]
     scrape_now = now or datetime.now(timezone.utc)
     if scrape_now.tzinfo is None:
         scrape_now = scrape_now.replace(tzinfo=timezone.utc)
-    existing_by_key: dict[str, dict] = {}
-    for existing_title, existing_data in existing_events.items():
-        try:
-            existing_type = EventType(
-                existing_data.get("type", EventType.UNKNOWN.value)
-            )
-        except ValueError:
-            existing_type = EventType.UNKNOWN
-        existing_by_key[_canonical_event_key(existing_title, existing_type)] = existing_data
+    existing_by_title = {}
+    existing_by_key = {}
+    existing_by_url = {}
+    for record in existing_events or []:
+        event = Event.from_record(record)
+        if event.type == EventType.SPOTLIGHT:
+            if event.url:
+                existing_by_url[event.url] = event
+        else:
+            existing_by_title[event.title] = event
+            existing_by_key[_canonical_event_key(event.title, event.type)] = event
 
     async with async_playwright() as p:
         proxy_address = await _reachable_proxy(OFFICIAL_EVENTS_PROXY)
@@ -631,19 +798,15 @@ async def scrape_official_events(
                     logger.debug(f"Skipping non-event: '{title[:50]}'")
                     continue
 
-                existing_data = existing_events.get(title) or existing_by_key.get(
-                    _canonical_event_key(title, event_type)
-                )
-                if existing_data:
-                    try:
-                        existing_end = datetime.fromisoformat(existing_data.get("end_time", ""))
-                        if existing_end.tzinfo is None:
-                            existing_end = existing_end.replace(tzinfo=timezone.utc)
-                        if existing_end < scrape_now:
-                            logger.debug(f"Skipping expired event article: '{title[:50]}'")
-                            continue
-                    except (TypeError, ValueError):
-                        pass
+                if event_type == EventType.SPOTLIGHT:
+                    previous = existing_by_url.get(url)
+                else:
+                    previous = existing_by_title.get(title) or existing_by_key.get(
+                        _canonical_event_key(title, event_type)
+                    )
+                if previous and previous.end_time and previous.end_time < scrape_now:
+                    logger.debug(f"Skipping expired event article: '{title[:50]}'")
+                    continue
 
                 # Classification only makes this an event article; whether the
                 # underlying event is new is decided after canonical deduplication
@@ -707,60 +870,23 @@ async def scrape_official_events(
 
 # ── State Management (Dedup) ─────────────────────────────────────────────────
 
-def _load_known_titles(path: str) -> Set[str]:
-    """Load known event titles from saved JSON."""
+def _load_existing_events(path: str) -> list[dict]:
+    """Load saved records, including recurring events that reuse a title."""
     if not os.path.exists(path):
-        return set()
+        return []
     try:
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return {e.get("title", "") for e in data.get("events", []) if e.get("title")}
-    except (json.JSONDecodeError, OSError) as e:
-        logger.warning(f"Failed to load known titles: {e}")
-        return set()
-
-
-def _load_existing_events(path: str) -> dict[str, dict]:
-    """
-    Load full existing event data from saved JSON, keyed by title.
-    
-    Returns a dict: {title: {type, start_time, end_time, url, banner_image}}
-    """
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        result = {}
-        for e in data.get("events", []):
-            title = e.get("title")
-            if title:
-                result[title] = e
-        return result
+            return [record for record in json.load(f).get("events", []) if record.get("title")]
     except (json.JSONDecodeError, OSError) as e:
         logger.warning(f"Failed to load existing events: {e}")
-        return {}
+        return []
 
 
-def _save_events(events: List[Event], path: str, merged_notified: Optional[dict[str, list]] = None) -> None:
+def _save_events(events: List[Event], path: str) -> None:
     """Write events to JSON file."""
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    merged_notified = merged_notified or {}
     output = {
-        "events": [
-            {
-                "title": e.title,
-                "event_key": _canonical_event_key(e.title, e.type),
-                "type": e.type.value,
-                "start_time": e.start_time.isoformat() if e.start_time else None,
-                "end_time": e.end_time.isoformat() if e.end_time else None,
-                "published_at": e.published_at.isoformat() if e.published_at else None,
-                "url": e.url,
-                "banner_image": e.banner_image,
-                "notified_clubs": merged_notified.get(e.title, []),
-            }
-            for e in events
-        ],
+        "events": [event.to_record() for event in events],
         "scraped_at": datetime.now(timezone.utc).isoformat(),
     }
     directory = os.path.dirname(path) or "."
@@ -787,17 +913,14 @@ def _save_events(events: List[Event], path: str, merged_notified: Optional[dict[
 
 
 def _dedup_events(events: List[Event]) -> List[Event]:
-    """
-    Remove duplicate events that represent the same underlying game event.
-
-    Dedup strategy:
-      1. Group by (type, start_time, end_time) — if all three match, keep the first.
-      2. For events with null times, prefer the title that is more informative
-         (e.g. "out now" over "coming soon", longer title over shorter).
-    """
+    """Collapse announcement variants of the same scheduled event."""
     grouped: dict[str, Event] = {}
+    spotlight = []
 
     for e in events:
+        if e.type == EventType.SPOTLIGHT:
+            spotlight.append(e)
+            continue
         key = _canonical_event_key(e.title, e.type)
         existing = grouped.get(key)
         if existing is None:
@@ -823,7 +946,7 @@ def _dedup_events(events: List[Event]) -> List[Event]:
                 existing.published_at = e.published_at
         logger.debug(f"Merged article variant '{e.title[:50]}' into event '{key}'")
 
-    return list(grouped.values())
+    return list(grouped.values()) + [occurrence.event for occurrence in _spotlight_occurrences(spotlight)]
 
 
 def _retain_relevant_events(
@@ -872,94 +995,74 @@ async def check_and_save(json_path: str, now: Optional[datetime] = None) -> bool
     scraping, missing detail data is merged from the saved file and expired or
     stale undated events are pruned before the file is replaced.
     """
-    known_titles = _load_known_titles(json_path)
-    existing = _load_existing_events(json_path)
+    records = _load_existing_events(json_path)
+    existing = [Event.from_record(record) for record in records]
 
     # Pass known titles for logging/compatibility. Known articles are still
     # re-parsed so schedule corrections and parser fixes take effect.
     raw_events = await scrape_official_events(
-        known_titles=known_titles,
-        existing_events=existing,
+        known_titles={event.title for event in existing},
+        existing_events=records,
         now=now,
     )
-    events = _dedup_events(raw_events)
-    logger.info(f"Dedup: {len(raw_events)} raw -> {len(events)} unique event(s)")
+    saved_by_title = {}
+    saved_by_key = {}
+    notified_by_key: dict[str, list[str]] = {}
+    saved_spotlight = []
+    for event in existing:
+        if event.type == EventType.SPOTLIGHT:
+            saved_spotlight.append(event)
+        else:
+            key = _canonical_event_key(event.title, event.type)
+            saved_by_title[event.title] = event
+            saved_by_key[key] = event
+            notified_by_key.setdefault(key, []).extend(event.notified_clubs)
 
-    # Merge existing detail data back into events whose current article lacks
-    # dates. Use canonical identity so renamed status variants retain the
-    # schedule even when the original announcement disappears from the list.
-    existing_by_key = {}
-    for title, existing_data in existing.items():
-        try:
-            event_type = EventType(existing_data.get("type", EventType.UNKNOWN.value))
-        except ValueError:
-            event_type = EventType.UNKNOWN
-        existing_by_key[_canonical_event_key(title, event_type)] = existing_data
+    refreshed: list[tuple[Event, bool]] = []
+    for event in _dedup_events([e for e in raw_events if e.type != EventType.SPOTLIGHT]):
+        key = _canonical_event_key(event.title, event.type)
+        previous = saved_by_title.get(event.title) or saved_by_key.get(key)
+        if previous:
+            event = _fill_event_details(event, previous)
+        event.notified_clubs = list(dict.fromkeys(notified_by_key.get(key, [])))
+        refreshed.append((event, key in saved_by_key))
 
-    for e in events:
-        existing_data = existing.get(e.title) or existing_by_key.get(
-            _canonical_event_key(e.title, e.type)
-        )
-        if not existing_data:
-            continue
-        # Parse stored ISO strings back into datetime objects for any fields
-        # that the current article did not provide.
-        for field in ("start_time", "end_time", "published_at"):
-            if getattr(e, field) is not None:
-                continue
-            value = existing_data.get(field)
-            if value:
-                try:
-                    setattr(e, field, datetime.fromisoformat(value))
-                except (ValueError, TypeError):
-                    pass
-        if not e.banner_image:
-            e.banner_image = existing_data.get("banner_image")
-        logger.debug(f"Merged existing detail data for '{e.title[:50]}'")
-
-    events = _retain_relevant_events(events, now=now)
-
-    # Collect existing notified_clubs data by canonical event identity so
-    # announcement-status variants share notification history.
-    notified_by_key = {}
-    for title, existing_data in existing.items():
-        clubs = existing_data.get("notified_clubs", [])
-        if clubs:
-            try:
-                event_type = EventType(existing_data.get("type", EventType.UNKNOWN.value))
-            except ValueError:
-                event_type = EventType.UNKNOWN
-            key = _canonical_event_key(title, event_type)
-            notified_by_key.setdefault(key, [])
-            for club_key in clubs:
-                if club_key not in notified_by_key[key]:
-                    notified_by_key[key].append(club_key)
-
-    merged_notified = {
-        e.title: notified_by_key.get(_canonical_event_key(e.title, e.type), [])
-        for e in events
+    saved_occurrences = _spotlight_occurrences(saved_spotlight)
+    saved_by_article = {
+        (event.url, _canonical_event_key(event.title, event.type)): event
+        for event in saved_spotlight if event.url
     }
+    current_spotlight = []
+    for event in raw_events:
+        if event.type == EventType.SPOTLIGHT:
+            previous = saved_by_article.get((event.url, _canonical_event_key(event.title, event.type)))
+            if previous:
+                event = _fill_event_details(event, previous)
+                event.notified_clubs = list(dict.fromkeys(event.notified_clubs + previous.notified_clubs))
+            current_spotlight.append(event)
 
-    known_event_keys = set()
-    for title in known_titles:
-        existing_data = existing.get(title, {})
-        try:
-            event_type = EventType(existing_data.get("type", EventType.UNKNOWN.value))
-        except ValueError:
-            event_type = EventType.UNKNOWN
-        known_event_keys.add(_canonical_event_key(title, event_type))
+    current_occurrences = _spotlight_occurrences(current_spotlight)
+    for occurrence in current_occurrences:
+        event = occurrence.event
+        previous = _find_spotlight_occurrence(event, saved_occurrences, occurrence.urls)
+        if previous and _find_spotlight_occurrence(
+            previous.event, current_occurrences, previous.urls
+        ) is not occurrence:
+            previous = None
+        if previous:
+            event = _merge_spotlight_details(event, previous.event)
+        refreshed.append((event, previous is not None))
 
-    current_keys = {_canonical_event_key(e.title, e.type) for e in events}
-    new_keys = current_keys - known_event_keys
-    if new_keys:
-        logger.info(f"New event(s): {', '.join(e.title for e in events if _canonical_event_key(e.title, e.type) in new_keys)}")
-        _save_events(events, json_path, merged_notified=merged_notified)
-        return True
+    logger.info(f"Dedup: {len(raw_events)} raw -> {len(refreshed)} unique event(s)")
+    events = _retain_relevant_events([event for event, _ in refreshed], now=now)
+    new_events = {id(event) for event, known in refreshed if not known}
+    new_titles = [event.title for event in events if id(event) in new_events]
+    if new_titles:
+        logger.info(f"New event(s): {', '.join(new_titles)}")
     else:
         logger.info(f"No new events ({len(events)} known)")
-        # Still save to persist any notified_clubs updates made by the notification task
-        _save_events(events, json_path, merged_notified=merged_notified)
-        return False
+    _save_events(events, json_path)
+    return bool(new_titles)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,6 @@ from discord.ext import tasks
 import calendar
 import json as json_mod
 import os
-import re
 import tempfile
 from datetime import datetime
 import logging
@@ -17,6 +16,9 @@ from models import Club, ClubRankHistory, QuotaRequirement
 from scrapers import (
     UmaMoeAPIScraper, DataNotAvailableError,
     check_and_save as check_and_save_official_events,
+)
+from scrapers.official_event_scraper import (
+    EventType, event_display_name, merge_saved_spotlight_events, spotlight_reminder_key,
 )
 from services.notification_service import NotificationService
 from services.quota_calculator import QuotaCalculator
@@ -557,16 +559,7 @@ class BotTasks:
 
     # ── Event Notification Helpers ─────────────────────────────────────
 
-    @staticmethod
-    def _event_display_name(title: str) -> str:
-        """Remove announcement status text from an event title used in alerts."""
-        title = re.sub(
-            r"\s+(?:is coming soon|is here|has ended|out now)!?$",
-            "",
-            title.strip(),
-            flags=re.IGNORECASE,
-        )
-        return re.sub(r"^The (?:story|race) event\s+", "", title, flags=re.IGNORECASE)
+    _event_display_name = staticmethod(event_display_name)
 
     async def _notify_events_for_club(self, club: Club, event: dict, notif_type: str) -> bool:
         """
@@ -596,7 +589,10 @@ class BotTasks:
         event_url = event.get("url", "")
         banner_image = event.get("banner_image")
         event_key = event.get("event_key") or display_name.lower()
-        notification_key = f"{event_key}:{club.club_id}:{notif_type}"
+        occurrence_key = (
+            spotlight_reminder_key(event) if event.get("type") == EventType.SPOTLIGHT else event_key
+        )
+        notification_key = (occurrence_key, club.club_id, notif_type)
         if notification_key in self._sent_event_notifications:
             logger.debug(f"Notification already sent in this run for '{event_key}' ({notif_type})")
             return False
@@ -731,6 +727,8 @@ class BotTasks:
             if not events:
                 logger.info("No events found in events.json")
                 return
+            events = merge_saved_spotlight_events(events)
+            self._events_data["events"] = events
 
             now = datetime.now(pytz.UTC)
             clubs = self.club_cache.active_clubs()
