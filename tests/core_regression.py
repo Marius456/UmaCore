@@ -475,6 +475,78 @@ class StatusSummaryQueryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
+    async def test_scheduled_leaderboard_selects_recap_by_scrape_date(self):
+        for data_date, run_date, closing, missing in (
+            (date(2026, 10, 31), date(2026, 11, 1), True, False),
+            (date(2026, 12, 31), date(2027, 1, 1), True, False),
+            (date(2028, 2, 29), date(2028, 3, 1), True, False),
+            (date(2026, 10, 30), date(2026, 10, 31), False, False),
+            (date(2026, 10, 31), date(2026, 11, 1), True, True),
+        ):
+            with self.subTest(data_date=data_date, missing=missing):
+                club = make_club()
+                club.report_channel_id = 1
+                club.leaderboard_channel_id = 2
+                quota_channel = SimpleNamespace(send=AsyncMock())
+                news_channel = SimpleNamespace(send=AsyncMock())
+                channels = {1: quota_channel, 2: news_channel}
+                tasks = BotTasks(SimpleNamespace(get_channel=channels.get))
+                tasks.quota_calculator = SimpleNamespace(
+                    process_scraped_data=AsyncMock(return_value=(0, 1)),
+                    get_member_status_summary=AsyncMock(return_value={"behind": []}),
+                )
+                tasks.report_generator = SimpleNamespace(
+                    create_daily_report=AsyncMock(return_value=[(object(), None)]),
+                )
+                scraper = MagicMock()
+                scraper.scrape = AsyncMock(return_value={"1": {}})
+                scraper.get_data_date.return_value = data_date
+                scraper.get_current_day.return_value = data_date.day
+                scraper.get_closing_month_rank.return_value = 83
+                scraper.get_club_rank.return_value = 9
+                scraper.get_monthly_rank.return_value = 912
+                scraper.get_fans_to_next_tier.return_value = 100_000
+                scraper.get_fans_to_lower_tier.return_value = 200_000
+                recap_embed, daily_embed = object(), object()
+                with (
+                    patch("bot.tasks.datetime") as clock,
+                    patch("bot.tasks.ScrapeContext"),
+                    patch("bot.tasks.UmaMoeAPIScraper", return_value=scraper),
+                    patch("bot.tasks.ClubRankHistory.save", new_callable=AsyncMock),
+                    patch("bot.tasks.QuotaRequirement.get_quota_for_date", new_callable=AsyncMock),
+                    patch.object(
+                        LeaderboardReportService, "generate_month_end_recap",
+                        return_value=[recap_embed], side_effect=ValueError("No closing standings")
+                        if missing else None,
+                    ) as recap,
+                    patch.object(
+                        LeaderboardReportService, "generate_leaderboard_report",
+                        return_value=[daily_embed],
+                    ) as daily,
+                    patch.object(LeaderboardReportService, "persist_delivered_predictions") as persist,
+                ):
+                    clock.now.return_value = datetime.combine(run_date, time(16))
+                    await tasks.daily_check_for_club(club, run_date=run_date)
+
+                quota_channel.send.assert_awaited_once()
+                report_args = (club.club_id, club.club_name, data_date.year, data_date.month)
+                if closing:
+                    recap.assert_awaited_once_with(*report_args, final_rank=83)
+                    daily.assert_not_awaited()
+                    persist.assert_not_awaited()
+                    if missing:
+                        news_channel.send.assert_not_awaited()
+                    else:
+                        news_channel.send.assert_awaited_once_with(embed=recap_embed)
+                else:
+                    daily.assert_awaited_once_with(
+                        *report_args, club_rank=9, monthly_rank=912,
+                        fans_to_next_tier=100_000, fans_to_lower_tier=200_000,
+                    )
+                    recap.assert_not_awaited()
+                    news_channel.send.assert_awaited_once_with(embed=daily_embed)
+                    persist.assert_awaited_once_with([daily_embed])
+
     def test_scheduled_leaderboard_passes_all_club_goal_fields(self):
         rank_data = {
             "club_rank": 6,

@@ -235,7 +235,7 @@ class LeaderboardReportService:
             monthly_rank=monthly_rank,
         )
         # History records
-        history_records = cls._compute_history_records(daily_deltas, daily_rankings, latest_date)
+        history_records = cls._compute_history_records(daily_rankings)
 
         # 3. Assemble Embeds
         main_embed = discord.Embed(
@@ -333,6 +333,95 @@ class LeaderboardReportService:
 
         # Set footer on the main embed
         main_embed.set_footer(text=f"{club_name} · Powering Through {month_name}")
+        return embeds
+
+    @classmethod
+    async def generate_month_end_recap(
+        cls, club_id: UUID, club_name: str, year: int, month: int,
+        *, final_rank: Optional[int] = None,
+    ) -> List[discord.Embed]:
+        """Summarize the standings and highlights from a saved closing snapshot."""
+        closing_date = date(year, month, calendar.monthrange(year, month)[1])
+        rows = await QuotaHistory.get_current_month_for_club(club_id, year, month)
+        daily_rankings = cls._build_daily_rankings(rows)
+        finishers = daily_rankings.get(closing_date)
+        if not finishers:
+            raise ValueError(f"No closing standings for {club_name} on {closing_date}.")
+
+        podium = [
+            f"**#{entry['rank']} {entry['name']}** — {entry['fans']:,} fans"
+            for entry in sorted(finishers, key=lambda e: (e["rank"], e["name"]))
+            if entry["rank"] <= 3
+        ]
+        club_finish = "Final rank unavailable"
+        if isinstance(final_rank, int) and not isinstance(final_rank, bool) and final_rank > 0:
+            club_finish = f"**Final rank #{final_rank:,}**"
+
+        records = cls._compute_history_records(
+            daily_rankings,
+            verified_gains=cls._verified_monthly_gains(daily_rankings, closing_date),
+        )
+        rivalry_results = []
+        for rivalry in cls._compute_rivalries(daily_rankings, closing_date):
+            gap = rivalry["fan_gap"]
+            result = (
+                f"**{rivalry['who_leads']}** finished ahead by {gap:,} fans"
+                if gap else "finished tied"
+            )
+            swaps = rivalry["swap_count"]
+            swap_label = "swap" if swaps == 1 else "swaps"
+            rivalry_results.append(
+                f"**{rivalry['name_a']}** (#{rivalry['rank_a']}) vs "
+                f"**{rivalry['name_b']}** (#{rivalry['rank_b']}) — "
+                f"{result} ({swaps} {swap_label})"
+            )
+
+        title = f"🥕 Month-End Leaderboard Recap — {club_name}"
+        description = (
+            f"**{closing_date:%B %Y}** · {len(finishers)} finishing "
+            f"{'member' if len(finishers) == 1 else 'members'}\n"
+            f"_Closing standings · {cls._fmt_date(closing_date)}_"
+        )
+        sections = [
+            ("🏆 FINAL PODIUM", podium),
+            ("🏁 CLUB FINISH", [club_finish]),
+            ("📊 MONTHLY RECORDS", records),
+            ("⚔️ RIVALRY RESULTS", rivalry_results),
+        ]
+        return cls._build_recap_embeds(title, description, sections)
+
+    @classmethod
+    def _build_recap_embeds(
+        cls, title: str, description: str, sections: List[Tuple[str, List[str]]]
+    ) -> List[discord.Embed]:
+        def text_size(value: str) -> int:
+            return len(value.encode("utf-16-le")) // 2
+
+        fields: List[Tuple[str, str]] = []
+        for name, lines in sections:
+            if not lines:
+                continue
+            fields.append((name, lines[0]))
+            for line in lines[1:]:
+                combined = f"{fields[-1][1]}\n{line}"
+                if text_size(combined) <= cls.FIELD_MAX:
+                    fields[-1] = (name, combined)
+                else:
+                    fields.append((name, line))
+
+        embeds = [discord.Embed(
+            title=title, description=description, color=COLOR_INFO,
+            timestamp=discord.utils.utcnow(),
+        )]
+        size = text_size(title) + text_size(description)
+        for name, value in fields:
+            field_size = text_size(name) + text_size(value)
+            if size + field_size > 6000 or len(embeds[-1].fields) == 25:
+                continuation_title = f"{title} (continued)"
+                embeds.append(discord.Embed(title=continuation_title, color=COLOR_INFO))
+                size = text_size(continuation_title)
+            embeds[-1].add_field(name=name, value=value, inline=False)
+            size += field_size
         return embeds
 
     @staticmethod
@@ -596,12 +685,13 @@ class LeaderboardReportService:
                 # to be considered "fighting" for that spot.
                 if abs(rank_a_prev - rank_b_prev) <= 3:
                     days_in_proximity += 1
-                    # Did they swap?
-                    if (rank_a_prev < rank_b_prev) != (rank_a_curr < rank_b_curr):
+                    # Moving into or out of a tie is not a direct rank swap.
+                    previous_gap = rank_a_prev - rank_b_prev
+                    current_gap = rank_a_curr - rank_b_curr
+                    if previous_gap * current_gap < 0:
                         swaps += 1
 
-            # A rivalry is only valid if they swapped at least twice
-            # and spent time near each other.
+            # A rivalry needs a swap while both members were close in rank.
             if swaps >= 1:
                 info_a = latest_info[a]
                 info_b = latest_info[b]
@@ -1253,9 +1343,9 @@ class LeaderboardReportService:
     @classmethod
     def _compute_history_records(
         cls,
-        daily_deltas: Dict[str, List[Dict]],
         daily_rankings: Dict[date, List[Dict]],
-        latest_date: date,
+        *,
+        verified_gains: Optional[Dict[str, Dict[date, int]]] = None,
     ) -> List[str]:
         """Generate month-to-date records from every available daily ranking."""
         records = []
@@ -1263,10 +1353,13 @@ class LeaderboardReportService:
         # Biggest single-day gain this month
         best_delta = 0
         best_name = ""
-        for entries in daily_rankings.values():
+        for day, entries in daily_rankings.items():
             for entry in entries:
-                if entry["daily"] > best_delta:
-                    best_delta = entry["daily"]
+                gain = entry["daily"]
+                if verified_gains is not None:
+                    gain = verified_gains.get(entry["name"], {}).get(day, 0)
+                if gain > best_delta:
+                    best_delta = gain
                     best_name = entry["name"]
         if best_delta > 0:
             records.append(f"📊 **Biggest Day**: **{best_name}** — +{best_delta:,} fans")

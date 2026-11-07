@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import unittest
 from unittest.mock import AsyncMock, patch
 from uuid import UUID
@@ -55,9 +55,7 @@ class MonthlyRecordsTests(unittest.TestCase):
             ],
         }
 
-        records = LeaderboardReportService._compute_history_records(
-            {}, rankings, first + timedelta(days=1)
-        )
+        records = LeaderboardReportService._compute_history_records(rankings)
 
         self.assertIn("📊 **Biggest Day**: **Alpha** — +8,000,000 fans", records)
 
@@ -78,9 +76,7 @@ class MonthlyRecordsTests(unittest.TestCase):
             ],
         }
 
-        records = LeaderboardReportService._compute_history_records(
-            {}, rankings, first + timedelta(days=2)
-        )
+        records = LeaderboardReportService._compute_history_records(rankings)
 
         self.assertIn("⬆️ **Biggest Climber**: **Bravo** — up 3 spots", records)
 
@@ -317,6 +313,134 @@ class ClubGoalRenderTests(unittest.IsolatedAsyncioTestCase):
 
         field_names = [field.name for embed in embeds for field in embed.fields]
         self.assertNotIn("TOP MOVERS", field_names)
+
+
+class MonthEndRecapTests(unittest.IsolatedAsyncioTestCase):
+    async def _generate(self, closing_date, standings, final_rank=None):
+        rows = [
+            {"date": day, "trainer_name": name, "cumulative_fans": fans, "deficit_surplus": 0}
+            for day, entries in standings.items()
+            for name, fans in entries.items()
+        ]
+        with (
+            patch(
+                "services.leaderboard_report_service.QuotaHistory.get_current_month_for_club",
+                new=AsyncMock(return_value=rows),
+            ) as history,
+            patch("services.leaderboard_report_service.load_prediction_snapshot") as load,
+        ):
+            embeds = await LeaderboardReportService.generate_month_end_recap(
+                UUID(int=1), "Paragon", closing_date.year, closing_date.month,
+                final_rank=final_rank,
+            )
+        history.assert_awaited_once_with(UUID(int=1), closing_date.year, closing_date.month)
+        load.assert_not_called()
+        return embeds
+
+    async def test_closes_month_with_podium_ties_records_and_rivalry_results(self):
+        closing = date(2026, 10, 31)
+        embeds = await self._generate(closing, {
+            date(2026, 10, 1): {"Alpha": 1_000, "Early": 500},
+            date(2026, 10, 28): {"Alpha": 8_000_000, "Bravo": 7_000_000, "Charlie": 6_000_000},
+            date(2026, 10, 29): {"Alpha": 9_000_000, "Bravo": 10_000_000, "Charlie": 8_000_000},
+            date(2026, 10, 30): {"Alpha": 12_000_000, "Bravo": 11_000_000, "Charlie": 9_000_000},
+            closing: {"Alpha": 13_000_000, "Bravo": 13_000_000, "Charlie": 10_000_000},
+        }, final_rank=83)
+
+        self.assertIn("Month-End Leaderboard Recap", embeds[0].title)
+        self.assertIn("October 2026** · 3 finishing members", embeds[0].description)
+        self.assertIn("Oct 31", embeds[0].description)
+        fields = {field.name: field.value for field in embeds[0].fields}
+        self.assertEqual(fields["🏆 FINAL PODIUM"].splitlines(), [
+            "**#1 Alpha** — 13,000,000 fans",
+            "**#1 Bravo** — 13,000,000 fans",
+            "**#3 Charlie** — 10,000,000 fans",
+        ])
+        self.assertEqual(fields["🏁 CLUB FINISH"], "**Final rank #83**")
+        self.assertIn("Biggest Day**: **Bravo** — +3,000,000 fans", fields["📊 MONTHLY RECORDS"])
+        self.assertIn("Biggest Climber", fields["📊 MONTHLY RECORDS"])
+        self.assertIn("finished tied (2 swaps)", fields["⚔️ RIVALRY RESULTS"])
+        self.assertEqual(len(fields), 4)
+
+    async def test_rivalry_result_reports_the_final_fan_gap(self):
+        closing = date(2026, 10, 31)
+        embeds = await self._generate(closing, {
+            closing - timedelta(days=1): {"Alpha": 5_000_000, "Bravo": 4_000_000},
+            closing: {"Alpha": 6_000_000, "Bravo": 6_123_456},
+        })
+        rivalry = next(field.value for field in embeds[0].fields if field.name == "⚔️ RIVALRY RESULTS")
+        self.assertIn("**Bravo** finished ahead by 123,456 fans (1 swap)", rivalry)
+
+    async def test_sparse_leap_day_recaps_omit_unverified_highlights(self):
+        closing = date(2028, 2, 29)
+        for rank in (None, 0, -3, True, "83"):
+            with self.subTest(rank=rank):
+                embeds = await self._generate(closing, {closing: {"Solo": 5_000_000}}, rank)
+                fields = {field.name: field.value for field in embeds[0].fields}
+                self.assertIn("Feb 29", embeds[0].description)
+                self.assertEqual(fields, {
+                    "🏆 FINAL PODIUM": "**#1 Solo** — 5,000,000 fans",
+                    "🏁 CLUB FINISH": "Final rank unavailable",
+                })
+
+    async def test_requires_exact_closing_standings(self):
+        with self.assertRaisesRegex(ValueError, "No closing standings.*2026-10-31"):
+            await self._generate(date(2026, 10, 31), {date(2026, 10, 30): {"Solo": 1}})
+
+    async def test_tied_podium_spans_embeds_without_truncating_finishers(self):
+        closing = date(2026, 12, 31)
+        names = [f"{i:02d}" + "🌟" * 98 for i in range(30)]
+        embeds = await self._generate(closing, {closing: dict.fromkeys(names, 123_456)})
+
+        self.assertGreater(len(embeds), 1)
+        podium_lines = []
+        for embed in embeds:
+            embed_text = (embed.title or "") + (embed.description or "")
+            self.assertLessEqual(len(embed.fields), 25)
+            for field in embed.fields:
+                embed_text += field.name + field.value
+                self.assertLessEqual(len(field.value.encode("utf-16-le")) // 2, 1024)
+                if field.name == "🏆 FINAL PODIUM":
+                    podium_lines.extend(field.value.splitlines())
+            self.assertLessEqual(len(embed_text.encode("utf-16-le")) // 2, 6000)
+        self.assertEqual(podium_lines, [f"**#1 {name}** — 123,456 fans" for name in names])
+
+
+class UmaMoeClosingRankTests(unittest.IsolatedAsyncioTestCase):
+    async def test_new_month_rank_is_used_after_december_rollover(self):
+        scraper = UmaMoeAPIScraper("123")
+        previous = {"members": [{
+            "viewer_id": "1", "trainer_name": "Alpha", "daily_fans": list(range(1, 32)),
+        }], "circle": {"last_month_rank": 137}}
+        new_month = {"members": [], "circle": {"monthly_rank": 912, "last_month_rank": 83}}
+        with (
+            patch("scrapers.umamoe_api_scraper.datetime") as clock,
+            patch.object(scraper, "_fetch_via_direct_api", side_effect=[previous, new_month]) as fetch,
+        ):
+            clock.now.side_effect = lambda tz=None: datetime(2027, 1, 1, 16, tzinfo=tz)
+            await scraper.scrape()
+
+        self.assertEqual([call.args for call in fetch.await_args_list], [(2026, 12), (2027, 1)])
+        self.assertEqual(scraper.get_data_date(), date(2026, 12, 31))
+        self.assertEqual(scraper.get_closing_month_rank(), 83)
+        self.assertEqual(scraper.get_monthly_rank(), 912)
+
+    async def test_missing_new_month_response_still_saves_previous_month_snapshot(self):
+        scraper = UmaMoeAPIScraper("123")
+        previous = {"members": [{
+            "viewer_id": "1", "trainer_name": "Alpha", "daily_fans": list(range(1, 32)),
+        }], "circle": {"last_month_rank": 137}}
+        with (
+            patch("scrapers.umamoe_api_scraper.datetime") as clock,
+            patch.object(scraper, "_fetch_via_direct_api", side_effect=[previous, None]),
+            patch.object(scraper, "_fetch_via_playwright", side_effect=RuntimeError("unavailable")),
+        ):
+            clock.now.side_effect = lambda tz=None: datetime(2026, 11, 1, 16, tzinfo=tz)
+            members = await scraper.scrape()
+
+        self.assertEqual(members["1"]["fans"][-1], 30)
+        self.assertEqual(scraper.get_data_date(), date(2026, 10, 31))
+        self.assertIsNone(scraper.get_closing_month_rank())
 
 
 class UmaMoeTierProgressTests(unittest.IsolatedAsyncioTestCase):

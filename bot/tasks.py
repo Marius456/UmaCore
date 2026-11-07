@@ -3,6 +3,7 @@ Scheduled tasks for the Discord bot
 """
 import discord
 from discord.ext import tasks
+import calendar
 import json as json_mod
 import os
 import re
@@ -477,15 +478,23 @@ class BotTasks:
                         if leaderboard_channel:
                             year, month = current_date.year, current_date.month
 
-                            # Pass tier progress data from the scraper if available
-                            tier_kwargs = self._club_goal_kwargs(rank_data)
-
-                            embeds = await LeaderboardReportService.generate_leaderboard_report(
-                                club.club_id, club.club_name, year, month,
-                                **tier_kwargs,
+                            is_month_end = (
+                                data_date is not None
+                                and data_date.day == calendar.monthrange(year, month)[1]
                             )
+                            if is_month_end:
+                                embeds = await LeaderboardReportService.generate_month_end_recap(
+                                    club.club_id, club.club_name, year, month,
+                                    final_rank=scraper.get_closing_month_rank(),
+                                )
+                            else:
+                                embeds = await LeaderboardReportService.generate_leaderboard_report(
+                                    club.club_id, club.club_name, year, month,
+                                    **self._club_goal_kwargs(rank_data),
+                                )
                             await self._send_embeds(leaderboard_channel, embeds)
-                            await LeaderboardReportService.persist_delivered_predictions(embeds)
+                            if not is_month_end:
+                                await LeaderboardReportService.persist_delivered_predictions(embeds)
                             logger.info(
                                 f"Leaderboard report sent for {club.club_name} "
                                 f"({len(embeds)} embed(s))"
