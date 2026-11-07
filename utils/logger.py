@@ -2,6 +2,7 @@
 Logging configuration
 """
 import logging
+import os
 import sys
 from logging.handlers import RotatingFileHandler
 from config.settings import LOG_LEVEL, LOG_FILE
@@ -34,6 +35,7 @@ def setup_logging():
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     
     # File handler with rotation and UTF-8 encoding
+    os.makedirs(os.path.dirname(LOG_FILE) or ".", exist_ok=True)
     file_handler = RotatingFileHandler(
         LOG_FILE,
         maxBytes=10 * 1024 * 1024,  # 10 MB

@@ -95,7 +95,7 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(embed.image.url, launch["banner_image"])
                 saved = json.loads(self.events_path.read_text(encoding="utf-8"))["events"]
                 self.assertEqual(len(saved), 1)
-                self.assertCountEqual(saved[0]["notified_clubs"], ["club-1_ending", "club-2_ending"])
+                self.assertCountEqual(saved[0]["notified_clubs"], ["club-1_ending", "club-2_ending", "club-1_starting", "club-2_starting"])
 
     async def test_spotlight_preview_history_survives_restart_and_is_separate_by_phase(self):
         preview, launch = self.spotlight_articles(start_hours=1, end_hours=2)
@@ -147,16 +147,16 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
             await self.tasks.event_notifications()
             await self.tasks.event_notifications()
 
-        self.assertEqual(self.channel.send.await_count, 2)
+        self.assertEqual(self.channel.send.await_count, 1)
         saved = json.loads(self.events_path.read_text(encoding="utf-8"))
         self.assertEqual(
             saved["events"][0]["notified_clubs"],
-            ["club-1_starting", "club-1_ending"],
+            ["club-1_starting"],
         )
 
     async def test_ending_notification_uses_a_true_24_hour_threshold(self):
-        within_24_hours = self.event(start_hours=48, end_hours=23)
-        outside_24_hours = self.event(start_hours=48, end_hours=25)
+        within_24_hours = self.event(start_hours=-48, end_hours=23)
+        outside_24_hours = {**self.event(start_hours=-48, end_hours=25), "notified_clubs": ["club-1_starting"]}
 
         with (
             patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)),
@@ -193,6 +193,55 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.channel.send.assert_not_awaited()
         saved = json.loads(self.events_path.read_text(encoding="utf-8"))
         self.assertEqual(saved["events"][0]["notified_clubs"], [])
+
+    async def test_article_1090_replay_after_publication_and_in_ending_window(self):
+        for clock, expected in (("2026-11-03T22:05:00+00:00", "Event is live"),
+                                ("2026-11-04T18:30:00+00:00", "⏳ Event Ending in 1 Day")):
+            with self.subTest(clock=clock):
+                self.channel.send.reset_mock()
+                event = self.event()
+                event.update(type="bonus_star_piece", title="Bonus Star Piece rewards in Career!",
+                             url="https://umamusume.com/news/1090/",
+                             start_time="2026-11-03T15:00:00+00:00",
+                             end_time="2026-11-05T14:59:00+00:00")
+                self.write_events([event])
+                tasks = BotTasks(self.bot, club_cache=self.cache)
+                with patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)), patch(
+                    "bot.tasks.datetime", wraps=datetime
+                ) as fake_clock:
+                    fake_clock.now.return_value = datetime.fromisoformat(clock)
+                    await tasks.event_notifications()
+                    await tasks.event_notifications()
+                self.channel.send.assert_awaited_once()
+                self.assertEqual(self.channel.send.await_args.kwargs["embed"].title, expected)
+
+    async def test_late_event_live_then_ending_and_restart(self):
+        event = self.event(start_hours=-7, end_hours=40)
+        event.update(title="Bonus Star Piece rewards in Career!", type="bonus_star_piece",
+                     url="https://umamusume.com/news/1090/")
+        self.write_events([event])
+        with patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)):
+            await self.tasks.event_notifications()
+            self.assertEqual(self.channel.send.await_args.kwargs["embed"].title, "Event is live")
+            restarted = BotTasks(self.bot, club_cache=self.cache)
+            await restarted.event_notifications()
+            self.channel.send.assert_awaited_once()
+            saved = json.loads(self.events_path.read_text())["events"][0]
+            saved["end_time"] = self.event(end_hours=20)["end_time"]
+            self.write_events([saved])
+            await restarted.event_notifications()
+            await restarted.event_notifications()
+            self.assertEqual(self.channel.send.await_count, 2)
+
+    async def test_failed_ending_send_leaves_both_markers_retryable(self):
+        self.write_events([self.event(start_hours=-24, end_hours=20)])
+        self.channel.send.side_effect = [RuntimeError("offline"), None]
+        with patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)):
+            await self.tasks.event_notifications()
+            self.assertEqual(json.loads(self.events_path.read_text())["events"][0]["notified_clubs"], [])
+            await self.tasks.event_notifications()
+        self.assertCountEqual(json.loads(self.events_path.read_text())["events"][0]["notified_clubs"],
+                              ["club-1_starting", "club-1_ending"])
 
     def test_event_display_name_removes_announcement_status(self):
         self.assertEqual(

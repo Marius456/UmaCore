@@ -19,7 +19,7 @@ import logging
 import os
 import re
 import tempfile
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone, timedelta
 from enum import Enum
@@ -143,7 +143,7 @@ class Event:
     def to_record(self) -> dict:
         return {
             "title": self.title,
-            "event_key": _canonical_event_key(self.title, self.type),
+            "event_key": event_identity(self),
             "type": self.type.value,
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "end_time": self.end_time.isoformat() if self.end_time else None,
@@ -310,6 +310,24 @@ def _canonical_event_key(title: str, event_type: EventType) -> str:
     return f"{event_type.value}:{key}"
 
 
+def event_identity(event: Event) -> str:
+    if event.type == EventType.BONUS_STAR_PIECE:
+        parsed = urlparse(event.url)
+        article_id = None
+        if parsed.hostname in ("umamusume.com", "www.umamusume.com"):
+            match = re.fullmatch(r"/news/(?:article/)?(\d+)/?", parsed.path)
+            if match:
+                article_id = match.group(1)
+            elif parsed.path.rstrip("/") == "/news/detail":
+                candidate = parse_qs(parsed.query).get("id", [""])[0]
+                if candidate.isdigit():
+                    article_id = candidate
+        if article_id:
+            return f"bonus_star_piece:article:{int(article_id)}"
+        return f"{_canonical_event_key(event.title, event.type)}:{_event_schedule(event)}"
+    return _canonical_event_key(event.title, event.type)
+
+
 def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
     if value is None:
         return None
@@ -420,12 +438,21 @@ def merge_saved_spotlight_events(records: list[dict]) -> list[dict]:
     """Normalize legacy Spotlight records before checking reminder eligibility."""
     spotlight = []
     other = []
+    bonus = {}
     for record in records:
         event = Event.from_record(record)
         if event.type == EventType.SPOTLIGHT:
             spotlight.append(event)
+        elif event.type == EventType.BONUS_STAR_PIECE:
+            key = event_identity(event)
+            if key in bonus:
+                event = replace(event, notified_clubs=list(dict.fromkeys(
+                    bonus[key].notified_clubs + event.notified_clubs
+                )))
+            bonus[key] = event
         else:
             other.append(record)
+    other.extend(event.to_record() for event in bonus.values())
     return other + [occurrence.event.to_record() for occurrence in _spotlight_occurrences(spotlight)]
 
 
@@ -706,7 +733,7 @@ async def scrape_official_events(
                 existing_by_url[event.url] = event
         else:
             existing_by_title[event.title] = event
-            existing_by_key[_canonical_event_key(event.title, event.type)] = event
+            existing_by_key[event_identity(event)] = event
 
     async with async_playwright() as p:
         proxy_address = await _reachable_proxy(OFFICIAL_EVENTS_PROXY)
@@ -800,19 +827,21 @@ async def scrape_official_events(
 
                 if event_type == EventType.SPOTLIGHT:
                     previous = existing_by_url.get(url)
+                elif event_type == EventType.BONUS_STAR_PIECE:
+                    previous = existing_by_key.get(event_identity(Event(title, event_type, None, None, url)))
                 else:
                     previous = existing_by_title.get(title) or existing_by_key.get(
                         _canonical_event_key(title, event_type)
                     )
                 if previous and previous.end_time and previous.end_time < scrape_now:
-                    logger.debug(f"Skipping expired event article: '{title[:50]}'")
+                    logger.info(f"Skipping expired event article {url}: '{title[:50]}'")
                     continue
 
                 # Classification only makes this an event article; whether the
                 # underlying event is new is decided after canonical deduplication
                 # against events.json in check_and_save(). Calling every article
                 # "new" here made normal restart refreshes look like discoveries.
-                logger.info(f"Processing event article: '{title[:50]}' ({event_type.value})")
+                logger.info(f"Processing {url} event article: '{title[:50]}' ({event_type.value})")
 
                 # Navigate directly to the article URL
                 if not url:
@@ -921,7 +950,7 @@ def _dedup_events(events: List[Event]) -> List[Event]:
         if e.type == EventType.SPOTLIGHT:
             spotlight.append(e)
             continue
-        key = _canonical_event_key(e.title, e.type)
+        key = event_identity(e)
         existing = grouped.get(key)
         if existing is None:
             grouped[key] = e
@@ -1013,19 +1042,23 @@ async def check_and_save(json_path: str, now: Optional[datetime] = None) -> bool
         if event.type == EventType.SPOTLIGHT:
             saved_spotlight.append(event)
         else:
-            key = _canonical_event_key(event.title, event.type)
+            key = event_identity(event)
             saved_by_title[event.title] = event
             saved_by_key[key] = event
             notified_by_key.setdefault(key, []).extend(event.notified_clubs)
 
     refreshed: list[tuple[Event, bool]] = []
     for event in _dedup_events([e for e in raw_events if e.type != EventType.SPOTLIGHT]):
-        key = _canonical_event_key(event.title, event.type)
-        previous = saved_by_title.get(event.title) or saved_by_key.get(key)
+        key = event_identity(event)
+        previous = saved_by_key.get(key)
+        if event.type != EventType.BONUS_STAR_PIECE:
+            previous = saved_by_title.get(event.title) or previous
         if previous:
             event = _fill_event_details(event, previous)
         event.notified_clubs = list(dict.fromkeys(notified_by_key.get(key, [])))
         refreshed.append((event, key in saved_by_key))
+        if previous:
+            existing = [old for old in existing if event_identity(old) != key]
 
     saved_occurrences = _spotlight_occurrences(saved_spotlight)
     saved_by_article = {
@@ -1051,9 +1084,11 @@ async def check_and_save(json_path: str, now: Optional[datetime] = None) -> bool
             previous = None
         if previous:
             event = _merge_spotlight_details(event, previous.event)
+            existing = [old for old in existing if old.url not in previous.urls]
         refreshed.append((event, previous is not None))
 
-    logger.info(f"Dedup: {len(raw_events)} raw -> {len(refreshed)} unique event(s)")
+    refreshed.extend((event, True) for event in existing)
+    logger.info(f"Scrape: {len(raw_events)} articles; {len(refreshed)} refreshed or cached events")
     events = _retain_relevant_events([event for event, _ in refreshed], now=now)
     new_events = {id(event) for event, known in refreshed if not known}
     new_titles = [event.title for event in events if id(event) in new_events]

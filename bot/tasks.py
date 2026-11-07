@@ -561,7 +561,7 @@ class BotTasks:
 
     _event_display_name = staticmethod(event_display_name)
 
-    async def _notify_events_for_club(self, club: Club, event: dict, notif_type: str) -> bool:
+    async def _notify_events_for_club(self, club: Club, event: dict, notif_type: str, *, live: bool = False) -> bool:
         """
         Send an event notification embed to a club's events channel.
         Uses the 'notified_clubs' list in the event dict for dedup.
@@ -581,7 +581,7 @@ class BotTasks:
         notified_clubs = event.get("notified_clubs", [])
         dedup_key = f"{club.club_id}_{notif_type}"
         if dedup_key in notified_clubs:
-            logger.debug(f"Club {club.club_id} already notified for '{event.get('title', '')[:60]}' ({notif_type})")
+            logger.info(f"Event {event.get('url')} club {club.club_id} already notified for '{event.get('title', '')[:60]}' ({notif_type})")
             return False
 
         title = event.get("title", "Unknown event")
@@ -594,7 +594,7 @@ class BotTasks:
         )
         notification_key = (occurrence_key, club.club_id, notif_type)
         if notification_key in self._sent_event_notifications:
-            logger.debug(f"Notification already sent in this run for '{event_key}' ({notif_type})")
+            logger.info(f"Event {event_url} notification already sent in this run for '{event_key}' ({notif_type})")
             return False
 
         if notif_type == "starting":
@@ -606,13 +606,13 @@ class BotTasks:
                 return False
 
             embed = discord.Embed(
-                title="⏰ Event Starting Soon",
+                title="Event is live" if live else "⏰ Event Starting Soon",
                 color=discord.Color.blue(),
                 timestamp=discord.utils.utcnow()
             )
             embed.add_field(name="📰 Event", value=display_name, inline=False)
             embed.add_field(
-                name="📅 Starts",
+                name="📅 Started" if live else "📅 Starts",
                 value=f"<t:{int(start_dt.timestamp())}:F> (<t:{int(start_dt.timestamp())}:R>)",
                 inline=False
             )
@@ -647,6 +647,11 @@ class BotTasks:
             # Mark as notified and save back to JSON
             # Uses "{club_id}_{notif_type}" format to distinguish starting vs ending notifications
             notified_clubs.append(dedup_key)
+            if notif_type == "ending":
+                starting_key = f"{club.club_id}_starting"
+                if starting_key not in notified_clubs:
+                    notified_clubs.append(starting_key)
+                self._sent_event_notifications.add((occurrence_key, club.club_id, "starting"))
             event["notified_clubs"] = notified_clubs
             self._sent_event_notifications.add(notification_key)
             if not await asyncio.to_thread(self._save_events_json):
@@ -654,7 +659,7 @@ class BotTasks:
                     f"Sent {notif_type} notification for '{title[:60]}', "
                     "but failed to persist its deduplication state"
                 )
-            logger.info(f"Sent {notif_type} notification to {club.club_name}: '{title[:60]}'")
+            logger.info(f"Sent {notif_type} notification {event_url} to {club.club_name}: '{title[:60]}'")
             return True
         except Exception as e:
             logger.error(f"Error sending {notif_type} notification to {club.club_name}: {e}", exc_info=True)
@@ -734,46 +739,34 @@ class BotTasks:
             clubs = self.club_cache.active_clubs()
 
             for event in events:
-                title = event.get("title", "Unknown event")
 
-                # Check if this event should be notified as "starting"
-                start_str = event.get("start_time")
-                if start_str:
-                    try:
-                        start_dt = datetime.fromisoformat(start_str)
-                        if start_dt.tzinfo is None:
-                            start_dt = start_dt.replace(tzinfo=pytz.UTC)
-                        remaining = (start_dt - now).total_seconds()
-                        # Within 36 hours in the future
-                        if 0 <= remaining <= 129600:
-                            for club in clubs:
-                                await self._notify_events_for_club(club, event, "starting")
-                    except (ValueError, TypeError):
-                        logger.debug(f"Could not parse start_time for: {title[:40]}")
-
-                # Check if this event should be notified as "ending"
-                end_str = event.get("end_time")
-                if end_str:
-                    try:
-                        end_dt = datetime.fromisoformat(end_str)
-                        if end_dt.tzinfo is None:
-                            end_dt = end_dt.replace(tzinfo=pytz.UTC)
-                        remaining = (end_dt - now).total_seconds()
-                        # Within 24 hours in the future; never alert after an event ends.
-                        if 0 <= remaining <= 86400:
-                            for club in clubs:
-                                await self._notify_events_for_club(club, event, "ending")
-                    except (ValueError, TypeError):
-                        logger.debug(f"Could not parse end_time for: {title[:40]}")
+                try:
+                    start = datetime.fromisoformat(event["start_time"])
+                    start = start.replace(tzinfo=pytz.UTC) if start.tzinfo is None else start
+                    end = datetime.fromisoformat(event["end_time"]) if event.get("end_time") else None
+                    if end and end.tzinfo is None:
+                        end = end.replace(tzinfo=pytz.UTC)
+                    if end and end <= now:
+                        logger.info("Skipping expired event %s", event.get("url"))
+                        continue
+                    active = start <= now and end is not None
+                    ending = active and (end - now).total_seconds() <= 86400
+                    if ending or active or 0 <= (start - now).total_seconds() <= 129600:
+                        for club in clubs:
+                            await self._notify_events_for_club(
+                                club, event, "ending" if ending else "starting", live=active
+                            )
+                except (ValueError, TypeError, KeyError):
+                    logger.warning("Skipping invalid event schedule %s", event.get("url"))
 
         except Exception as e:
             logger.error(f"Error in event_notifications: {e}", exc_info=True)
 
     # ── Daily Official Events Scraper Task ─────────────────────────────
 
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=10)
     async def hourly_event_notifications(self):
-        """Check saved events hourly and post due notifications."""
+        """Check saved events every ten minutes and post due notifications."""
         await self.event_notifications()
 
     @hourly_event_notifications.before_loop
@@ -783,13 +776,13 @@ class BotTasks:
         await self._wait_for_club_cache()
         logger.info("Bot ready, hourly event notification loop starting")
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=1)
     async def daily_official_events_check(self):
         """
         Scrape official umamusume.com news for upcoming in-game events
         and save to JSON if new articles are detected.
 
-        Runs once per day, checks for new event articles by comparing
+        Runs once per hour, checks for new event articles by comparing
         event titles against the previously-saved JSON file.
         
         Event notifications run independently every hour against the saved data.
@@ -802,6 +795,7 @@ class BotTasks:
             logger.info(f"Checking for new official events → {EVENTS_JSON_PATH}")
             async with self._events_lock:
                 changed = await check_and_save_official_events(EVENTS_JSON_PATH)
+                await self._event_notifications_locked()
 
             if changed:
                 logger.info("✅ New official events detected and saved to JSON")

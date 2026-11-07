@@ -325,6 +325,28 @@ class SpotlightOccurrenceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(merge_saved_spotlight_events(records)), 3)
 
+    async def test_bonus_articles_have_independent_history_and_survive_empty_scrapes(self):
+        first = self.article(1069)
+        first.type = EventType.BONUS_STAR_PIECE
+        first.title = "Bonus Star Piece rewards in Career!"
+        first.notified_clubs = ["club-1_ending"]
+        later = self.article(1090, start_days=0, end_days=2)
+        later.type = first.type
+        later.title = first.title
+        changed, records = await self.refresh([first], [later])
+        self.assertTrue(changed)
+        self.assertEqual(len(records), 2)
+        current = next(row for row in records if row["url"] == later.url)
+        self.assertEqual(current["event_key"], "bonus_star_piece:article:1090")
+        self.assertEqual(current["notified_clubs"], [])
+        changed, retained = await self.refresh([Event.from_record(row) for row in records], [])
+        self.assertFalse(changed)
+        self.assertEqual(len(retained), 2)
+        later.url += "/"
+        changed, records = await self.refresh([Event.from_record(current)], [later])
+        self.assertFalse(changed)
+        self.assertEqual(len(records), 1)
+
     async def test_scraper_only_skips_the_expired_spotlight_article_url(self):
         expired = self.article(1132, end_days=-1)
         later = self.article(1142, start_days=1, end_days=8)

@@ -49,7 +49,7 @@ HORSE_IMAGE_ALLOWED_HOSTS = os.getenv(
 
 # Logging Configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-LOG_FILE = "bot.log"
+LOG_FILE = os.getenv("LOG_FILE", "bot.log")
 
 # Discord Embed Colors
 COLOR_ON_TRACK = 0x00FF00  # Green
