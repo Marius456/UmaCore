@@ -55,6 +55,15 @@ class HelpCommands(commands.Cog):
             inline=False,
         )
         embed.add_field(
+            name="Uma archive scores",
+            value=(
+                "`/uma leaderboard` — Rank all recorded Uma scores; trainers can appear multiple times.\n"
+                "Add `uma`, `variant`, or `club` to filter; use `page` to see more results.\n"
+                "`/uma status` — Show your scores and ranks in this channel after linking your trainer."
+            ),
+            inline=False,
+        )
+        embed.add_field(
             name="Information",
             value="`/privacy` — View the privacy policy and terms of service.",
             inline=False,

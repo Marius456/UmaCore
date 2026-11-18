@@ -259,12 +259,17 @@ The member whose today's Daily is the highest percentage above their Avg.
 |---|---|---|
 | `name` | str | Member name |
 | `daily_gain` | int | Today's fan gain (delta on latest_date) |
-| `avg_daily` | float | Mean daily gain across all their recorded days |
+| `avg_daily` | float | Mean verified daily gain this month, including today |
 | `pct_above_avg` | float | `((daily_gain - avg_daily) / avg_daily) * 100` |
 
 **Logic:**
 1. For each member with data on the latest date:
-   - Compute `avg_daily = total_delta / len(deltas)`
+   - Use the shared verified monthly sample: include day-one totals, today,
+     and zero gains; exclude negative corrections, missing calendar-day
+     intervals, midmonth first observations, and out-of-month/future dates.
+   - Require a verified gain today and at least three verified observations,
+     at least 1M fans today, and nonnegative quota surplus.
+   - Compute the mean and percentage at full precision; display one decimal.
    - Skip if `avg_daily <= 0` or `today_delta <= 0`
    - Compute `pct_above`
 2. Return the member with the highest `pct_above_avg` (minimum threshold: > 0)
@@ -340,7 +345,9 @@ Members whose cumulative fans is within 5% of a major milestone.
 #### J) Consistency Check
 **Method:** `_compute_consistency(daily_rankings, daily_deltas, latest_date)`
 
-Compares today's Daily to the monthly Avg for every member.
+Compares today's verified daily gain to the same verified monthly average used
+by breakout headlines and Club MVP. Requires a verified gain today; the leader's
+above-average check also uses this sample and omits comparisons when unavailable.
 
 **Output:**
 ```python
@@ -444,12 +451,23 @@ metaphors, or suggesting a finished race when reporting an ongoing chase.
 2. Otherwise, a new single-day club record **this month** leads. It must exceed
    the highest earlier verified daily gain; matching it does not qualify.
    Simultaneous record setters are described as jointly setting the record.
-3. Otherwise, rotate among qualifying types in this order: a climb of at least
-   two places ending in the top three, a new personal best this month, an
+3. Otherwise, a sustained close podium battle leads: the same adjacent pair or
+   trio within #1–#4 must remain close for at least three consecutive days,
+   including today. On each day, their entire fan spread must be at most 20%
+   of the slowest member's verified positive daily gain. Position swaps preserve
+   the run; missing dates or members, invalid/nonpositive gains, tied ranks,
+   lost adjacency, leaving #1–#4, or a wider gap end it. Only observations within
+   the report month count. Prefer trios, then longer runs, smaller exact spread
+   relative to daily pace, better current rank, and member names. Copy acknowledges
+   the duration, current ranks and gaps, and position swaps only when observed.
+   These battles may headline every day while qualifying, with varied hooks.
+4. Otherwise, rotate among qualifying types in this order: a climb of at least
+   two places ending in the top three, a new personal best this month exceeding
+   the previous best by at least **10% and 500,000 fans**, an
    adjacent-rank chase for #1–#3 within two days, a breakout at least 50% above
    this month's average, and a sole-leader
    streak reaching 5/10/15/20/25/30 consecutive days.
-4. With no qualifying story, highlight the highest verified positive daily gain;
+5. With no qualifying story, highlight the highest verified positive daily gain;
    otherwise show the current leader or shared lead. Empty snapshots get an
    explicit no-observations message.
 
@@ -469,8 +487,8 @@ No delivery history is stored, so changed candidate pools can repeat a subject.
 
 **Evidence and formatting:**
 
-- Headline evidence is computed separately from other sections, using only
-  snapshots from the report month through the report date. Daily gains require
+- Headlines, MVP/efficiency, consistency, and the leader's above-average check
+  share verified gains from the report month through the report date. Daily gains require
   consecutive calendar-day observations; totals on day one count as that day's
   gain. Missing intervals and negative corrections are excluded.
 - Records require at least one earlier valid observation. Breakouts require at

@@ -2,6 +2,48 @@
 
 These commands are available to all members.
 
+## /uma leaderboard
+
+View public Hall of Fame archive rankings for active trainers in all scanned active clubs
+across Discord servers. Overall includes every recorded Uma/outfit score, so the same
+trainer can appear multiple times with different Uma or outfits.
+Equal scores share a competition rank (1, 1, 3). These are latest complete imported scans,
+not live scores or lifetime records; a new scan replaces the previous archive.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `uma` | No | Uma name from autocomplete; omit for overall rankings |
+| `variant` | No | Outfit from autocomplete; requires `uma` |
+| `club` | No | Limit rankings to one club in this server; omit for all scanned clubs |
+| `page` | No | Page number, starting at 1; ten scores per page |
+
+When filtering by `uma`, each trainer appears once. Without `variant`, each trainer's
+best outfit for the selected Uma is used.
+Every entry shows the trainer, club, Uma, outfit, grade icon, and score on a dark card
+with circular Uma portraits. Portraits show the character's original outfit because
+archive records contain outfit titles rather than image IDs. Scan times are hidden.
+If image rendering is unavailable, the bot sends the scores as a text embed.
+Use the ◀ and ▶ buttons below the card to browse ten results at a time. Buttons edit
+the same message and keep your Uma, outfit, and club filters. Only the command's author
+can use its buttons; other members can run their own command. Controls disable at the
+first/last page and expire after five minutes of inactivity. Personal status has the
+same controls and is visible to everyone in the channel. The optional `page` argument still lets you jump
+directly to a page.
+
+## /uma status
+
+Show everyone in the channel your linked trainer's highest score and its rank among all recorded
+scores globally, plus each
+Uma/outfit's score and rank against other trainers with that same Uma/outfit. Requires
+`/link_trainer` in your club's server and an active trainer. You can then check status from
+any Discord server with the bot. Optional `uma` and `variant` filters
+also narrow the summary rank; `page` browses ten personal scores at a time.
+Unscanned trainers and completed scans with no scores are reported separately.
+
+The Hall of Fame scraper maintains `uma_archive_scans` and `uma_archive_scores` in the
+same PostgreSQL database as UmaCore. Import scans using the scraper before using these
+commands. UmaCore only reads these tables; running a command never triggers a new scan.
+
 ---
 
 ## /help

@@ -25,7 +25,7 @@ class HelpCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(len(embed.description), 4096)
         self.assertEqual(
             [field.name for field in embed.fields],
-            ["Your account", "Clubs and progress", "Gacha and trivia", "Information"],
+            ["Your account", "Clubs and progress", "Gacha and trivia", "Uma archive scores", "Information"],
         )
         for field in embed.fields:
             self.assertLessEqual(len(field.name), 256)
@@ -56,6 +56,7 @@ class HelpCommandTests(unittest.IsolatedAsyncioTestCase):
                 "list_clubs", "member_status", "progress_chart", "previous_month",
                 "gacha", "trivia play", "trivia leaderboard", "privacy",
                 "trivia horse", "trivia horse_leaderboard",
+                "uma leaderboard", "uma status",
             })
             registered = {cmd.qualified_name: cmd for cmd in bot.tree.walk_commands()}
             for name, arguments in actual.items():

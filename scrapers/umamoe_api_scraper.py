@@ -238,6 +238,7 @@ class UmaMoeAPIScraper(BaseScraper):
         self._club_rank: Optional[int] = None
         self._monthly_rank: Optional[int] = None
         self._last_month_rank: Optional[int] = None
+        self._closing_month_rank: Optional[int] = None
         self._yesterday_rank: Optional[int] = None
         # Club tier boundary distances are at the response root.
         self._fans_to_next_tier: Optional[int] = None
@@ -535,6 +536,7 @@ class UmaMoeAPIScraper(BaseScraper):
             now = datetime.now()
             year = now.year
             month = now.month
+            self._closing_month_rank = None
 
             # Determine which month to use as primary data source
             if now.day == 1:
@@ -572,7 +574,10 @@ class UmaMoeAPIScraper(BaseScraper):
                 endpoint_data = await self._fetch_via_direct_api(now.year, now.month)
                 if endpoint_data is None:
                     logger.warning("Direct API failed for current month (Day 1), trying Playwright fallback...")
-                    endpoint_data = await self._fetch_via_playwright(now.year, now.month)
+                    try:
+                        endpoint_data = await self._fetch_via_playwright(now.year, now.month)
+                    except Exception as e:
+                        logger.warning("Current-month endpoint unavailable for Day 1: %s", e)
 
                 if endpoint_data and "members" in endpoint_data:
                     endpoint_members = endpoint_data.get("members", [])
@@ -583,7 +588,9 @@ class UmaMoeAPIScraper(BaseScraper):
             # Extract club ranks from the "circle" sub-object.
             # On Day 1 prefer the current-month endpoint (more timely), fall back to primary.
             rank_source = (endpoint_data if (now.day == 1 and endpoint_data) else primary_data) or {}
-            circle_data = rank_source.get("circle") or {}
+            circle_data = rank_source.get("circle")
+            if not isinstance(circle_data, dict):
+                circle_data = {}
             rank_metadata = self._extract_club_rank_metadata(rank_source)
             self._club_rank = rank_metadata.get("club_rank")
             self._monthly_rank = rank_metadata.get("monthly_rank")
@@ -614,6 +621,10 @@ class UmaMoeAPIScraper(BaseScraper):
             # (nearly empty) period. Drop them entirely so the rank section is omitted.
             now_utc = datetime.now(timezone.utc)
             now_jst = now_utc + timedelta(hours=9)
+            if endpoint_data and (now.year, now.month) == (now_jst.year, now_jst.month):
+                rank = self._last_month_rank
+                if isinstance(rank, int) and not isinstance(rank, bool) and rank > 0:
+                    self._closing_month_rank = rank
             last_day_of_month = calendar.monthrange(now_utc.year, now_utc.month)[1]
             if now_utc.day == last_day_of_month and now_jst.month != now_utc.month:
                 logger.warning(
@@ -815,6 +826,10 @@ class UmaMoeAPIScraper(BaseScraper):
     def get_last_month_rank(self) -> Optional[int]:
         """Return the club's previous month position rank (from circle.last_month_rank)."""
         return self._last_month_rank
+
+    def get_closing_month_rank(self) -> Optional[int]:
+        """Return the closing snapshot's placement from the new-month response."""
+        return self._closing_month_rank
 
     def get_yesterday_rank(self) -> Optional[int]:
         """Return the club's rank as of yesterday (from circle.yesterday_rank)."""

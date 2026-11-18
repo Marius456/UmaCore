@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.report_generator import ReportGenerator
+from services import report_generator as reports
 
 
 class ReportGeneratorDailyProgressTests(unittest.TestCase):
@@ -38,6 +39,24 @@ class ReportGeneratorDailyProgressTests(unittest.TestCase):
 
 
 class ReportGeneratorResourceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_connected_browser_is_reused_without_a_temporary_context(self):
+        browser = MagicMock()
+        browser.is_connected.return_value = True
+        with patch.object(reports, '_playwright_browser', browser):
+            self.assertIs(await reports._ensure_playwright_browser_async(), browser)
+        browser.new_page.assert_not_called()
+
+    async def test_launch_uses_regular_chromium_processes(self):
+        browser = MagicMock(new_context=AsyncMock())
+        playwright = SimpleNamespace(chromium=SimpleNamespace(launch=AsyncMock(return_value=browser)))
+        with patch.object(reports, '_playwright_browser', None), \
+             patch.object(reports, '_playwright_context', None), \
+             patch.object(reports, '_playwright', playwright):
+            self.assertIs(await reports._ensure_playwright_browser_async(), browser)
+        flags = playwright.chromium.launch.await_args.kwargs['args']
+        self.assertNotIn('--single-process', flags)
+        self.assertNotIn('--no-zygote', flags)
+
     async def test_failed_render_closes_original_page_before_retry(self):
         first_page = MagicMock()
         first_page.set_content = AsyncMock(side_effect=RuntimeError("browser died"))

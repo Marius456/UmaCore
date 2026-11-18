@@ -7,11 +7,18 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      EVENTS_JSON_PATH: /app/event-state/events.json
+      LOG_FILE: /app/logs/bot.log
     volumes:
       - ./logs:/app/logs
+      - event-state:/app/event-state
     shm_size: 2gb
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  event-state:

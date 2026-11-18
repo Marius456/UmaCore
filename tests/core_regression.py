@@ -343,6 +343,49 @@ class PredictionDeliveryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StatusSummaryQueryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_report_snapshot_requires_exact_report_date(self):
+        fetch = AsyncMock(return_value=[])
+        with patch("services.quota_calculator.db.fetch", new=fetch):
+            await QuotaCalculator().get_member_status_summary(CLUB_ID, date(2026, 10, 3))
+
+        query, _, report_date, _ = fetch.await_args.args
+        snapshot_query = query.split("LEFT JOIN LATERAL (")[1].split(") latest ON TRUE")[0]
+        snapshot_query = snapshot_query.replace("m.member_id", "$1")
+        with sqlite3.connect(":memory:") as connection:
+            connection.execute(
+                "CREATE TABLE quota_history (id TEXT, member_id TEXT, date TEXT, "
+                "cumulative_fans INTEGER, expected_fans INTEGER, "
+                "deficit_surplus INTEGER, days_behind INTEGER)"
+            )
+            connection.executemany(
+                "INSERT INTO quota_history VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    ("old", "departed", "2026-10-02", 0, 300, -300, 1),
+                    ("previous-month", "departed", "2026-09-30", 900, 300, 600, 0),
+                    ("current", "present", "2026-10-03", 800, 700, 100, 0),
+                    ("future", "present", "2026-10-04", 900, 800, 100, 0),
+                ],
+            )
+            # An active member awaiting deactivation has no report-day snapshot.
+            self.assertIsNone(connection.execute(
+                snapshot_query, {"1": "departed", "2": report_date.isoformat()}
+            ).fetchone())
+            # A historical report must select its own day, even with newer data stored.
+            current = connection.execute(
+                snapshot_query, {"1": "present", "2": report_date.isoformat()}
+            ).fetchone()
+            self.assertEqual(current[0], "current")
+
+    async def test_summary_omits_active_member_without_report_snapshot(self):
+        fetch = AsyncMock(return_value=[{"history_id": None}])
+        with patch("services.quota_calculator.db.fetch", new=fetch):
+            summary = await QuotaCalculator().get_member_status_summary(
+                CLUB_ID, date(2026, 10, 3)
+            )
+        self.assertEqual(summary["total_members"], 0)
+        self.assertEqual(summary["on_track"], [])
+        self.assertEqual(summary["behind"], [])
+
     async def test_daily_baseline_is_bounded_to_report_month(self):
         fetch = AsyncMock(return_value=[])
         with patch("services.quota_calculator.db.fetch", new=fetch):
@@ -432,6 +475,78 @@ class StatusSummaryQueryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
+    async def test_scheduled_leaderboard_selects_recap_by_scrape_date(self):
+        for data_date, run_date, closing, missing in (
+            (date(2026, 10, 31), date(2026, 11, 1), True, False),
+            (date(2026, 12, 31), date(2027, 1, 1), True, False),
+            (date(2028, 2, 29), date(2028, 3, 1), True, False),
+            (date(2026, 10, 30), date(2026, 10, 31), False, False),
+            (date(2026, 10, 31), date(2026, 11, 1), True, True),
+        ):
+            with self.subTest(data_date=data_date, missing=missing):
+                club = make_club()
+                club.report_channel_id = 1
+                club.leaderboard_channel_id = 2
+                quota_channel = SimpleNamespace(send=AsyncMock())
+                news_channel = SimpleNamespace(send=AsyncMock())
+                channels = {1: quota_channel, 2: news_channel}
+                tasks = BotTasks(SimpleNamespace(get_channel=channels.get))
+                tasks.quota_calculator = SimpleNamespace(
+                    process_scraped_data=AsyncMock(return_value=(0, 1)),
+                    get_member_status_summary=AsyncMock(return_value={"behind": []}),
+                )
+                tasks.report_generator = SimpleNamespace(
+                    create_daily_report=AsyncMock(return_value=[(object(), None)]),
+                )
+                scraper = MagicMock()
+                scraper.scrape = AsyncMock(return_value={"1": {}})
+                scraper.get_data_date.return_value = data_date
+                scraper.get_current_day.return_value = data_date.day
+                scraper.get_closing_month_rank.return_value = 83
+                scraper.get_club_rank.return_value = 9
+                scraper.get_monthly_rank.return_value = 912
+                scraper.get_fans_to_next_tier.return_value = 100_000
+                scraper.get_fans_to_lower_tier.return_value = 200_000
+                recap_embed, daily_embed = object(), object()
+                with (
+                    patch("bot.tasks.datetime") as clock,
+                    patch("bot.tasks.ScrapeContext"),
+                    patch("bot.tasks.UmaMoeAPIScraper", return_value=scraper),
+                    patch("bot.tasks.ClubRankHistory.save", new_callable=AsyncMock),
+                    patch("bot.tasks.QuotaRequirement.get_quota_for_date", new_callable=AsyncMock),
+                    patch.object(
+                        LeaderboardReportService, "generate_month_end_recap",
+                        return_value=[recap_embed], side_effect=ValueError("No closing standings")
+                        if missing else None,
+                    ) as recap,
+                    patch.object(
+                        LeaderboardReportService, "generate_leaderboard_report",
+                        return_value=[daily_embed],
+                    ) as daily,
+                    patch.object(LeaderboardReportService, "persist_delivered_predictions") as persist,
+                ):
+                    clock.now.return_value = datetime.combine(run_date, time(16))
+                    await tasks.daily_check_for_club(club, run_date=run_date)
+
+                quota_channel.send.assert_awaited_once()
+                report_args = (club.club_id, club.club_name, data_date.year, data_date.month)
+                if closing:
+                    recap.assert_awaited_once_with(*report_args, final_rank=83)
+                    daily.assert_not_awaited()
+                    persist.assert_not_awaited()
+                    if missing:
+                        news_channel.send.assert_not_awaited()
+                    else:
+                        news_channel.send.assert_awaited_once_with(embed=recap_embed)
+                else:
+                    daily.assert_awaited_once_with(
+                        *report_args, club_rank=9, monthly_rank=912,
+                        fans_to_next_tier=100_000, fans_to_lower_tier=200_000,
+                    )
+                    recap.assert_not_awaited()
+                    news_channel.send.assert_awaited_once_with(embed=daily_embed)
+                    persist.assert_awaited_once_with([daily_embed])
+
     def test_scheduled_leaderboard_passes_all_club_goal_fields(self):
         rank_data = {
             "club_rank": 6,

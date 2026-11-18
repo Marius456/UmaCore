@@ -41,9 +41,9 @@ def selected(history, rotation=0):
 
 def test_new_leader_beats_club_record_and_rotating_stories():
     history = rankings(
-        {"Alpha": 10, "Bravo": 9, "Charlie": 1},
-        {"Alpha": 12, "Bravo": 10, "Charlie": 2},
-        {"Bravo": 30, "Alpha": 14, "Charlie": 8},
+        {"Alpha": 10_000_000, "Bravo": 9_000_000, "Charlie": 1_000_000},
+        {"Alpha": 12_000_000, "Bravo": 10_000_000, "Charlie": 2_000_000},
+        {"Bravo": 30_000_000, "Alpha": 14_000_000, "Charlie": 8_000_000},
     )
     assert of_kind(history, Kind.CLUB_RECORD)
     assert of_kind(history, Kind.PERSONAL_BEST)
@@ -51,7 +51,7 @@ def test_new_leader_beats_club_record_and_rotating_stories():
         story = selected(history, rotation)
         assert story.kind == Kind.LEADER_CHANGE
         assert story.names == ("Bravo", "Alpha")
-        assert story.facts["gap"] == 16
+        assert story.facts["gap"] == 16_000_000
 
 
 def test_club_record_beats_rotating_stories_and_uses_largest_gain():
@@ -98,13 +98,72 @@ def test_climb_uses_actual_previous_calendar_rank_not_cached_prev_rank():
 
 def test_personal_best_selects_largest_daily_gain_not_percentage_improvement():
     history = rankings(
-        {"Leader": 100, "A": 20, "B": 10},
-        {"Leader": 120, "A": 25, "B": 11},
-        {"Leader": 140, "A": 35, "B": 20},
+        {"Leader": 100_000_000, "A": 20_000_000, "B": 10_000_000},
+        {"Leader": 120_000_000, "A": 25_000_000, "B": 11_000_000},
+        {"Leader": 140_000_000, "A": 35_000_000, "B": 20_000_000},
     )
     stories = of_kind(history, Kind.PERSONAL_BEST)
     assert {c.names[0] for c in stories} == {"A", "B"}
     assert Report._select_headline_candidate(stories, 0).names == ("A",)
+
+
+@pytest.mark.parametrize("previous, gain, qualifies", [
+    (1_000_000, 1_499_999, False),  # Percentage alone is insufficient.
+    (1_000_000, 1_500_000, True),   # Exact absolute threshold.
+    (10_000_000, 10_500_000, False),  # Absolute increase alone is insufficient.
+    (10_000_000, 10_999_999, False),
+    (10_000_000, 11_000_000, True),  # Exact percentage threshold.
+    (5_000_000, 5_500_000, True),   # Both exact thresholds.
+    (5_000_001, 5_500_001, False),  # Do not round a sub-10% improvement up.
+    (5_000_001, 5_500_002, True),
+    (5_000_000, 6_000_000, True),
+    (5_000_000, 5_000_000, False),
+    (5_000_000, 4_999_999, False),
+    (0, 500_000, True),  # No division by a zero previous best.
+])
+def test_personal_best_headlines_require_both_improvement_thresholds(previous, gain, qualifies):
+    history = rankings(
+        {"Leader": 100_000_000, "A": 10_000_000},
+        {"Leader": 120_000_000, "A": 10_000_000 + previous},
+        {"Leader": 140_000_000, "A": 10_000_000 + previous + gain},
+    )
+    stories = of_kind(history, Kind.PERSONAL_BEST)
+    assert bool(stories) == qualifies
+    if qualifies:
+        assert stories[0].facts == {"gain": gain, "previous": previous}
+
+
+def test_chumsalmon_small_personal_best_falls_back_and_remains_in_today_records():
+    previous, gain = 5_193_736, 5_203_094
+    history = rankings(
+        {"Leader": 100_000_000, "Chumsalmon": 10_000_000},
+        {"Leader": 120_000_000, "Chumsalmon": 10_000_000 + previous},
+        {"Leader": 140_000_000, "Chumsalmon": 10_000_000 + previous + gain},
+        start=date(2026, 10, 11),
+    )
+    assert not of_kind(history, Kind.PERSONAL_BEST)
+    for rotation in range(10):
+        assert selected(history, rotation).kind == Kind.DAILY_GAIN
+    latest = max(history)
+    records = Report._compute_today_records({"Chumsalmon": [
+        {"date": latest - timedelta(days=1), "delta": previous},
+        {"date": latest, "delta": gain},
+    ]}, latest)
+    assert records["count"] == 1
+    assert records["members"][0]["name"] == "Chumsalmon"
+    assert not records["members"][0]["is_tie"]
+
+
+def test_rejected_personal_best_allows_a_qualifying_personal_best_headline():
+    history = rankings(
+        {"Leader": 100_000_000, "Small": 20_000_000, "Big": 10_000_000},
+        {"Leader": 120_000_000, "Small": 25_193_736, "Big": 12_000_000},
+        {"Leader": 140_000_000, "Small": 30_396_830, "Big": 15_000_000},
+    )
+    for rotation in range(10):
+        story = selected(history, rotation)
+        assert story.kind == Kind.PERSONAL_BEST
+        assert story.names == ("Big",)
 
 
 @pytest.mark.parametrize("old_rank, new_rank, qualifies", [
@@ -313,6 +372,12 @@ SAMPLE_STORIES = [
     HeadlineCandidate(Kind.QUIET, ("Ace",), {"fans": 40_000_000}),
     HeadlineCandidate(Kind.SHARED_LEAD, ("Ace", "Mike"), {"fans": 40_000_000, "count": 2}),
     HeadlineCandidate(Kind.EMPTY, (), {}),
+    HeadlineCandidate(Kind.SUSTAINED_BATTLE, ("Ace", "Mike", "Bravo"),
+                      {"days": 3, "rank": 2, "end_rank": 4, "gap": 1_800_000,
+                       "lead_gap": 106_345, "pace": 20_000_000, "swapped": True}),
+    HeadlineCandidate(Kind.SUSTAINED_BATTLE, ("Ace", "Mike"),
+                      {"days": 4, "rank": 3, "end_rank": 4, "gap": 200_000,
+                       "lead_gap": 200_000, "pace": 10_000_000, "swapped": False}),
 ]
 
 
@@ -379,6 +444,151 @@ def test_hook_rotation_does_not_lock_three_story_types_to_one_variant():
     assert all(len(variants) == 3 for variants in observed.values())
 
 
+def close_battle_history(size=2, gap=2_000_000, days=4, start=START):
+    return rankings(*[
+        {"Leader": 100_000_000 + i * 20_000_000,
+         "A": 50_000_000 + i * 10_000_000,
+         "B": 50_000_000 + i * 10_000_000 - (gap if size == 2 else gap // 2),
+         **({"C": 50_000_000 + i * 10_000_000 - gap} if size == 3 else {})}
+        for i in range(days)
+    ], start=start)
+
+
+def test_paragon_trio_stays_close_for_three_days_despite_swaps():
+    history = rankings(
+        {"RanfeaR": 244_787_733, "Mariartis": 209_531_690,
+         "Dragon": 208_271_056, "Secretariat": 205_971_211},
+        {"RanfeaR": 267_890_440, "Mariartis": 227_743_288,
+         "Dragon": 224_919_589, "Secretariat": 227_152_445},
+        {"RanfeaR": 289_786_772, "Mariartis": 246_700_803,
+         "Dragon": 246_788_378, "Secretariat": 245_435_381},
+        {"RanfeaR": 312_841_241, "Mariartis": 267_452_096,
+         "Dragon": 267_345_751, "Secretariat": 265_674_968},
+        start=date(2026, 10, 10),
+    )
+    story = selected(history)
+    assert story.kind == Kind.SUSTAINED_BATTLE
+    assert story.names == ("Mariartis", "Dragon", "Secretariat")
+    assert story.facts == {
+        "days": 3, "rank": 2, "end_rank": 4, "gap": 1_777_128,
+        "lead_gap": 106_345, "pace": 20_239_587, "swapped": True,
+    }
+    text = Report._generate_headline(CLUB, max(history), history)
+    assert "3 consecutive days" in text
+    assert "#2–#4" in text
+    assert "106.3K fans ahead of Dragon" in text
+    assert "1.8M fans separating the trio" in text
+    assert "swapped positions during this run" in text
+
+
+@pytest.mark.parametrize("size", [2, 3])
+@pytest.mark.parametrize("gap, qualifies", [(1_999_999, True), (2_000_000, True),
+                                         (2_000_001, False)])
+def test_sustained_battle_twenty_percent_boundary(size, gap, qualifies):
+    stories = [c for c in of_kind(close_battle_history(size, gap), Kind.SUSTAINED_BATTLE)
+               if len(c.names) == size]
+    assert bool(stories) == qualifies
+    if qualifies:
+        assert stories[0].facts["days"] == 3
+        assert not stories[0].facts["swapped"]
+        assert "swapped" not in Report._render_headline(stories[0], 0)
+
+
+def test_sustained_battle_requires_three_days_and_updates_daily():
+    assert not of_kind(close_battle_history(days=3), Kind.SUSTAINED_BATTLE)
+    story = selected(close_battle_history(days=5))
+    assert story.kind == Kind.SUSTAINED_BATTLE
+    assert story.facts["days"] == 4
+    # Appending the enum preserves all existing hook offsets.
+    assert list(Kind).index(Kind.EMPTY) == 10
+    assert list(Kind).index(Kind.SUSTAINED_BATTLE) == 11
+
+
+@pytest.mark.parametrize("interruption", [
+    "missing_date", "missing_member", "zero_gain", "negative_gain", "tied_rank",
+    "external_tie", "nonadjacent", "outside_podium", "wide_gap",
+])
+def test_sustained_battle_breaks_on_unverified_or_ineligible_history(interruption):
+    history = close_battle_history()
+    day = START + timedelta(days=1)
+    entries = {e["name"]: e for e in history[day]}
+    if interruption == "missing_date":
+        del history[day]
+    elif interruption == "missing_member":
+        history[day] = [e for e in history[day] if e["name"] != "B"]
+    elif interruption in ("zero_gain", "negative_gain"):
+        baseline = next(e["fans"] for e in history[START] if e["name"] == "B")
+        entries["B"]["fans"] = baseline - (interruption == "negative_gain")
+    elif interruption == "tied_rank":
+        entries["B"]["rank"] = 2
+    elif interruption == "external_tie":
+        history[day].append({"name": "Other", "rank": 3, "fans": entries["B"]["fans"]})
+    elif interruption == "nonadjacent":
+        entries["B"]["rank"] = 4
+    elif interruption == "outside_podium":
+        entries["A"]["rank"], entries["B"]["rank"] = 4, 5
+    elif interruption == "wide_gap":
+        entries["B"]["fans"] -= 1
+    assert not of_kind(history, Kind.SUSTAINED_BATTLE)
+
+
+def test_sustained_battle_does_not_cross_month_boundary_or_use_future_days():
+    history = close_battle_history(days=4, start=date(2026, 9, 29))
+    assert not of_kind(history, Kind.SUSTAINED_BATTLE)
+    history = close_battle_history(days=5)
+    assert not of_kind(history, Kind.SUSTAINED_BATTLE, START + timedelta(days=2))
+
+
+def test_sustained_battle_uses_slowest_member_and_rejects_lower_rank_groups():
+    history = close_battle_history()
+    # One member slows from 10M to 5M/day: the 2M gap is now too large.
+    for i, day in enumerate(sorted(history)):
+        next(e for e in history[day] if e["name"] == "B")["fans"] = 48_000_000 + i * 5_000_000
+    assert not of_kind(history, Kind.SUSTAINED_BATTLE)
+    history = close_battle_history()
+    for entries in history.values():
+        for entry in entries:
+            if entry["name"] != "Leader":
+                entry["rank"] += 3
+    assert not of_kind(history, Kind.SUSTAINED_BATTLE)
+
+
+@pytest.mark.parametrize("priority", [Kind.LEADER_CHANGE, Kind.CLUB_RECORD, None])
+def test_sustained_battle_priority_over_rotating_stories(priority):
+    battle = selected(close_battle_history())
+    stories = [battle, SAMPLE_STORIES[2], SAMPLE_STORIES[3], SAMPLE_STORIES[5]]
+    if priority:
+        stories.append(HeadlineCandidate(priority, ("Leader",), {}, 1, 1))
+    for rotation in range(10):
+        assert Report._select_headline_candidate(stories, rotation).kind == (
+            priority or Kind.SUSTAINED_BATTLE
+        )
+
+
+@pytest.mark.parametrize("criterion", ["size", "duration", "relative_gap", "rank", "names"])
+def test_sustained_battle_selection_is_deterministic(criterion):
+    best = HeadlineCandidate(Kind.SUSTAINED_BATTLE, ("A", "B", "C"),
+                             {"days": 4, "gap": 100, "pace": 1000}, 4, 1)
+    worse = best._replace(names=("D", "E", "F"))
+    if criterion == "size":
+        worse = worse._replace(names=("D", "E"), facts={"days": 20, "gap": 1, "pace": 1000})
+    elif criterion == "duration":
+        worse = worse._replace(facts={"days": 3, "gap": 1, "pace": 1000})
+    elif criterion == "relative_gap":
+        worse = worse._replace(facts={"days": 4, "gap": 100, "pace": 999})
+    elif criterion == "rank":
+        worse = worse._replace(rank=2)
+    for stories in ([worse, best], [best, worse]):
+        assert Report._select_headline_candidate(stories, 0) == best
+
+
+def test_sustained_battle_detection_is_independent_of_snapshot_order():
+    history = close_battle_history(size=3)
+    reversed_history = {day: list(reversed(entries)) for day, entries in reversed(list(history.items()))}
+    assert selected(history) == selected(reversed_history)
+    assert selected(history).names == ("A", "B", "C")
+
+
 def test_full_report_keeps_sections_and_uses_the_new_headline():
     import asyncio
 
@@ -405,3 +615,94 @@ def test_full_report_keeps_sections_and_uses_the_new_headline():
     assert "**Bravo** takes **#1** from **Alpha**" in fields[0].value
     assert fields[0].value.endswith("\n\n───")
     assert len(fields[0].value) <= Report.FIELD_MAX
+
+
+
+def test_month_start_percentage_matches_headline_mvp_and_consistency():
+    history = rankings(
+        {"Xzel": 1_000_000, "Other": 100_000},
+        {"Xzel": 3_000_000, "Other": 200_000},
+        {"Xzel": 9_000_000, "Other": 300_000},
+        start=date(2026, 10, 1),
+    )
+    latest = max(history)
+    # Legacy deltas omit day one; the shared sample must come from snapshots.
+    legacy = {"Xzel": [{"date": latest, "delta": 6_000_000},
+                       {"date": latest - timedelta(days=1), "delta": 2_000_000}]}
+    king = Report._compute_efficiency_king(history, legacy, latest)
+    consistency = Report._compute_consistency(history, legacy, latest)
+    story = of_kind(history, Kind.BREAKOUT)[0]
+    mvp = Report._compute_club_mvp(king, None, history[latest][0], consistency, latest, {})
+    assert king.avg_daily == 3_000_000
+    assert king.pct_above_avg == consistency.top_overperformer["pct_diff"] == 100.0
+    assert story.facts["pct"] == 100.0
+    assert "100.0% above their average daily gain this month" in mvp.description
+    assert "100.0% above their average daily gain this month" in Report._render_headline(story, 0)
+    assert Report._compute_tank_analysis(history, latest, legacy).leader_above_avg is True
+
+
+@pytest.mark.parametrize("start, days, offsets", [
+    (date(2026, 10, 1), [{"A": 10}, {"A": 10}, {"A": 20}], {0: 10, 1: 0, 2: 10}),
+    (date(2026, 10, 1), [{"A": 10}, None, {"A": 100}, {"A": 110}], {0: 10, 3: 10}),
+    (date(2026, 10, 10), [{"A": 100}, {"A": 110}], {1: 10}),
+    (date(2026, 10, 1), [{"A": 10}, {"A": 9}, {"A": 19}], {0: 10, 2: 10}),
+])
+def test_verified_monthly_sample(start, days, offsets):
+    history = rankings(*days, start=start)
+    actual = Report._verified_monthly_gains(history, max(history))
+    assert dict(actual) == {"A": {start + timedelta(days=i): gain for i, gain in offsets.items()}}
+
+
+def test_monthly_sample_excludes_previous_month_and_future():
+    history = rankings(
+        {"A": 100}, {"A": 1}, {"A": 3}, {"A": 1_000_000},
+        start=date(2026, 9, 30),
+    )
+    report_date = date(2026, 10, 2)
+    assert dict(Report._verified_monthly_gains(history, report_date)) == {
+        "A": {date(2026, 10, 1): 1, report_date: 2},
+    }
+    consistency = Report._compute_consistency(history, {}, report_date)
+    assert consistency.top_overperformer["pct_diff"] == 33.3
+
+
+@pytest.mark.parametrize("days", [
+    [{"A": 1_000_000, "B": 0}, {"A": 2_000_000, "B": 0}, None,
+     {"A": 9_000_000, "B": 100_000}],
+    [{"A": 1_000_000, "B": 0}, {"A": 2_000_000, "B": 0},
+     {"A": 9_000_000, "B": 0}, {"A": 8_000_000, "B": 100_000}],
+    [{"B": 0}, {"B": 0}, {"B": 0}, {"A": 8_000_000, "B": 100_000}],
+])
+def test_unverified_today_cannot_supply_monthly_comparisons(days):
+    history = rankings(*days, start=date(2026, 10, 1))
+    latest = max(history)
+    legacy = {"A": [{"date": latest, "delta": 1_000_000}] * 3}
+    assert Report._compute_efficiency_king(history, legacy, latest) is None
+    consistency = Report._compute_consistency(history, legacy, latest)
+    assert consistency.top_overperformer is None or consistency.top_overperformer["name"] != "A"
+    assert consistency.top_cooler is None or consistency.top_cooler["name"] != "A"
+    tank = Report._compute_tank_analysis(history, latest, legacy)
+    assert tank.leader_above_avg is None
+    text = Report._assemble_momentum(
+        None, tank._replace(daily_gain=0, daily_gain_2nd=100_000), consistency,
+        {"members": []}, None, latest,
+    )
+    assert "below-average day" not in text
+    assert "above their average" not in text
+
+
+@pytest.mark.parametrize("surplus, gains, qualifies", [
+    (0, [1_000_000, 1_000_000, 2_000_000], True),
+    (-1, [1_000_000, 1_000_000, 2_000_000], False),
+    (0, [100_000, 100_000, 900_000], False),
+    (0, [100_000, 2_000_000], False),
+    (0, [1_000_000, 1_000_000, 1_000_000], False),
+])
+def test_efficiency_eligibility_uses_verified_sample(surplus, gains, qualifies):
+    total, days = 0, []
+    for gain in gains:
+        total += gain
+        days.append({"A": total})
+    history = rankings(*days, start=date(2026, 10, 1))
+    history[max(history)][0]["surplus"] = surplus
+    assert bool(Report._compute_efficiency_king(history, {}, max(history))) == qualifies

@@ -7,6 +7,9 @@ container_name="para-bot-container"
 rollback_name="${container_name}-rollback"
 image_name="para-bot"
 health_timeout_seconds=60
+state_dir="${HOME}/umacore-state"
+previous_events_path=""
+mkdir -p "$state_dir/events" "$state_dir/logs"
 
 if [[ -z "$branch" || ! "$branch" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
     echo "Invalid or missing branch name." >&2
@@ -97,6 +100,14 @@ rollback() {
         docker rm -f "$container_name" >/dev/null 2>&1 || true
 
         if [[ "$had_previous_container" == true ]]; then
+            if [[ -f "$state_dir/events/events.json" && -n "$previous_events_path" && "$previous_events_path" != /app/event-state/events.json ]]; then
+                docker cp "$state_dir/events/events.json" "$rollback_name:$previous_events_path" || {
+                    echo "Cannot restore reminder state; rollback remains stopped." >&2
+                    exit "$exit_code"
+                }
+                # A legacy rollback writes inside its container again. Seed from it on the next deploy.
+                mv "$state_dir/events/events.json" "$state_dir/events/events.rollback.json"
+            fi
             if docker rename "$rollback_name" "$container_name" \
                 && docker start "$container_name" >/dev/null; then
                 echo "Previous container restored successfully." >&2
@@ -114,6 +125,8 @@ trap rollback ERR INT TERM
 
 if docker container inspect "$container_name" >/dev/null 2>&1; then
     had_previous_container=true
+    previous_events_path="$(docker exec "$container_name" python -c 'import os; print(os.path.abspath(os.getenv("EVENTS_JSON_PATH", "data/events.json")))')"
+    previous_state_exists="$(docker exec "$container_name" python -c 'import os; print(int(os.path.isfile(os.getenv("EVENTS_JSON_PATH", "data/events.json"))))')"
     echo "Stopping the current container..."
     docker stop "$container_name" >/dev/null
     if ! docker rename "$container_name" "$rollback_name"; then
@@ -124,11 +137,19 @@ if docker container inspect "$container_name" >/dev/null 2>&1; then
 fi
 
 cutover_started=true
+if [[ "$had_previous_container" == true && ! -f "$state_dir/events/events.json" && "$previous_state_exists" == 1 ]]; then
+    docker cp "$rollback_name:$previous_events_path" "$state_dir/events/events.json.tmp"
+    mv "$state_dir/events/events.json.tmp" "$state_dir/events/events.json"
+fi
 echo "Starting $container_name from $commit_image..."
 docker run -d \
     --name "$container_name" \
     "${database_network_args[@]}" \
     --env-file .env \
+    --mount "type=bind,src=$state_dir/events,dst=/app/event-state" \
+    --mount "type=bind,src=$state_dir/logs,dst=/app/logs" \
+    -e EVENTS_JSON_PATH=/app/event-state/events.json \
+    -e LOG_FILE=/app/logs/bot.log \
     --restart always \
     "$commit_image" >/dev/null
 
