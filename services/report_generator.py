@@ -13,8 +13,7 @@ from services.quota_schedule import QuotaSchedule
 
 logger = logging.getLogger(__name__)
 
-# Each embed in the report can carry optional file attachments (for table images)
-ReportEmbed = Tuple[discord.Embed, List[discord.File]]
+ReportMessage = Tuple[Optional[discord.Embed], List[discord.File]]
 
 # Shared Playwright browser for rendering table images (lazy-initialised)
 _playwright_browser = None
@@ -144,9 +143,9 @@ class ReportGenerator:
     async def create_daily_report(self, club_name: str, daily_quota: int, status_summary: Dict,
                                    report_date: date,
                                    rank_data: Optional[Dict] = None,
-                                   quota_period: str = 'daily') -> List[ReportEmbed]:
+                                   quota_period: str = 'daily') -> List[ReportMessage]:
         """
-        Create the main daily report embeds.
+        Create the daily report summary and standalone table attachments.
 
         Returns a list of (embed, [files]) tuples.
         """
@@ -220,12 +219,7 @@ class ReportGenerator:
                     rows[offset:offset + rows_per_card], offset + 1,
                 )
                 file = await self._generate_table_image(html, filename)
-                title = "Member Performance"
-                if page_number > 1:
-                    title += f" (continued {page_number})"
-                embed = discord.Embed(title=title, color=0x96D000)
-                embed.set_image(url=f"attachment://{filename}")
-                report_items.append((embed, [file]))
+                report_items.append((None, [file]))
 
         return report_items
 

@@ -495,7 +495,10 @@ class AdminCommands(ClubAutocompleteMixin, commands.Cog):
             )
 
             for embed, files in daily_reports:
-                await report_channel.send(embed=embed, files=files if files else None)
+                if embed is None:
+                    await report_channel.send(files=files)
+                else:
+                    await report_channel.send(embed=embed, files=files or None)
 
             # Auto-update monthly info board
             await self._update_monthly_info_board(club_obj, current_date)

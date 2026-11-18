@@ -460,7 +460,10 @@ class BotTasks:
                     )
 
                     for embed, files in daily_reports:
-                        await report_channel.send(embed=embed, files=files if files else None)
+                        if embed is None:
+                            await report_channel.send(files=files)
+                        else:
+                            await report_channel.send(embed=embed, files=files or None)
 
                     daily_report_sent = True
                     logger.info(f"✅ Daily report sent for {club.club_name} ({len(daily_reports)} embed(s))")

@@ -623,7 +623,7 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
         summary, card = (call.kwargs for call in channel.send.await_args_list)
         self.assertIn(club.club_name, summary["embed"].title)
         self.assertIsNone(summary["files"])
-        self.assertEqual(card["embed"].image.url, "attachment://member_performance_1.png")
+        self.assertEqual(set(card), {"files"})
         self.assertEqual(card["files"][0].filename, "member_performance_1.png")
         card["files"][0].close()
         html, _ = render.await_args.args

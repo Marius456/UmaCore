@@ -111,7 +111,8 @@ class ReportGeneratorCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('class="rank">#648<', first_html)
         self.assertIn("Goal 1.00M/member/day", first_html)
         self.assertFalse(items[0][1])
-        self.assertEqual(items[1][0].image.url, f"attachment://{filename}")
+        self.assertEqual(filename, "member_performance_1.png")
+        self.assertEqual(items[1:], [(None, [render.return_value])] * 2)
 
     async def test_empty_roster_sends_summary_only(self):
         with patch("services.report_generator.load_member_performance") as load:
