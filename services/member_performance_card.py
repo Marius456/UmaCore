@@ -11,6 +11,20 @@ from services.member_status_service import daily_gains
 
 
 RANK_ICONS = Path(__file__).resolve().parents[1] / "assets" / "circle_ranks"
+REPORT_PALETTE = """
+:root {
+    color-scheme: dark;
+    --canvas: #101418;
+    --panel: #191f24;
+    --text: #f2f5f1;
+    --muted: #b5c2c9;
+    --accent: #b8e965;
+    --gain: #62df96;
+    --loss: #ff9a93;
+    --goal-line: #f2c36d;
+    --grid: #46545b;
+}
+"""
 
 
 @dataclass(frozen=True)
@@ -138,42 +152,44 @@ def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_
     return f"""<!doctype html>
 <html lang="en"><meta charset="utf-8"><title>Member performance</title>
 <style>
+{REPORT_PALETTE}
 * {{ box-sizing: border-box; }}
-body {{ margin: 0; background: #f7f1e6; color: #302311; font: 600 16px Arial, sans-serif; }}
+body {{ margin: 0; background: var(--canvas); color: var(--text); font: 600 16px Arial, sans-serif; }}
 #card {{ width: 1000px; padding: 14px 25px 35px; }}
 header {{ display: flex; justify-content: space-between; align-items: flex-start;
-          border-bottom: 5px solid #96d000; padding-bottom: 8px; margin-bottom: 14px; gap: 16px; }}
-h1 {{ margin: 0 0 4px; color: #793b0e; font-size: 30px; overflow-wrap: anywhere; }}
-.subtitle, .goal, .rank, small {{ color: #755d3b; }}
+          border-bottom: 5px solid var(--accent); padding-bottom: 8px; margin-bottom: 14px; gap: 16px; }}
+h1 {{ margin: 0 0 4px; font-size: 30px; overflow-wrap: anywhere; }}
+.subtitle, .goal, .rank, small {{ color: var(--muted); }}
 .subtitle {{ font-size: 16px; text-transform: uppercase; }}
 .goal {{ margin-top: 4px; font-size: 14px; }}
 .standing {{ margin: 3px 13px 0 0; text-align: center; }}
 .tier {{ display: block; margin: auto; width: 68px; height: 68px; object-fit: contain; }}
-.tier-fallback {{ color: #793b0e; font-size: 30px; }}
+.tier-fallback {{ color: var(--accent); font-size: 30px; }}
 .rank {{ margin-top: 3px; font-size: 14px; }}
 table {{ width: 100%; table-layout: fixed; border-spacing: 0 1px; }}
 th, td {{ padding: 0 5px; white-space: nowrap; text-align: center; }}
-thead th {{ height: 27px; background: #96d000; font-size: 12px; text-transform: uppercase; }}
+thead th {{ height: 27px; background: #283823; color: var(--accent);
+            font-size: 12px; text-transform: uppercase; }}
 thead th:first-child {{ border-radius: 4px 0 0 4px; }}
 thead th:last-child {{ border-radius: 0 4px 4px 0; }}
-tbody th, tbody td {{ height: 51px; background: #fffbf3; }}
-tbody tr:nth-child(even) > * {{ background: #f2e9d7; }}
+tbody th, tbody td {{ height: 51px; background: var(--panel); }}
+tbody tr:nth-child(even) > * {{ background: #20282e; }}
 .member, .target, .activity {{ text-align: left; }}
 th.member {{ overflow: hidden; text-overflow: ellipsis; }}
 .target {{ padding-right: 14px; }}
-.position, .positive {{ color: #007e3b; }}
-.negative, .behind .position {{ color: #bf2624; }}
-.track {{ height: 6px; width: 100%; margin-top: 9px; border-radius: 5px; background: #e1d6c0; }}
-.progress {{ height: 100%; border-radius: inherit; background: #1aa24f; }}
-.activity svg {{ display: block; width: 100%; height: 24px; fill: #138c42; }}
-.spark-base {{ stroke: #ded5c4; stroke-width: .7; }}
-.spark-line {{ fill: none; stroke: #138c42; stroke-width: 1.3; }}
+.position, .positive {{ color: var(--gain); }}
+.negative, .behind .position {{ color: var(--loss); }}
+.track {{ height: 6px; width: 100%; margin-top: 9px; border-radius: 5px; background: var(--grid); }}
+.progress {{ height: 100%; border-radius: inherit; background: var(--gain); }}
+.activity svg {{ display: block; width: 100%; height: 24px; fill: var(--gain); }}
+.spark-base {{ stroke: var(--grid); stroke-width: .7; }}
+.spark-line {{ fill: none; stroke: var(--gain); stroke-width: 1.3; }}
 small {{ display: block; margin: 0 0 2px 4px; font-size: 10px; font-style: italic; }}
-.no-activity {{ display: block; text-align: center; color: #755d3b; }}
+.no-activity {{ display: block; text-align: center; color: var(--muted); }}
 .pill {{ display: inline-block; width: 84px; padding: 3px 0; border-radius: 20px;
-         background: #d7eeeb; color: #125e5c; font-size: 12px; }}
-.done .pill {{ background: #13823e; color: white; }}
-.behind .pill {{ background: #f5d6ce; color: #a82624; }}
+         background: #193a40; color: #b0e7e8; font-size: 12px; }}
+.done .pill {{ background: #215c39; color: #b2f2c8; }}
+.behind .pill {{ background: #4c2a31; color: #ffc4c0; }}
 </style>
 <main id="card">
   <header>

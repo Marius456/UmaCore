@@ -10,7 +10,7 @@ from uuid import UUID
 
 from config.database import db
 from models import Club
-from services.member_performance_card import format_fans, rank_badge
+from services.member_performance_card import REPORT_PALETTE, format_fans, rank_badge
 from services.quota_schedule import QuotaSchedule
 
 
@@ -254,44 +254,45 @@ def race_card_html(club_name, report_date, daily_goal, status_summary, rank_data
     return f"""<!doctype html>
 <html lang="en"><meta charset="utf-8"><title>Club Race Card</title>
 <style>
+{REPORT_PALETTE}
 * {{ box-sizing: border-box; }}
-body {{ margin: 0; background: #f7f1e6; color: #41321f; font: 600 15px Arial, sans-serif; }}
+body {{ margin: 0; background: var(--canvas); color: var(--text); font: 600 15px Arial, sans-serif; }}
 #card {{ width: 1024px; padding: 20px 25px 28px; }}
 header {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 18px;
-          padding: 10px 16px 20px 0; border-bottom: 5px solid #96d000; margin-bottom: 15px; }}
-h1 {{ margin: 6px 0 8px; color: #793b0e; font-size: 40px; overflow-wrap: anywhere; }}
+          padding: 10px 16px 20px 0; border-bottom: 5px solid var(--accent); margin-bottom: 15px; }}
+h1 {{ margin: 6px 0 8px; font-size: 40px; overflow-wrap: anywhere; }}
 .subtitle {{ font-size: 17px; }}
-.subtitle, .quota, h2, .caption, small, .rank, .calendar b, .calendar-legend {{ color: #756247; }}
+.subtitle, .quota, h2, .caption, small, .rank, .calendar b, .calendar-legend {{ color: var(--muted); }}
 .quota {{ margin-top: 5px; }}
 .standing {{ flex: none; text-align: center; }}
 .tier {{ display: block; margin: auto; width: 68px; height: 68px; object-fit: contain; }}
-.tier-fallback {{ color: #793b0e; font-size: 30px; }}
+.tier-fallback {{ color: var(--accent); font-size: 30px; }}
 .rank {{ margin-top: 2px; }}
-section {{ min-width: 0; padding: 12px 15px; border-radius: 12px; background: #fdfaf2; }}
+section {{ min-width: 0; padding: 12px 15px; border-radius: 12px; background: var(--panel); }}
 .metrics, .panels, .highlights {{ display: grid; gap: 12px; }}
 .metrics {{ grid-template-columns: repeat(4, 1fr); }}
 .metrics section {{ min-height: 86px; }}
 .metrics strong {{ display: block; font-size: 29px; margin: 3px 0; }}
-.positive, .leader strong, .quota-result {{ color: #0e803c; }}
-.negative {{ color: #ad2e2a; }}
+.positive, .leader strong, .quota-result {{ color: var(--gain); }}
+.negative {{ color: var(--loss); }}
 h2 {{ margin: 0; font-size: 13px; text-transform: uppercase; }}
 h3 {{ margin: 0 0 5px; text-transform: uppercase; font-size: 19px; }}
 small {{ display: block; font-size: 12px; }}
 .caption {{ font-size: 14px; }}
 .month, .panels, .highlights {{ margin-top: 14px; }}
 .month-header {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 15px; }}
-.chart-legend {{ display: flex; gap: 26px; padding: 4px 8px 0 0; color: #756247; font-size: 13px; }}
+.chart-legend {{ display: flex; gap: 26px; padding: 4px 8px 0 0; color: var(--muted); font-size: 13px; }}
 .chart-legend i {{ display: inline-block; width: 24px; margin-right: 6px; vertical-align: middle;
-                   border-top: 2px solid #159747; }}
-.chart-legend .goal-key {{ border-top: 2px dashed #a27826; }}
+                   border-top: 2px solid var(--gain); }}
+.chart-legend .goal-key {{ border-top: 2px dashed var(--goal-line); }}
 svg {{ width: 100%; display: block; margin-top: 7px; }}
-svg text {{ fill: #756247; font: 600 13px Arial, sans-serif; }}
-.gridline {{ stroke: #ded2bc; }}
-.observed {{ fill: none; stroke: #159747; stroke-width: 2.5; }}
-.observed-dot {{ fill: #159747; }}
-.goal-line {{ fill: none; stroke: #a27826; stroke-width: 1.8; stroke-dasharray: 14 9; }}
-.goal-line-dot {{ fill: #a27826; }}
-.chart-empty {{ display: grid; height: 185px; place-content: center; color: #756247; }}
+svg text {{ fill: var(--muted); font: 600 13px Arial, sans-serif; }}
+.gridline {{ stroke: var(--grid); }}
+.observed {{ fill: none; stroke: var(--gain); stroke-width: 2.5; }}
+.observed-dot {{ fill: var(--gain); }}
+.goal-line {{ fill: none; stroke: var(--goal-line); stroke-width: 1.8; stroke-dasharray: 14 9; }}
+.goal-line-dot {{ fill: var(--goal-line); }}
+.chart-empty {{ display: grid; height: 185px; place-content: center; color: var(--muted); }}
 .panels {{ grid-template-columns: 1.44fr 1fr; }}
 .calendar {{ display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px 8px;
              margin-top: 10px; }}
@@ -299,14 +300,14 @@ svg text {{ fill: #756247; font: 600 13px Arial, sans-serif; }}
 .cell {{ display: flex; justify-content: space-between; gap: 2px; padding: 2px 5px;
          min-height: 19px; border-radius: 4px; font-size: 12px; }}
 .cell span {{ font-size: 11px; }}
-.missing {{ background: #ddd1bb; color: #5d4e37; }}
-.zero {{ background: #e8ddc8; color: #5d4e37; }}
-.loss {{ background: #f0b8ae; color: #6e2520; }}
-.upcoming {{ background: #f4eee2; color: #756247; }}
-.low {{ background: #ecdb9e; }}
-.near {{ background: #cee599; }}
-.on {{ background: #96d000; color: #2d390e; }}
-.high {{ background: #168346; color: white; }}
+.missing {{ background: #404b56; }}
+.zero {{ background: #555359; }}
+.loss {{ background: #632e38; color: #ffc4c0; }}
+.upcoming {{ background: #232b32; color: var(--muted); }}
+.low {{ background: #544520; color: #ffe5a3; }}
+.near {{ background: #435126; color: #e0f1b8; }}
+.on {{ background: var(--accent); color: #1e2c12; }}
+.high {{ background: #216044; color: #d0f7df; }}
 .calendar-legend {{ display: grid; grid-template-columns: repeat(4, 1fr); row-gap: 3px;
                     margin-top: 8px; font-size: 11px; }}
 .calendar-legend i {{ display: inline-block; width: 11px; height: 11px; border-radius: 3px;
