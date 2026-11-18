@@ -8,23 +8,10 @@ from pathlib import Path
 
 from config.settings import CLUB_TIERS
 from services.member_status_service import daily_gains
+from services.report_palette import REPORT_PALETTE
 
 
 RANK_ICONS = Path(__file__).resolve().parents[1] / "assets" / "circle_ranks"
-REPORT_PALETTE = """
-:root {
-    color-scheme: dark;
-    --canvas: #101418;
-    --panel: #191f24;
-    --text: #f2f5f1;
-    --muted: #b5c2c9;
-    --accent: #b8e965;
-    --gain: #62df96;
-    --loss: #ff9a93;
-    --goal-line: #f2c36d;
-    --grid: #46545b;
-}
-"""
 
 
 @dataclass(frozen=True)

@@ -10,8 +10,9 @@ from uuid import UUID
 
 from config.database import db
 from models import Club
-from services.member_performance_card import REPORT_PALETTE, format_fans, rank_badge
+from services.member_performance_card import format_fans, rank_badge
 from services.quota_schedule import QuotaSchedule
+from services.report_palette import REPORT_PALETTE
 
 
 @dataclass

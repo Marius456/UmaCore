@@ -4,6 +4,7 @@ from html import escape
 import discord
 
 from services.member_status_service import MemberStatus, daily_gains
+from services.report_palette import REPORT_PALETTE
 
 
 def compact(value, signed=False):
@@ -25,7 +26,7 @@ def chart_svg(status):
     gains = daily_gains(status.points)
     opening = '<svg viewBox="0 0 940 126" role="img" aria-label="Daily fan gains">'
     if not gains:
-        return (opening + '<text x="470" y="65" text-anchor="middle" fill="#8c849f" '
+        return (opening + '<text x="470" y="65" text-anchor="middle" fill="var(--muted)" '
                 'font-size="18">Not enough daily history</text></svg>')
 
     plot_left, plot_right = 58, 936
@@ -42,8 +43,8 @@ def chart_svg(status):
         y = baseline - fraction * (baseline - plot_top)
         value = maximum * fraction
         elements.append(
-            f'<path d="M{plot_left} {y:.2f} H{plot_right}" stroke="#22212a"/>'
-            f'<text x="50" y="{y + 4:.2f}" text-anchor="end" fill="#625a73" '
+            f'<path d="M{plot_left} {y:.2f} H{plot_right}" stroke="var(--grid)"/>'
+            f'<text x="50" y="{y + 4:.2f}" text-anchor="end" fill="var(--muted)" '
             f'font-size="11">{compact(value)}</text>'
         )
 
@@ -56,13 +57,13 @@ def chart_svg(status):
             elements.append(
                 f'<rect data-date="{day.isoformat()}" data-gain="0" x="{x:.2f}" '
                 f'y="{baseline - 2}" width="{bar_width:.2f}" height="2" rx="1" '
-                f'fill="var(--accent)" opacity="{opacity}"/>'
+                f'fill="var(--gain)" opacity="{opacity}"/>'
             )
         else:
             elements.append(
                 f'<rect data-date="{day.isoformat()}" data-gain="{gain}" x="{x:.2f}" '
                 f'y="{baseline - bar_height:.2f}" width="{bar_width:.2f}" '
-                f'height="{bar_height:.2f}" rx="2" fill="var(--accent)" opacity="{opacity}"/>'
+                f'height="{bar_height:.2f}" rx="2" fill="var(--gain)" opacity="{opacity}"/>'
             )
 
     tick_days = {1, status.data_date.day}
@@ -71,7 +72,7 @@ def chart_svg(status):
         x = plot_left + (day_number - .5) * slot
         anchor = "start" if day_number == 1 else "end" if day_number == days else "middle"
         elements.append(
-            f'<text x="{x:.2f}" y="122" text-anchor="{anchor}" fill="#625a73" '
+            f'<text x="{x:.2f}" y="122" text-anchor="{anchor}" fill="var(--muted)" '
             f'font-size="11">{status.data_date.strftime("%b")} {day_number}</text>'
         )
     return opening + "".join(elements) + "</svg>"
@@ -80,8 +81,7 @@ def chart_svg(status):
 def card_html(s: MemberStatus) -> str:
     def e(value):
         return escape(str(value), quote=True)
-    accent = "#f4c638" if s.surplus >= 0 else "#f4a34d"
-    delta_color = "#3bca7d" if s.surplus >= 0 else "#f47777"
+    quota_color = "var(--gain)" if s.surplus >= 0 else "var(--loss)"
     percent = f"{s.percent}%" if s.percent is not None else "—"
     fill = max(0, min(100, s.percent or 0))
     initials = "".join(part[0] for part in s.name.split()[:2]) or "?"
@@ -96,7 +96,7 @@ def card_html(s: MemberStatus) -> str:
 
     performance = rows([
         (s.quota_label, compact(s.quota), "inherit"),
-        ("Surplus" if s.surplus >= 0 else "Deficit", compact(s.surplus, True), delta_color),
+        ("Surplus" if s.surplus >= 0 else "Deficit", compact(s.surplus, True), quota_color),
         ("Days Behind", s.days_behind, "inherit"), ("Avg / Day", compact(s.average), "inherit"),
     ])
     standings = rows([
@@ -115,47 +115,49 @@ def card_html(s: MemberStatus) -> str:
     gains = dict(daily_gains(s.points))
     latest_gain = gains.get(s.data_date)
     return f'''<!doctype html><html><head><meta charset="utf-8"><style>
-* {{box-sizing:border-box}} body {{margin:0;background:#0c0c0f;color:#e8e5f0;font-family:"DejaVu Sans","Segoe UI",Arial,sans-serif}}
-#card {{width:1024px;height:1010px;--accent:{accent};padding:42px;background:linear-gradient(#131218 0 132px,#0c0c0f 132px)}}
-header {{height:92px;border-bottom:3px solid #2c8bcc;display:flex;align-items:flex-start;gap:20px;position:relative}}
-.avatar {{width:82px;height:82px;border:1px solid #2c8bcc;border-radius:50%;flex:none;overflow:hidden;background:#242334;position:relative;display:grid;place-items:center;font-size:30px;color:#aca4bd}}
+{REPORT_PALETTE}
+* {{box-sizing:border-box}} body {{margin:0;background:var(--canvas);color:var(--text);font-family:Arial,"DejaVu Sans","Segoe UI",sans-serif}}
+#card {{width:1024px;height:1010px;--quota-color:{quota_color};padding:42px}}
+header {{height:92px;border-bottom:5px solid var(--accent);display:flex;align-items:flex-start;gap:20px;position:relative}}
+.avatar {{width:82px;height:82px;border:1px solid var(--grid);border-radius:50%;flex:none;overflow:hidden;background:var(--panel);position:relative;display:grid;place-items:center;font-size:30px;color:var(--muted)}}
 .avatar img {{position:absolute;width:100%;height:100%;object-fit:cover;inset:0;transform:scale(1.6);transform-origin:50% 25%}}
 .identity {{min-width:0;flex:1;padding-top:9px}}
 h1 {{margin:0 205px 0 0;font-size:40px;line-height:48px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
-.subtitle {{font-size:18px;color:#8c849f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:25px}}
-.badge {{position:absolute;right:0;top:1px;border-radius:25px;padding:9px 19px;background:var(--accent);color:#121116;font-size:18px;font-weight:800;white-space:nowrap}}
+.subtitle {{font-size:18px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:25px}}
+.badge {{position:absolute;right:0;top:1px;border-radius:25px;padding:9px 19px;background:var(--quota-color);color:var(--canvas);font-size:18px;font-weight:800;white-space:nowrap}}
 .tiles {{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:24px}}
-.tile {{height:105px;border-radius:15px;background:#141319;text-align:center;padding:21px 12px}}
-label {{display:block;font-size:17px;font-weight:750;color:#8c849f;letter-spacing:.25px}}
+.tile {{height:105px;border-radius:12px;background:var(--panel);text-align:center;padding:21px 12px}}
+label {{display:block;font-size:17px;font-weight:750;color:var(--muted);letter-spacing:.25px}}
 .tile strong {{display:block;font-size:34px;line-height:44px;white-space:nowrap}}
 .quota {{margin-top:23px}}
 .section-line {{display:flex;justify-content:space-between;align-items:center}}
-.percentage {{color:var(--accent);font-size:28px;font-weight:750}}
-.track {{height:22px;background:#202027;border-radius:16px;overflow:hidden;margin-top:10px}}
-.fill {{height:100%;width:{fill}%;background:var(--accent);border-radius:16px}}
+.percentage {{color:var(--quota-color);font-size:28px;font-weight:750}}
+.track {{height:22px;background:var(--grid);border-radius:16px;overflow:hidden;margin-top:10px}}
+.fill {{height:100%;width:{fill}%;background:var(--quota-color);border-radius:16px}}
 .quota-values {{margin-top:9px;font-size:20px;font-weight:650}}
+.quota-delta {{color:var(--quota-color)}}
 .chart {{margin-top:58px}}
-h2 {{margin:0;font-size:18px;line-height:24px;letter-spacing:.25px;color:#2c8bcc}}
-.chart-end {{font-size:17px;color:#8c849f;font-weight:650}}
+h2 {{margin:0;font-size:18px;line-height:24px;letter-spacing:.25px;color:var(--text)}}
+.chart-end {{font-size:17px;color:var(--muted);font-weight:650}}
 svg {{display:block;width:940px;height:126px;margin-top:15px;overflow:visible}}
 .columns {{display:grid;grid-template-columns:1fr 1fr;gap:29px;margin-top:36px}}
 .columns h2 {{margin-bottom:11px}}
 .row {{height:40px;display:flex;justify-content:space-between;align-items:center;font-size:19px;padding:0 8px;margin:0 -8px;gap:12px}}
-.row:nth-child(odd) {{background:#121116}}
-.row span {{color:#8c849f}}
+.row:nth-child(odd) {{background:var(--panel)}}
+.row span {{color:var(--muted)}}
 .row b {{font-size:20px;white-space:nowrap}}
-.stats {{display:grid;grid-template-columns:repeat(4,1fr);background:#1c1b23;border-radius:15px;margin-top:23px;height:55px;align-items:center;text-align:center}}
-.stats>div+div {{border-left:2px solid #5d536e}}
+.stats {{display:grid;grid-template-columns:repeat(4,1fr);background:var(--panel);border-radius:12px;margin-top:23px;height:55px;align-items:center;text-align:center}}
+.stats>div+div {{border-left:1px solid var(--grid)}}
 .stats label {{font-size:14px;line-height:18px}}
 .stats b {{display:block;font-size:20px;line-height:24px;white-space:nowrap}}
-footer {{display:flex;justify-content:space-between;color:#625a73;font-size:15px;margin-top:26px;line-height:22px;gap:15px}}
+footer {{display:flex;justify-content:space-between;color:var(--muted);font-size:15px;margin-top:26px;line-height:22px;gap:15px}}
 footer .right {{text-align:right}}
 </style></head><body><main id="card">
 <header><div class="avatar">{e(initials)}{portrait}</div><div class="identity"><h1>{e(s.name)}</h1>
 <div class="subtitle">ID {e(s.trainer_id or '—')} · {e(s.club_name)} · Circle {rank(s.circle_rank)}{inactive}</div></div><div class="badge">{s.badge}</div></header>
 <section class="tiles">{tiles}</section>
 <section class="quota"><div class="section-line"><label>MONTHLY QUOTA</label><span class="percentage">{percent}</span></div>
-<div class="track"><div class="fill"></div></div><div class="section-line quota-values"><span>{compact(s.fans)} / {compact(s.expected)}</span><span style="color:{delta_color}">{compact(s.surplus, True)}</span></div></section>
+<div class="track"><div class="fill"></div></div><div class="section-line quota-values"><span>{compact(s.fans)} / {compact(s.expected)}</span><span class="quota-delta">{compact(s.surplus, True)}</span></div></section>
 <section class="chart"><div class="section-line"><h2>DAILY FAN GAIN</h2><span class="chart-end">{compact(latest_gain)} · {s.data_date.strftime('%b %d')}</span></div>{chart_svg(s)}</section>
 <section class="columns"><div><h2>PERFORMANCE</h2>{performance}</div><div><h2>STANDINGS</h2>{standings}</div></section>
 <section class="stats">{stats}</section><footer><div>Last updated {s.data_date.strftime('%b %d, %Y')}</div><div class="right">Data: uma.moe + UmaCore<br>{profile_date}</div></footer>
