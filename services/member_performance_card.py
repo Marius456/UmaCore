@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from html import escape
 from pathlib import Path
-from statistics import mean
 
 from config.settings import CLUB_TIERS
 from services.member_status_service import daily_gains
@@ -21,6 +20,7 @@ class MemberPerformance:
     target: int
     day: int
     activity: dict[date, int]
+    month_average: float
     surplus: int
     required_per_day: int | None
     status: str
@@ -33,11 +33,13 @@ def build_member_performance(members, points, schedule, report_date, month_end):
         str(entry["member"].member_id),
     ))
     days_remaining = (month_end - report_date).days
+    month_start = report_date.replace(day=1)
     baseline_date = report_date - timedelta(days=7)
     rows = []
     for entry in sorted_members:
         member, history = entry["member"], entry["history"]
         fans = history.cumulative_fans
+        month_days = max(1, (report_date - max(member.join_date, month_start)).days + 1)
         target = schedule.expected(member.join_date, month_end)
         remaining = target - fans
         if remaining <= 0:
@@ -55,7 +57,7 @@ def build_member_performance(members, points, schedule, report_date, month_end):
         ))
         rows.append(MemberPerformance(
             member.trainer_name, fans, target,
-            fans - entry.get("yesterday_cumulative_fans", 0), activity,
+            fans - entry.get("yesterday_cumulative_fans", 0), activity, fans / month_days,
             history.deficit_surplus, required_per_day, status,
         ))
     return rows
@@ -114,7 +116,6 @@ def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_
     for index, row in enumerate(rows, start_index):
         status_class = row.status.lower()
         progress = 100 if row.target <= 0 else min(100, max(0, row.fans / row.target * 100))
-        average = mean(row.activity.values()) if row.activity else None
         pace_class = "negative" if row.surplus < 0 else "positive"
         table_rows.append(f"""
             <tr class="{status_class}">
@@ -126,7 +127,7 @@ def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_
               </td>
               <td>{format_fans(row.day, signed=True)}</td>
               <td class="activity">{_sparkline(row.activity, report_date)}</td>
-              <td>{format_fans(average)}</td>
+              <td>{format_fans(row.month_average)}</td>
               <td class="{pace_class}">{format_fans(row.surplus, signed=True)}</td>
               <td>{format_fans(row.required_per_day)}</td>
               <td><span class="pill">{row.status}</span></td>
@@ -178,8 +179,8 @@ small {{ display: block; margin: 0 0 2px 4px; font-size: 10px; font-style: itali
   <header>
     <div>
       <h1>{escape(club_name)}</h1>
-      <div class="subtitle">{date_label} · Member Performance</div>
-      <div class="goal">{count} {member_label} · Goal {format_fans(daily_goal)}/member/day</div>
+      <div class="subtitle">{date_label}</div>
+      <div class="goal">{count} {member_label} · Goal {format_fans(daily_goal)}/day</div>
     </div>
     <div class="standing">{badge}{rank_text}</div>
   </header>
@@ -192,7 +193,7 @@ small {{ display: block; margin: 0 0 2px 4px; font-size: 10px; font-style: itali
     <thead><tr>
       <th scope="col">#</th><th scope="col" class="member">Member</th>
       <th scope="col" class="target">Month / Target</th><th scope="col">Day</th>
-      <th scope="col" class="activity">7D Activity</th><th scope="col">7D Avg</th>
+      <th scope="col" class="activity">7D Activity</th><th scope="col">Month Avg</th>
       <th scope="col">Vs Target</th><th scope="col">Req/Day</th><th scope="col">Status</th>
     </tr></thead>
     <tbody>{"".join(table_rows)}</tbody>

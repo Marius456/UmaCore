@@ -53,6 +53,7 @@ class MemberPerformanceTests(unittest.TestCase):
                 ])
                 row, = build_member_performance([member], {}, schedule, REPORT_DATE, MONTH_END)
                 self.assertEqual((row.target, row.day, row.surplus), (320, 6, -5))
+                self.assertAlmostEqual(row.month_average, 104 / 7)
                 self.assertEqual((row.status, row.required_per_day), ("Behind", 16))
 
     def test_ties_rank_by_name_then_id_and_final_day_has_no_remaining_rate(self):
@@ -81,6 +82,7 @@ class MemberPerformanceTests(unittest.TestCase):
         row, = build_member_performance([member], points, schedule, report_date, MONTH_END)
         self.assertEqual(row.activity, {date(2026, 11, 2): 4, date(2026, 11, 6): 6})
         self.assertEqual(row.day, 7)
+        self.assertEqual(row.month_average, 4)
 
 
 class ClubRaceTests(unittest.TestCase):
@@ -181,7 +183,10 @@ class ReportGeneratorCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("&lt;Member&gt;", first_html)
         self.assertIn('<img class="tier" alt="A" src="data:image/webp;base64,', first_html)
         self.assertIn('class="rank">#648<', first_html)
-        self.assertIn("Goal 1.00M/member/day", first_html)
+        self.assertIn('<div class="subtitle">November 16, 2026</div>', first_html)
+        self.assertIn("Goal 1.00M/day", first_html)
+        self.assertIn('<th scope="col">Month Avg</th>', first_html)
+        self.assertIn("<td>1.94M</td>", first_html)
         self.assertEqual(race_file, "club_race_card.png")
         self.assertIn("31/31 on target", race_html)
         self.assertEqual(filename, "member_performance_1.png")
