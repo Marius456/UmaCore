@@ -602,6 +602,6 @@ class QuotaCalculator:
         return {
             'on_track': on_track,
             'behind': behind,
-            'total_members': len(rows),
+            'total_members': len(on_track) + len(behind),
             'period_info': period_info,
         }
