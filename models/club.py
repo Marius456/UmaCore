@@ -35,6 +35,7 @@ class Club:
     leaderboard_channel_id: Optional[int] = None
     events_channel_id: Optional[int] = None
     public_slug: Optional[str] = None
+    race_portrait_id: Optional[int] = None
     
     @classmethod
     async def create(cls, club_name: str, scrape_url: str, circle_id: Optional[str] = None,
@@ -91,7 +92,7 @@ class Club:
                      timezone, scrape_time,
                      is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
                      monthly_info_message_id, leaderboard_channel_id, events_channel_id,
-                     created_at, updated_at, public_slug
+                     created_at, updated_at, public_slug, race_portrait_id
         """
         row = await db.fetchrow(
             query,
@@ -117,7 +118,7 @@ class Club:
                    timezone, scrape_time,
                    is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
                    monthly_info_message_id, leaderboard_channel_id, events_channel_id,
-                   created_at, updated_at, public_slug
+                   created_at, updated_at, public_slug, race_portrait_id
             FROM clubs
             WHERE club_id = $1
         """
@@ -136,7 +137,7 @@ class Club:
                    timezone, scrape_time,
                    is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
                    monthly_info_message_id, leaderboard_channel_id, events_channel_id,
-                   created_at, updated_at, public_slug
+                   created_at, updated_at, public_slug, race_portrait_id
             FROM clubs
             WHERE club_name = $1 AND ($2::bigint IS NULL OR guild_id = $2)
             ORDER BY guild_id NULLS LAST
@@ -155,7 +156,7 @@ class Club:
                    timezone, scrape_time,
                    is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
                    monthly_info_message_id, leaderboard_channel_id, events_channel_id,
-                   created_at, updated_at, public_slug
+                   created_at, updated_at, public_slug, race_portrait_id
             FROM clubs
             WHERE is_active = TRUE
             ORDER BY club_name
@@ -171,7 +172,7 @@ class Club:
                    timezone, scrape_time,
                    is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
                    monthly_info_message_id, leaderboard_channel_id, events_channel_id,
-                   created_at, updated_at, public_slug
+                   created_at, updated_at, public_slug, race_portrait_id
             FROM clubs
             ORDER BY club_name
         """
@@ -186,7 +187,7 @@ class Club:
                    timezone, scrape_time,
                    is_active, report_channel_id, alert_channel_id, monthly_info_channel_id,
                    monthly_info_message_id, leaderboard_channel_id, events_channel_id,
-                   created_at, updated_at, public_slug
+                   created_at, updated_at, public_slug, race_portrait_id
             FROM clubs
             WHERE guild_id = $1
             ORDER BY club_name
@@ -223,7 +224,7 @@ class Club:
         valid_fields = {'scrape_url', 'circle_id', 'daily_quota', 'quota_period', 'timezone',
                         'scrape_time',
                         'report_channel_id', 'alert_channel_id', 'leaderboard_channel_id',
-                        'events_channel_id'}
+                        'events_channel_id', 'race_portrait_id'}
 
         updates = {k: v for k, v in kwargs.items() if k in valid_fields}
         if not updates:

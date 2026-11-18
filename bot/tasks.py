@@ -456,7 +456,8 @@ class BotTasks:
                     effective_quota = await QuotaRequirement.get_quota_for_date(club.club_id, current_date)
                     daily_reports = await self.report_generator.create_daily_report(
                         club.club_name, effective_quota, status_summary, current_date,
-                        club_id=club.club_id, rank_data=rank_data, quota_period=club.quota_period
+                        club_id=club.club_id, rank_data=rank_data, quota_period=club.quota_period,
+                        race_portrait_id=club.race_portrait_id,
                     )
 
                     for file in daily_reports:

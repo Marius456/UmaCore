@@ -100,6 +100,9 @@ class Database:
             updated_at TIMESTAMPTZ DEFAULT NOW()
         );
         
+        ALTER TABLE clubs ADD COLUMN IF NOT EXISTS race_portrait_id INTEGER
+            CHECK (race_portrait_id BETWEEN 100000 AND 999999);
+
         -- Migration: Add circle_id column if it doesn't exist
         DO $$ 
         BEGIN

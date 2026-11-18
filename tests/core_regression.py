@@ -508,6 +508,7 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
                 club = make_club()
                 club.report_channel_id = 1
                 club.leaderboard_channel_id = 2
+                club.race_portrait_id = 102601
                 quota_channel = SimpleNamespace(send=AsyncMock())
                 news_channel = SimpleNamespace(send=AsyncMock())
                 channels = {1: quota_channel, 2: news_channel}
@@ -536,6 +537,7 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
                     patch("bot.tasks.ClubRankHistory.save", new_callable=AsyncMock),
                     patch("bot.tasks.QuotaRequirement.get_quota_for_date", return_value=1_000_000),
                     patch("services.report_generator.load_quota_report_history", return_value=history),
+                    patch("services.report_generator.load_race_portrait", return_value="data:image/png;base64,scheduled") as portrait,
                     patch.object(tasks.report_generator, "_generate_table_image",
                                  side_effect=fake_card_file) as render,
                     patch.object(
@@ -554,6 +556,9 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertEqual(quota_channel.send.await_count, 2)
                 self.assert_card_post(quota_channel, render, club, "S", "#912")
+                portrait.assert_awaited_once_with(102601)
+                self.assertIn('class="portrait" src="data:image/png;base64,scheduled"', render.await_args_list[0].args[0])
+                self.assertNotIn('class="portrait"', render.await_args_list[1].args[0])
                 report_args = (club.club_id, club.club_name, data_date.year, data_date.month)
                 if closing:
                     recap.assert_awaited_once_with(*report_args, final_rank=83)
@@ -594,6 +599,7 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
     async def test_force_check_posts_card_with_tier_even_without_monthly_rank(self):
         club = make_club()
         club.report_channel_id = 1
+        club.race_portrait_id = 100101
         channel = SimpleNamespace(send=AsyncMock())
         interaction = SimpleNamespace(
             guild_id=club.guild_id,
@@ -620,12 +626,16 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
             patch("bot.commands.admin.QuotaRequirement.get_quota_for_date", return_value=1_000_000),
             patch.object(commands, "_update_monthly_info_board"),
             patch("services.report_generator.load_quota_report_history", return_value=history),
+            patch("services.report_generator.load_race_portrait", return_value="data:image/png;base64,manual") as portrait,
             patch.object(commands.report_generator, "_generate_table_image",
                          side_effect=fake_card_file) as render,
         ):
             await AdminCommands.force_check.callback(commands, interaction, club.club_name)
         self.assertEqual(channel.send.await_count, 2)
         self.assert_card_post(channel, render, club, "A")
+        portrait.assert_awaited_once_with(100101)
+        self.assertIn('class="portrait" src="data:image/png;base64,manual"', render.await_args_list[0].args[0])
+        self.assertNotIn('class="portrait"', render.await_args_list[1].args[0])
 
     def assert_card_post(self, channel, render, club, tier, rank=None):
         filenames = ["club_race_card.png", "member_performance_1.png"]

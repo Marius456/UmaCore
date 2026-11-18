@@ -65,4 +65,8 @@ Modify settings for an existing club.
 | `quota_period` | No | Update quota period (`daily`, `weekly`, `biweekly`) |
 | `scrape_time` | No | Update daily check time (HH:MM) |
 | `timezone` | No | Update timezone |
+| `race_portrait_id` | No | Six-digit GameTora trainee card ID for the Club Race Card. Use `0` to clear it. |
+
 Only include the parameters you want to change.
+
+For example, `/edit_club club:BAKUSHINNN race_portrait_id:102601` sets the Mihono Bourbon (Original) portrait for that club.

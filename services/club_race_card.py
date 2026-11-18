@@ -232,7 +232,9 @@ def _leader(title, leader):
             f'<span>{escape(name)}</span><strong>{format_fans(fans)}</strong></div></section>')
 
 
-def race_card_html(club_name, report_date, daily_goal, status_summary, rank_data, history, race):
+def race_card_html(
+    club_name, report_date, daily_goal, status_summary, rank_data, history, race, *, portrait=None,
+):
     day = report_date.day
     active = status_summary["active_members"]
     reporting = status_summary["total_members"]
@@ -241,6 +243,9 @@ def race_card_html(club_name, report_date, daily_goal, status_summary, rank_data
     quota_check = f"{on_track}/{active} on target" if active else "—"
     rank = race.ranks.get(day)
     rank_text = f'<div class="rank">#{rank:,}</div>' if rank is not None else ""
+    badges = rank_badge(rank_data.get("club_rank")) + rank_text
+    standing = f'<div class="standing">{badges}</div>' if badges else ""
+    artwork = f'<img class="portrait" src="{escape(portrait, quote=True)}" alt="">' if portrait else ""
     last_rank = rank_data.get("last_month_rank")
     last_month = f"Last month #{last_rank:,}" if type(last_rank) is int and last_rank > 0 else ""
     movement = race.rank_movement
@@ -265,6 +270,8 @@ h1 {{ margin: 6px 0 8px; font-size: 40px; overflow-wrap: anywhere; }}
 .subtitle {{ font-size: 17px; }}
 .subtitle, .quota, h2, .caption, small, .rank, .calendar b, .calendar-legend {{ color: var(--muted); }}
 .quota {{ margin-top: 5px; }}
+.portrait {{ flex: none; width: 192px; height: 192px; object-fit: contain; object-position: center bottom;
+             margin: 0 0 -20px auto; align-self: flex-end; }}
 .standing {{ flex: none; text-align: center; }}
 .tier {{ display: block; margin: auto; width: 68px; height: 68px; object-fit: contain; }}
 .tier-fallback {{ color: var(--accent); font-size: 30px; }}
@@ -325,7 +332,7 @@ svg text {{ fill: var(--muted); font: 600 13px Arial, sans-serif; }}
       <div class="subtitle">{date_label}</div>
       <div class="quota">{active} {member_label} · Goal {format_fans(daily_goal)}/day</div>
     </div>
-    <div class="standing">{rank_badge(rank_data.get("club_rank"))}{rank_text}</div>
+    {artwork}{standing}
   </header>
   <div class="metrics">
     {_stat("Club fans", format_fans(race.totals.get(day)))}

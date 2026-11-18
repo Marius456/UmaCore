@@ -10,6 +10,7 @@ import pytz
 
 from models import Club
 from services.quota_maintenance_service import QuotaMaintenanceService
+from services.race_portrait import load_race_portrait
 from services.scrape_lock_manager import ScrapeContext, ScrapeLockUnavailableError
 from .common import ClubAutocompleteMixin
 
@@ -398,6 +399,7 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
     
     @app_commands.command(name="edit_club", description="Edit club settings (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.describe(race_portrait_id="GameTora trainee card ID for the Club Race Card, or 0 to clear")
     @app_commands.choices(quota_period=[
         app_commands.Choice(name="Daily", value="daily"),
         app_commands.Choice(name="Weekly", value="weekly"),
@@ -410,6 +412,7 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
                        quota_period: app_commands.Choice[str] = None,
                        scrape_time: str = None,
                        timezone: str = None,
+                       race_portrait_id: int = None,
                        ):
         """Edit club configuration"""
         await interaction.response.defer()
@@ -462,6 +465,19 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
                     await interaction.followup.send(f"❌ Invalid timezone: `{timezone}`")
                     return
                 updates['timezone'] = timezone
+            if race_portrait_id is not None:
+                if race_portrait_id == 0:
+                    updates["race_portrait_id"] = None
+                elif not 100_000 <= race_portrait_id <= 999_999:
+                    await interaction.followup.send("Use a six-digit trainee card ID or 0 to clear the portrait.")
+                    return
+                elif await load_race_portrait(race_portrait_id) is None:
+                    await interaction.followup.send(
+                        f"Could not verify the GameTora portrait for ID {race_portrait_id}. Check the ID or try again."
+                    )
+                    return
+                else:
+                    updates["race_portrait_id"] = race_portrait_id
             if not updates:
                 await interaction.followup.send("❌ No changes specified")
                 return
@@ -524,6 +540,9 @@ class ClubManagementCommands(ClubAutocompleteMixin, commands.Cog):
                     changes_text.append(f"**Scrape Time:** {value}")
                 elif key == 'timezone':
                     changes_text.append(f"**Timezone:** {value}")
+                elif key == 'race_portrait_id':
+                    portrait_label = value if value is not None else "Cleared"
+                    changes_text.append(f"**Club Race Card portrait:** {portrait_label}")
             embed.add_field(
                 name="Changes Applied",
                 value="\n".join(changes_text) + period_warning,

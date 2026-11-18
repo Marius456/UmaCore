@@ -12,6 +12,7 @@ from config.settings import COLOR_BEHIND
 from services.club_race_card import build_club_race, load_quota_report_history, race_card_html
 from services.member_performance_card import build_member_performance, card_html
 from services.quota_schedule import QuotaSchedule
+from services.race_portrait import load_race_portrait
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +144,7 @@ class ReportGenerator:
     async def create_daily_report(
         self, club_name: str, daily_quota: int, status_summary: Dict, report_date: date,
         *, club_id: UUID, rank_data: Optional[Dict] = None, quota_period: str = "daily",
+        race_portrait_id: int | None = None,
     ) -> List[discord.File]:
         """Render the club race card followed by the member-performance pages."""
         rank_data = rank_data or {}
@@ -152,8 +154,10 @@ class ReportGenerator:
         )
         race = build_club_race(members, history, report_date, rank_data)
         daily_goal = daily_quota / QuotaSchedule.PERIOD_DAYS.get(quota_period, 1)
+        portrait = await load_race_portrait(race_portrait_id) if race_portrait_id is not None else None
         race_html = race_card_html(
             club_name, report_date, daily_goal, status_summary, rank_data, history, race,
+            portrait=portrait,
         )
         files = [await self._generate_table_image(race_html, "club_race_card.png")]
 

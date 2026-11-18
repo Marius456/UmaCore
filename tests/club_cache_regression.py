@@ -7,10 +7,12 @@ from datetime import datetime, time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 import pytz
 
 from bot.tasks import BotTasks
+from bot.commands.club_management import ClubManagementCommands
 from models.club import Club
 from services.club_cache import ActiveClubCache
 from tests.core_regression import make_club
@@ -81,6 +83,49 @@ class ClubCacheTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(RuntimeError):
                     await operation()
                 self.assertEqual(self.cache.active_clubs(), (self.club,))
+
+    async def test_edit_club_verifies_sets_replaces_and_clears_its_race_portrait(self):
+        other = copy(self.club)
+        other.club_id = UUID(int=55)
+        other.club_name = "Other"
+        other.race_portrait_id = 123456
+        self.cache.load([self.club, other])
+        commands = ClubManagementCommands(SimpleNamespace())
+        interaction = SimpleNamespace(
+            guild_id=self.club.guild_id, user="Admin",
+            response=SimpleNamespace(defer=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+        with (
+            patch.object(Club, "get_by_name", return_value=self.club) as lookup,
+            patch("models.club.db.execute", new_callable=AsyncMock) as write,
+            patch("bot.commands.club_management.load_race_portrait", return_value="data:image/png;base64,ok") as load,
+        ):
+            for card_id, expected in ((102601, 102601), (100101, 100101), (0, None)):
+                with self.subTest(card_id=card_id):
+                    await commands.edit_club.callback(commands, interaction, self.club.club_name,
+                                                      race_portrait_id=card_id)
+                    self.assertEqual(write.await_args.args[1:], (self.club.club_id, expected))
+                    cached = {club.club_id: club.race_portrait_id for club in self.cache.active_clubs()}
+                    self.assertEqual(cached, {self.club.club_id: expected, other.club_id: 123456})
+                    self.assertIn("Club Race Card portrait", interaction.followup.send.await_args.kwargs["embed"].fields[0].value)
+            self.assertEqual([call.args for call in load.await_args_list], [(102601,), (100101,)])
+            lookup.assert_awaited_with(self.club.club_name, self.club.guild_id)
+
+            self.club.race_portrait_id = 102601
+            await commands.edit_club.callback(commands, interaction, self.club.club_name, timezone="UTC")
+            self.assertEqual(self.club.race_portrait_id, 102601)
+            self.assertNotIn("race_portrait_id", write.await_args.args[0])
+            write.reset_mock()
+            load.reset_mock()
+            await commands.edit_club.callback(commands, interaction, self.club.club_name, race_portrait_id=12)
+            self.assertIn("six-digit", interaction.followup.send.await_args.args[0])
+            load.assert_not_awaited()
+            load.return_value = None
+            await commands.edit_club.callback(commands, interaction, self.club.club_name, race_portrait_id=100102)
+            self.assertIn("Could not verify", interaction.followup.send.await_args.args[0])
+            write.assert_not_awaited()
+            self.assertEqual(self.club.race_portrait_id, 102601)
 
     async def test_startup_replays_edits_and_deletes_during_load(self):
         tasks = BotTasks(SimpleNamespace(), club_cache=self.cache)

@@ -1,5 +1,6 @@
 import unittest
-from base64 import b64encode
+from base64 import b64decode, b64encode
+from collections import OrderedDict
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ from services.member_performance_card import (
     build_member_performance, card_html,
 )
 from services.quota_schedule import QuotaSchedule
+from services.race_portrait import load_race_portrait
 from services.report_generator import ReportGenerator
 from services import report_generator as reports
 
@@ -201,18 +203,55 @@ class ReportGeneratorCardTests(unittest.IsolatedAsyncioTestCase):
             patch("services.club_race_card.db.fetch", return_value=[
                 {"date": REPORT_DATE, "monthly_rank": 18},
             ]) as fetch,
+            patch("services.report_generator.load_race_portrait", return_value=None) as portrait,
             patch.object(report, "_generate_table_image", return_value=object()) as render,
         ):
             items = await report.create_daily_report(
-                "Club", 1, status, REPORT_DATE, club_id=CLUB_ID,
+                "Club", 1, status, REPORT_DATE, club_id=CLUB_ID, race_portrait_id=102601,
             )
         fetch.assert_awaited_once()
         self.assertEqual(fetch.await_args.args[1:], (CLUB_ID, REPORT_DATE.replace(day=1), REPORT_DATE))
         self.assertEqual(items, [render.return_value])
         html, filename = render.await_args.args
         self.assertEqual(filename, "club_race_card.png")
+        portrait.assert_awaited_once_with(102601)
+        self.assertNotIn('class="portrait"', html)
         self.assertIn('class="rank">#18<', html)
         self.assertIn('class="chart-empty">No history available', html)
+
+
+class RacePortraitTests(unittest.IsolatedAsyncioTestCase):
+    async def test_only_verified_game_tora_png_is_cached(self):
+        png = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jP1sAAAAASUVORK5CYII="
+        )
+        response = MagicMock(status=200, content_type="image/png")
+
+        async def chunks(_size):
+            yield b64decode(png) if response.valid else b"not a png"
+
+        response.content.iter_chunked.side_effect = chunks
+        session = MagicMock()
+        session.get.return_value.__aenter__.return_value = response
+        with (
+            patch("services.race_portrait._portraits", OrderedDict()),
+            patch("services.race_portrait.aiohttp.ClientSession") as client,
+        ):
+            client.return_value.__aenter__.return_value = session
+            self.assertIsNone(await load_race_portrait(12))
+            client.assert_not_called()
+            response.valid = False
+            self.assertIsNone(await load_race_portrait(102601))
+            response.valid = True
+            for _ in range(2):
+                self.assertEqual(await load_race_portrait(102601), f"data:image/png;base64,{png}")
+            self.assertEqual(session.get.call_count, 2)
+            session.get.assert_called_with(
+                "https://media.gametora.com/umamusume/characters/portrait/trainee/256/102601.png",
+                allow_redirects=False,
+            )
+            response.status = 404
+            self.assertIsNone(await load_race_portrait(999999))
 
 
 class ReportGeneratorResourceTests(unittest.IsolatedAsyncioTestCase):
