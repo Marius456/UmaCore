@@ -491,14 +491,11 @@ class AdminCommands(ClubAutocompleteMixin, commands.Cog):
             effective_quota = await QuotaRequirement.get_quota_for_date(club_obj.club_id, current_date)
             daily_reports = await self.report_generator.create_daily_report(
                 club_obj.club_name, effective_quota, status_summary, current_date,
-                rank_data=rank_data, quota_period=club_obj.quota_period
+                club_id=club_obj.club_id, rank_data=rank_data, quota_period=club_obj.quota_period
             )
 
-            for embed, files in daily_reports:
-                if embed is None:
-                    await report_channel.send(files=files)
-                else:
-                    await report_channel.send(embed=embed, files=files or None)
+            for file in daily_reports:
+                await report_channel.send(file=file)
 
             # Auto-update monthly info board
             await self._update_monthly_info_board(club_obj, current_date)

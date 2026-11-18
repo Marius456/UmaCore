@@ -19,12 +19,13 @@ from models.member import Member
 from models.quota_requirement import QuotaRequirement
 from models.quota_history import QuotaHistory
 from services import prediction_store
+from services.club_race_card import QuotaReportHistory
 from services.leaderboard_report_service import (
     LeaderboardReportService,
     ReportEmbeds,
 )
-from services.member_performance_card import MemberPerformance
 from services.quota_calculator import QuotaCalculator
+from services.quota_schedule import QuotaSchedule
 
 
 CLUB_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -483,6 +484,18 @@ class StatusSummaryQueryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
+    def daily_report_fixture(self, day):
+        member = SimpleNamespace(member_id=MEMBER_ID, trainer_name="Trainer", join_date=day)
+        snapshot = SimpleNamespace(cumulative_fans=5, deficit_surplus=0)
+        status = {
+            "on_track": [{"member": member, "history": snapshot}],
+            "behind": [], "total_members": 1, "active_members": 1,
+        }
+        history = QuotaReportHistory(
+            day, QuotaSchedule(day, "daily", 1_000_000, []), {MEMBER_ID: {day: 5}}, {},
+        )
+        return status, history
+
     async def test_scheduled_leaderboard_selects_recap_by_scrape_date(self):
         for data_date, run_date, closing, missing in (
             (date(2026, 10, 31), date(2026, 11, 1), True, False),
@@ -499,11 +512,10 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
                 news_channel = SimpleNamespace(send=AsyncMock())
                 channels = {1: quota_channel, 2: news_channel}
                 tasks = BotTasks(SimpleNamespace(get_channel=channels.get))
+                status, history = self.daily_report_fixture(data_date)
                 tasks.quota_calculator = SimpleNamespace(
                     process_scraped_data=AsyncMock(return_value=(0, 1)),
-                    get_member_status_summary=AsyncMock(return_value={
-                        "on_track": [object()], "behind": [], "total_members": 1,
-                    }),
+                    get_member_status_summary=AsyncMock(return_value=status),
                 )
                 scraper = MagicMock()
                 scraper.scrape = AsyncMock(return_value={"1": {}})
@@ -523,9 +535,7 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
                     patch("bot.tasks.UmaMoeAPIScraper", return_value=scraper),
                     patch("bot.tasks.ClubRankHistory.save", new_callable=AsyncMock),
                     patch("bot.tasks.QuotaRequirement.get_quota_for_date", return_value=1_000_000),
-                    patch("services.report_generator.load_member_performance", return_value=[
-                        MemberPerformance("Trainer", 5, 10, 2, {}, 0, 1, "Ahead"),
-                    ]),
+                    patch("services.report_generator.load_quota_report_history", return_value=history),
                     patch.object(tasks.report_generator, "_generate_table_image",
                                  side_effect=fake_card_file) as render,
                     patch.object(
@@ -591,15 +601,15 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
             followup=SimpleNamespace(send=AsyncMock()),
         )
         commands = AdminCommands(SimpleNamespace(get_channel=lambda _: channel))
+        data_date = date(2026, 11, 16)
+        status, history = self.daily_report_fixture(data_date)
         commands.quota_calculator = SimpleNamespace(
             process_scraped_data=AsyncMock(return_value=(0, 1)),
-            get_member_status_summary=AsyncMock(return_value={
-                "on_track": [object()], "behind": [], "total_members": 1,
-            }),
+            get_member_status_summary=AsyncMock(return_value=status),
         )
         scraper = MagicMock()
         scraper.scrape = AsyncMock(return_value={"1": {}})
-        scraper.get_data_date.return_value = date(2026, 11, 16)
+        scraper.get_data_date.return_value = data_date
         scraper.get_current_day.return_value = 16
         scraper.get_monthly_rank.return_value = None
         scraper.get_club_rank.return_value = 7
@@ -609,9 +619,7 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
             patch("bot.commands.admin.UmaMoeAPIScraper", return_value=scraper),
             patch("bot.commands.admin.QuotaRequirement.get_quota_for_date", return_value=1_000_000),
             patch.object(commands, "_update_monthly_info_board"),
-            patch("services.report_generator.load_member_performance", return_value=[
-                MemberPerformance("Trainer", 5, 10, 2, {}, 0, 1, "Ahead"),
-            ]),
+            patch("services.report_generator.load_quota_report_history", return_value=history),
             patch.object(commands.report_generator, "_generate_table_image",
                          side_effect=fake_card_file) as render,
         ):
@@ -620,18 +628,18 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
         self.assert_card_post(channel, render, club, "A")
 
     def assert_card_post(self, channel, render, club, tier, rank=None):
-        summary, card = (call.kwargs for call in channel.send.await_args_list)
-        self.assertIn(club.club_name, summary["embed"].title)
-        self.assertIsNone(summary["files"])
-        self.assertEqual(set(card), {"files"})
-        self.assertEqual(card["files"][0].filename, "member_performance_1.png")
-        card["files"][0].close()
-        html, _ = render.await_args.args
-        self.assertIn(f'<img class="tier" alt="{tier}" src="data:image/webp;base64,', html)
-        if rank:
-            self.assertIn(f'class="rank">{rank}<', html)
-        else:
-            self.assertNotIn('class="rank"', html)
+        filenames = ["club_race_card.png", "member_performance_1.png"]
+        for post, rendered, filename in zip(channel.send.await_args_list, render.await_args_list, filenames):
+            self.assertEqual(set(post.kwargs), {"file"})
+            self.assertEqual(post.kwargs["file"].filename, filename)
+            post.kwargs["file"].close()
+            html, _ = rendered.args
+            self.assertIn(f"<h1>{club.club_name}</h1>", html)
+            self.assertIn(f'<img class="tier" alt="{tier}" src="data:image/webp;base64,', html)
+            if rank:
+                self.assertIn(f'class="rank">{rank}<', html)
+            else:
+                self.assertNotIn('class="rank"', html)
 
     def test_daily_check_only_matches_configured_minute(self):
         scheduled_time = time(18, 0)

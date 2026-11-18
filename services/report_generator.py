@@ -3,17 +3,17 @@ Discord report generation service
 """
 import io
 import asyncio
-from datetime import date, timedelta
-from typing import Dict, List, Optional, Tuple
+from datetime import date
+from typing import Dict, List, Optional
+from uuid import UUID
 import discord
 import logging
-from config.settings import COLOR_BEHIND, COLOR_INFO
-from services.member_performance_card import card_html, load_member_performance
+from config.settings import COLOR_BEHIND
+from services.club_race_card import build_club_race, load_quota_report_history, race_card_html
+from services.member_performance_card import build_member_performance, card_html
 from services.quota_schedule import QuotaSchedule
 
 logger = logging.getLogger(__name__)
-
-ReportMessage = Tuple[Optional[discord.Embed], List[discord.File]]
 
 # Shared Playwright browser for rendering table images (lazy-initialised)
 _playwright_browser = None
@@ -118,7 +118,7 @@ class ReportGenerator:
         return str(num)
 
     async def _generate_table_image(self, html: str, filename: str) -> discord.File:
-        """Render a self-contained member-performance PNG for Discord."""
+        """Render a self-contained report PNG for Discord."""
 
         async def render_once() -> bytes:
             context = await _get_browser_context_async()
@@ -140,88 +140,36 @@ class ReportGenerator:
 
         return discord.File(io.BytesIO(screenshot_bytes), filename=filename)
 
-    async def create_daily_report(self, club_name: str, daily_quota: int, status_summary: Dict,
-                                   report_date: date,
-                                   rank_data: Optional[Dict] = None,
-                                   quota_period: str = 'daily') -> List[ReportMessage]:
-        """
-        Create the daily report summary and standalone table attachments.
-
-        Returns a list of (embed, [files]) tuples.
-        """
-        report_items = []
-
-        period_info = status_summary.get('period_info')
-
-        # Build description based on quota period
-        period_labels = {'daily': 'day', 'weekly': 'week', 'biweekly': '2 weeks'}
-        period_label = period_labels.get(quota_period, 'day')
-        quota_line = f"**Quota:** {self.format_fans_short(daily_quota)} fans per {period_label}"
-
-        next_date = report_date + timedelta(days=1)
-        date_range = (f"{report_date.strftime('%B %d')}, 16:00 CEST"
-                      f" ~ {next_date.strftime('%B %d')}, 16:00 CEST")
-        description = f"**Date:** {date_range}\n{quota_line}"
-
-        if period_info:
-            p_num = period_info['period_number']
-            p_total = period_info['total_periods']
-            p_start = period_info['period_start'].strftime('%b %d')
-            p_end = period_info['period_end'].strftime('%b %d')
-            description += f"\n**Period:** {period_info['quota_label'].capitalize()} {p_num} of {p_total} ({p_start} – {p_end})"
-
-        # Summary embed
-        summary_embed = discord.Embed(
-            title=f"📊 Daily Quota Report - {club_name}",
-            description=description,
-            color=COLOR_INFO,
-            timestamp=discord.utils.utcnow()
-        )
-
-        total = status_summary['total_members']
-        on_track_count = len(status_summary['on_track'])
-        behind_count = len(status_summary['behind'])
-
-        # Build summary text
-        summary_text = (
-            f"**Total Members:** {total}\n"
-            f"✅ On Track: {on_track_count}\n"
-            f"⚠️ Behind: {behind_count}"
-        )
-
-        summary_embed.add_field(
-            name="📈 Summary",
-            value=summary_text,
-            inline=False
-        )
-
-        if rank_data and rank_data.get('monthly_rank') is not None:
-            rank_text = self._format_rank_section(rank_data)
-            summary_embed.add_field(
-                name="🏆 Club Rankings",
-                value=rank_text,
-                inline=False
-            )
-
-        summary_embed.set_footer(text=f"Umamusume Quota Tracker - {club_name}")
-        report_items.append((summary_embed, []))
-
+    async def create_daily_report(
+        self, club_name: str, daily_quota: int, status_summary: Dict, report_date: date,
+        *, club_id: UUID, rank_data: Optional[Dict] = None, quota_period: str = "daily",
+    ) -> List[discord.File]:
+        """Render the club race card followed by the member-performance pages."""
+        rank_data = rank_data or {}
         members = status_summary["on_track"] + status_summary["behind"]
-        if members:
-            rows = await load_member_performance(members, report_date, quota_period, daily_quota)
-            daily_goal = daily_quota / QuotaSchedule.PERIOD_DAYS.get(quota_period, 1)
-            rows_per_card = 30
-            for offset in range(0, len(rows), rows_per_card):
-                page_number = offset // rows_per_card + 1
-                filename = f"member_performance_{page_number}.png"
-                html = card_html(
-                    club_name, report_date, total, daily_goal, rank_data,
-                    rows[offset:offset + rows_per_card], offset + 1,
-                )
-                file = await self._generate_table_image(html, filename)
-                report_items.append((None, [file]))
+        history = await load_quota_report_history(
+            club_id, members, report_date, quota_period, daily_quota,
+        )
+        race = build_club_race(members, history, report_date, rank_data)
+        daily_goal = daily_quota / QuotaSchedule.PERIOD_DAYS.get(quota_period, 1)
+        race_html = race_card_html(
+            club_name, report_date, daily_goal, status_summary, rank_data, history, race,
+        )
+        files = [await self._generate_table_image(race_html, "club_race_card.png")]
 
-        return report_items
+        rows = build_member_performance(
+            members, history.points, history.schedule, report_date, history.month_end,
+        )
+        rows_per_card = 30
+        for offset in range(0, len(rows), rows_per_card):
+            page_number = offset // rows_per_card + 1
+            html = card_html(
+                club_name, report_date, status_summary["total_members"], daily_goal, rank_data,
+                rows[offset:offset + rows_per_card], offset + 1,
+            )
+            files.append(await self._generate_table_image(html, f"member_performance_{page_number}.png"))
+
+        return files
 
     def _format_member_line(self, item: Dict, is_behind: bool, quota_period: str = 'daily') -> str:
         """Format a single member line for on-track or behind sections"""
@@ -277,37 +225,6 @@ class ReportGenerator:
             sections.append("\n".join(current_section))
 
         return sections if sections else ["*No members*"]
-
-    def _format_rank_section(self, rank_data: Dict) -> str:
-        """Format the club/monthly rank lines for the summary embed."""
-        monthly_rank = rank_data.get('monthly_rank')
-        last_month_rank = rank_data.get('last_month_rank')
-        yesterday_rank = rank_data.get('yesterday_rank')
-
-        lines = []
-
-        # Club Rank line — delta vs yesterday (available directly from API)
-        if monthly_rank is not None:
-            if yesterday_rank is not None:
-                delta = yesterday_rank - monthly_rank  # positive = improved (lower number = better)
-                if delta > 0:
-                    change = f"(↑{delta} since yesterday)"
-                elif delta < 0:
-                    change = f"(↓{abs(delta)} since yesterday)"
-                else:
-                    change = "(no change)"
-                lines.append(f"Club Rank: #{monthly_rank} {change}")
-            else:
-                lines.append(f"Club Rank: #{monthly_rank}")
-
-        # Monthly Rank line — last month comparison comes directly from the API
-        if monthly_rank is not None:
-            monthly_line = f"Monthly Rank: #{monthly_rank}"
-            if last_month_rank is not None:
-                monthly_line += f" | Last Month: #{last_month_rank}"
-            lines.append(monthly_line)
-
-        return "\n".join(lines) if lines else "*No rank data available*"
 
     def create_kick_alert(self, club_name: str, members_to_kick: List) -> List[discord.Embed]:
         """

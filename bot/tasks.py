@@ -456,17 +456,14 @@ class BotTasks:
                     effective_quota = await QuotaRequirement.get_quota_for_date(club.club_id, current_date)
                     daily_reports = await self.report_generator.create_daily_report(
                         club.club_name, effective_quota, status_summary, current_date,
-                        rank_data=rank_data, quota_period=club.quota_period
+                        club_id=club.club_id, rank_data=rank_data, quota_period=club.quota_period
                     )
 
-                    for embed, files in daily_reports:
-                        if embed is None:
-                            await report_channel.send(files=files)
-                        else:
-                            await report_channel.send(embed=embed, files=files or None)
+                    for file in daily_reports:
+                        await report_channel.send(file=file)
 
                     daily_report_sent = True
-                    logger.info(f"✅ Daily report sent for {club.club_name} ({len(daily_reports)} embed(s))")
+                    logger.info(f"✅ Daily report sent for {club.club_name} ({len(daily_reports)} image(s))")
 
                 except Exception as e:
                     logger.error(f"❌ Error generating/sending daily report for {club.club_name}: {e}", exc_info=True)

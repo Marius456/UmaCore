@@ -1,19 +1,14 @@
 """Build and lay out the daily quota report's member-performance card."""
 
-import calendar
 from base64 import b64encode
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
 from html import escape
 from pathlib import Path
 from statistics import mean
 
-from config.database import db
 from config.settings import CLUB_TIERS
-from models import Club
 from services.member_status_service import daily_gains
-from services.quota_schedule import QuotaSchedule
 
 
 RANK_ICONS = Path(__file__).resolve().parents[1] / "assets" / "circle_ranks"
@@ -29,37 +24,6 @@ class MemberPerformance:
     surplus: int
     required_per_day: int | None
     status: str
-
-
-async def load_member_performance(members, report_date, quota_period, effective_quota):
-    """Load one month schedule and one recent history batch for the report roster."""
-    club_id = members[0]["member"].club_id
-    month_start = report_date.replace(day=1)
-    month_end = report_date.replace(day=calendar.monthrange(report_date.year, report_date.month)[1])
-    club = await Club.get_by_id(club_id)
-    requirements = await db.fetch(
-        """
-        SELECT effective_date, daily_quota FROM quota_requirements
-        WHERE club_id = $1 AND effective_date BETWEEN $2 AND $3
-        """,
-        club_id, month_start, month_end,
-    )
-    schedule = QuotaSchedule(
-        report_date, quota_period, club.daily_quota if club else effective_quota, requirements,
-    )
-    snapshots = await db.fetch(
-        """
-        SELECT member_id, date, cumulative_fans FROM quota_history
-        WHERE club_id = $1 AND date BETWEEN $2 AND $3 AND member_id = ANY($4::uuid[])
-        """,
-        club_id, max(month_start, report_date - timedelta(days=7)), report_date,
-        [entry["member"].member_id for entry in members],
-    )
-    points = defaultdict(list)
-    for snapshot in snapshots:
-        points[snapshot["member_id"]].append((snapshot["date"], snapshot["cumulative_fans"]))
-
-    return build_member_performance(members, points, schedule, report_date, month_end)
 
 
 def build_member_performance(members, points, schedule, report_date, month_end):
@@ -86,7 +50,7 @@ def build_member_performance(members, points, schedule, report_date, month_end):
             )
         baseline_start = max(member.join_date, baseline_date)
         activity = dict(daily_gains(
-            (day, total) for day, total in points.get(member.member_id, ())
+            (day, total) for day, total in points.get(member.member_id, {}).items()
             if baseline_start <= day <= report_date
         ))
         rows.append(MemberPerformance(
@@ -97,7 +61,7 @@ def build_member_performance(members, points, schedule, report_date, month_end):
     return rows
 
 
-def _fans(value, *, signed=False):
+def format_fans(value, *, signed=False):
     if value is None:
         return "—"
     sign = "−" if value < 0 else "+" if signed else ""
@@ -127,9 +91,7 @@ def _sparkline(activity, report_date):
     )
 
 
-def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_index):
-    rank_data = rank_data or {}
-    tier_code = rank_data.get("club_rank")
+def rank_badge(tier_code):
     badge = ""
     if type(tier_code) is int and 1 <= tier_code <= len(CLUB_TIERS):
         tier = CLUB_TIERS[tier_code - 1]
@@ -140,6 +102,12 @@ def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_
             badge = f'<span class="tier-fallback">{tier}</span>'
         else:
             badge = f'<img class="tier" alt="{tier}" src="data:image/webp;base64,{icon}">'
+    return badge
+
+
+def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_index):
+    rank_data = rank_data or {}
+    badge = rank_badge(rank_data.get("club_rank"))
     rank = rank_data.get("monthly_rank")
     rank_text = f'<div class="rank">#{rank:,}</div>' if rank is not None else ""
     table_rows = []
@@ -153,14 +121,14 @@ def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_
               <td class="position">{index}</td>
               <th class="member" scope="row">{escape(row.name)}</th>
               <td class="target">
-                <div>{_fans(row.fans)} / {_fans(row.target)}</div>
+                <div>{format_fans(row.fans)} / {format_fans(row.target)}</div>
                 <div class="track"><div class="progress" style="width:{progress:.2f}%"></div></div>
               </td>
-              <td>{_fans(row.day, signed=True)}</td>
+              <td>{format_fans(row.day, signed=True)}</td>
               <td class="activity">{_sparkline(row.activity, report_date)}</td>
-              <td>{_fans(average)}</td>
-              <td class="{pace_class}">{_fans(row.surplus, signed=True)}</td>
-              <td>{_fans(row.required_per_day)}</td>
+              <td>{format_fans(average)}</td>
+              <td class="{pace_class}">{format_fans(row.surplus, signed=True)}</td>
+              <td>{format_fans(row.required_per_day)}</td>
               <td><span class="pill">{row.status}</span></td>
             </tr>""")
 
@@ -211,7 +179,7 @@ small {{ display: block; margin: 0 0 2px 4px; font-size: 10px; font-style: itali
     <div>
       <h1>{escape(club_name)}</h1>
       <div class="subtitle">{date_label} · Member Performance</div>
-      <div class="goal">{count} {member_label} · Goal {_fans(daily_goal)}/member/day</div>
+      <div class="goal">{count} {member_label} · Goal {format_fans(daily_goal)}/member/day</div>
     </div>
     <div class="standing">{badge}{rank_text}</div>
   </header>
