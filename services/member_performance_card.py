@@ -1,10 +1,12 @@
 """Build and lay out the daily quota report's member-performance card."""
 
 import calendar
+from base64 import b64encode
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
 from html import escape
+from pathlib import Path
 from statistics import mean
 
 from config.database import db
@@ -12,6 +14,9 @@ from config.settings import CLUB_TIERS
 from models import Club
 from services.member_status_service import daily_gains
 from services.quota_schedule import QuotaSchedule
+
+
+RANK_ICONS = Path(__file__).resolve().parents[1] / "assets" / "circle_ranks"
 
 
 @dataclass(frozen=True)
@@ -125,11 +130,17 @@ def _sparkline(activity, report_date):
 def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_index):
     rank_data = rank_data or {}
     tier_code = rank_data.get("club_rank")
-    tier = None
+    badge = ""
     if type(tier_code) is int and 1 <= tier_code <= len(CLUB_TIERS):
         tier = CLUB_TIERS[tier_code - 1]
+        icon_path = RANK_ICONS / f"utx_ico_circle_rank_{tier_code:02d}.webp"
+        try:
+            icon = b64encode(icon_path.read_bytes()).decode("ascii")
+        except FileNotFoundError:
+            badge = f'<span class="tier-fallback">{tier}</span>'
+        else:
+            badge = f'<img class="tier" alt="{tier}" src="data:image/webp;base64,{icon}">'
     rank = rank_data.get("monthly_rank")
-    badge = f'<div class="tier">{tier}</div>' if tier else ""
     rank_text = f'<div class="rank">#{rank:,}</div>' if rank is not None else ""
     table_rows = []
     for index, row in enumerate(rows, start_index):
@@ -168,9 +179,8 @@ h1 {{ margin: 0 0 4px; color: #793b0e; font-size: 30px; overflow-wrap: anywhere;
 .subtitle {{ font-size: 16px; text-transform: uppercase; }}
 .goal {{ margin-top: 4px; font-size: 14px; }}
 .standing {{ margin: 3px 13px 0 0; text-align: center; }}
-.tier {{ margin: auto; min-width: 52px; padding: 4px 8px; border: 3px double #ce5421;
-        border-radius: 10px 10px 16px 16px; background: #ffead6; color: #a93b13;
-        font: 800 30px Georgia, serif; }}
+.tier {{ display: block; margin: auto; width: 68px; height: 68px; object-fit: contain; }}
+.tier-fallback {{ color: #793b0e; font-size: 30px; }}
 .rank {{ margin-top: 3px; font-size: 14px; }}
 table {{ width: 100%; table-layout: fixed; border-spacing: 0 1px; }}
 th, td {{ padding: 0 5px; white-space: nowrap; text-align: center; }}

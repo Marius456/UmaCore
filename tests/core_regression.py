@@ -627,7 +627,7 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(card["files"][0].filename, "member_performance_1.png")
         card["files"][0].close()
         html, _ = render.await_args.args
-        self.assertIn(f'class="tier">{tier}<', html)
+        self.assertIn(f'<img class="tier" alt="{tier}" src="data:image/webp;base64,', html)
         if rank:
             self.assertIn(f'class="rank">{rank}<', html)
         else:

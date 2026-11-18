@@ -1,11 +1,13 @@
 import unittest
+from base64 import b64encode
 from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 from services.member_performance_card import (
-    MemberPerformance, build_member_performance, load_member_performance,
+    MemberPerformance, build_member_performance, card_html, load_member_performance,
 )
 from services.quota_schedule import QuotaSchedule
 from services.report_generator import ReportGenerator
@@ -28,6 +30,16 @@ def member_entry(member_id, name, fans, surplus, *, join_date=date(2026, 11, 1),
 
 
 class MemberPerformanceTests(unittest.TestCase):
+    def test_all_tiers_embed_the_matching_local_webp(self):
+        assets = Path(__file__).resolve().parents[1] / "assets" / "circle_ranks"
+        tiers = ("D", "D+", "C", "C+", "B", "B+", "A", "A+", "S", "S+", "SS")
+        for code, tier in enumerate(tiers, start=1):
+            with self.subTest(tier=tier):
+                icon = assets / f"utx_ico_circle_rank_{code:02d}.webp"
+                encoded = b64encode(icon.read_bytes()).decode("ascii")
+                html = card_html("Club", REPORT_DATE, 0, 10, {"club_rank": code}, [], 1)
+                self.assertIn(f'alt="{tier}" src="data:image/webp;base64,{encoded}"', html)
+
     def test_month_target_uses_join_date_and_quota_changes_for_all_periods(self):
         member = member_entry(1, "Late join", 104, -5, join_date=date(2026, 11, 10), baseline=98)
         future_change = date(2026, 11, 20)
@@ -107,7 +119,7 @@ class ReportGeneratorCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('class="position">31<', last_html)
         self.assertIn("&lt;Club&gt;", first_html)
         self.assertIn("&lt;Member&gt;", first_html)
-        self.assertIn('class="tier">A<', first_html)
+        self.assertIn('<img class="tier" alt="A" src="data:image/webp;base64,', first_html)
         self.assertIn('class="rank">#648<', first_html)
         self.assertIn("Goal 1.00M/member/day", first_html)
         self.assertFalse(items[0][1])
