@@ -188,6 +188,8 @@ class ReportGeneratorCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('<th scope="col">Month Avg</th>', first_html)
         self.assertIn("<td>1.94M</td>", first_html)
         self.assertEqual(race_file, "club_race_card.png")
+        self.assertIn('<div class="subtitle">November 16, 2026</div>', race_html)
+        self.assertIn("Goal 1.00M/day", race_html)
         self.assertIn("31/31 on target", race_html)
         self.assertEqual(filename, "member_performance_1.png")
         self.assertEqual(items, [render.return_value] * 3)

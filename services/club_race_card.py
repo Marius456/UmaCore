@@ -320,8 +320,8 @@ svg text {{ fill: #756247; font: 600 13px Arial, sans-serif; }}
   <header>
     <div>
       <h1>{escape(club_name)}</h1>
-      <div class="subtitle">{date_label} · CLUB RACE CARD</div>
-      <div class="quota">{active} {member_label} · Goal {format_fans(daily_goal)}/member/day</div>
+      <div class="subtitle">{date_label}</div>
+      <div class="quota">{active} {member_label} · Goal {format_fans(daily_goal)}/day</div>
     </div>
     <div class="standing">{rank_badge(rank_data.get("club_rank"))}{rank_text}</div>
   </header>
