@@ -1,10 +1,9 @@
 """Deterministic HTML/SVG status card rendered by the shared report browser."""
-from datetime import timedelta
 from html import escape
 
 import discord
 
-from services.member_status_service import MemberStatus
+from services.member_status_service import MemberStatus, daily_gains
 
 
 def compact(value, signed=False):
@@ -20,20 +19,6 @@ def compact(value, signed=False):
 
 def rank(value):
     return f"#{value:,}" if value is not None else "—"
-
-
-def daily_gains(points):
-    """Return valid daily gains without bridging gaps or month boundaries."""
-    gains = []
-    previous = None
-    for day, fans in sorted(points):
-        if (previous is not None
-                and day - previous[0] == timedelta(days=1)
-                and day.replace(day=1) == previous[0].replace(day=1)
-                and fans >= previous[1]):
-            gains.append((day, fans - previous[1]))
-        previous = (day, fans)
-    return gains
 
 
 def chart_svg(status):

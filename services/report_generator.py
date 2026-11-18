@@ -7,11 +7,9 @@ from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 import discord
 import logging
-import plotly.graph_objects as go
-import plotly.io as pio
-from tabulate import tabulate
-
-from config.settings import COLOR_ON_TRACK, COLOR_BEHIND, COLOR_INFO
+from config.settings import COLOR_BEHIND, COLOR_INFO
+from services.member_performance_card import card_html, load_member_performance
+from services.quota_schedule import QuotaSchedule
 
 logger = logging.getLogger(__name__)
 
@@ -120,214 +118,28 @@ class ReportGenerator:
             return f"{num / 1_000:.1f}K"
         return str(num)
 
-    async def _generate_table_image(self, headers: List[str], rows: List[List], title_color: str, filename: str) -> discord.File:
-        """Generate a styled table image using Plotly + Playwright screenshot and return it as a Discord file attachment."""
-        # Convert hex color like 0x00FF00 to "#00FF00" format
-        hex_str = f"#{title_color:06X}" if isinstance(title_color, int) else title_color
-
-        fig = go.Figure(data=[go.Table(
-            header=dict(
-                values=headers,
-                fill_color=hex_str,
-                font=dict(color='white', size=14, family='Arial'),
-                align='center',
-                height=32
-            ),
-            cells=dict(
-                values=[[str(row[i]) for row in rows] for i in range(len(headers))],
-                fill_color=['white', '#f8f9fa'],
-                font=dict(color='#2c3e50', size=13, family='Arial'),
-                align=['center', 'left', 'center', 'center', 'center', 'center'],
-                height=30,
-                line_color='#dcdcdc',
-                line_width=1
-            )
-        )])
-
-        fig.update_layout(
-            margin=dict(l=10, r=10, t=10, b=10),
-            paper_bgcolor='white',
-            width=750,
-            height=40 + (len(rows) * 33),
-            font=dict(family='Arial')
-        )
-
-        # Render the figure to HTML, then screenshot with Playwright
-        html_str = pio.to_html(fig, include_plotlyjs='cdn', full_html=True)
+    async def _generate_table_image(self, html: str, filename: str) -> discord.File:
+        """Render a self-contained member-performance PNG for Discord."""
 
         async def render_once() -> bytes:
             context = await _get_browser_context_async()
             page = await context.new_page()
             try:
-                await page.set_content(html_str, wait_until='networkidle')
-                await page.wait_for_timeout(500)
-                plot_div = page.locator('.plotly-graph-div')
-                return await plot_div.screenshot(timeout=15000)
+                await page.set_content(html, wait_until="load", timeout=15000)
+                return await page.locator("#card").screenshot(type="png", timeout=15000)
             finally:
                 await page.close()
 
-        # Browser replacement and renders share one lifecycle lock. A failed
-        # render therefore cannot close a context being used by another report.
+        # A retry must not close a browser another card is currently using.
         async with _playwright_lock:
             try:
                 screenshot_bytes = await render_once()
-            except Exception as e:
-                logger.warning(f"Playwright render failed (will retry once): {e}")
+            except Exception:
+                logger.warning("Playwright render failed, retrying once", exc_info=True)
                 await _close_playwright_browser_unlocked_async()
                 screenshot_bytes = await render_once()
 
-        buf = io.BytesIO(screenshot_bytes)
-        buf.seek(0)
-        return discord.File(buf, filename=filename)
-
-    def _prepare_table_data(self, members_list: List[Dict], start_index: int = 1, daily_quota: int = 0) -> List[List]:
-        """Converts the member dicts into a list of lists for tabulate"""
-        table_rows = []
-        for idx, item in enumerate(members_list, start_index):
-            member = item['member']
-            history = item['history']
-
-            # Daily calculation
-            yesterday_fans = item.get('yesterday_cumulative_fans', 0)
-            daily_progress = history.cumulative_fans - yesterday_fans
-            daily_str = f"+{self.format_fans_short(daily_progress)}" if daily_progress >= 0 else f"-{self.format_fans_short(abs(daily_progress))}"
-
-            # Avg Calculation
-            month_start = date(history.date.year, history.date.month, 1)
-            days_active = (history.date - month_start).days + 1
-            avg_per_day = history.cumulative_fans // days_active if days_active > 0 else 0
-
-            # Carry = net surplus/deficit compared to expected quota for this month
-            # Fans reset monthly in Umamusume, so cumulative_fans already equals this month's fans.
-            # No need to subtract month_start_fans (which would be last month's total).
-            carry_fans = history.deficit_surplus
-            carry_str = f"+{self.format_fans_short(carry_fans)}" if carry_fans >= 0 else f"-{self.format_fans_short(abs(carry_fans))}"
-
-            # We truncate the name to 12 chars to prevent table blowout on mobile
-            name = (member.trainer_name[:12] + '..') if len(member.trainer_name) > 13 else member.trainer_name
-
-            table_rows.append([
-                idx,
-                name,
-                daily_str,
-                carry_str,
-                self.format_fans_short(avg_per_day),
-                self.format_fans_short(history.cumulative_fans)
-            ])
-        return table_rows
-
-    def _prepare_behind_table_data(self, members_list: List[Dict], start_index: int = 1) -> List[List]:
-        """Converts behind-quota member dicts into sorted rows with deficit as Carry"""
-        table_rows = []
-        for item in members_list:
-            member = item['member']
-            history = item['history']
-
-            # Daily calculation
-            yesterday_fans = item.get('yesterday_cumulative_fans', 0)
-            daily_progress = history.cumulative_fans - yesterday_fans
-            daily_str = f"+{self.format_fans_short(daily_progress)}" if daily_progress >= 0 else f"-{self.format_fans_short(abs(daily_progress))}"
-
-            # Carry = deficit (negative, how far behind they are)
-            deficit = abs(history.deficit_surplus) if history.deficit_surplus < 0 else 0
-            carry_str = f"-{self.format_fans_short(deficit)}"
-
-            # Avg Calculation
-            month_start = date(history.date.year, history.date.month, 1)
-            days_active = (history.date - month_start).days + 1
-            avg_per_day = history.cumulative_fans // days_active if days_active > 0 else 0
-
-            # We truncate the name to 12 chars to prevent table blowout on mobile
-            name = (member.trainer_name[:12] + '..') if len(member.trainer_name) > 13 else member.trainer_name
-
-            table_rows.append([
-                0,  # placeholder, will be set after sorting
-                name,
-                daily_str,
-                carry_str,
-                self.format_fans_short(avg_per_day),
-                self.format_fans_short(history.cumulative_fans),
-                deficit  # hidden sort key
-            ])
-
-        # Sort by deficit ascending (smallest debt first)
-        table_rows.sort(key=lambda r: r[6])
-
-        # Assign continuous numbers after sorting
-        for i, row in enumerate(table_rows, start_index):
-            row[0] = i
-
-        # Remove the sort key before returning
-        return [row[:6] for row in table_rows]
-
-    def _split_data_into_chunks(self, data: List[List], max_rows_per_chunk: int = 20) -> List[List[List]]:
-        """Split table data into chunks that each fit within a single image."""
-        if not data:
-            return []
-
-        chunks = []
-        for i in range(0, len(data), max_rows_per_chunk):
-            chunks.append(data[i:i + max_rows_per_chunk])
-        return chunks
-
-    def _split_table_into_sections(self, members_list: List[Dict], max_length: int = 3500, start_index: int = 1, is_behind: bool = False, daily_quota: int = 0, carry_col_name: str = "Carry") -> List[str]:
-        """Splits data into chunks while maintaining table formatting
-        (kept for backward compatibility with any remaining text-table usage)"""
-        if not members_list:
-            return ["*No members*"]
-
-        if is_behind:
-            all_data = self._prepare_behind_table_data(members_list, start_index)
-        else:
-            all_data = self._prepare_table_data(members_list, start_index, daily_quota)
-        headers = ["#", "Name", "Daily", carry_col_name, "Avg", "Total"]
-
-        sections = []
-        current_chunk = []
-
-        for row in all_data:
-            # Check if adding this row exceeds the limit
-            temp_chunk = current_chunk + [row]
-            temp_table = tabulate(temp_chunk, headers=headers, tablefmt="simple", stralign="right")
-
-            if len(temp_table) > max_length and current_chunk:
-                sections.append(tabulate(current_chunk, headers=headers, tablefmt="simple", stralign="right"))
-                current_chunk = [row]
-            else:
-                current_chunk.append(row)
-
-        if current_chunk:
-            sections.append(tabulate(current_chunk, headers=headers, tablefmt="simple", stralign="right"))
-
-        return sections
-
-    async def _generate_table_embeds(self, title: str, color: int, headers: List[str],
-                                      data_rows: List[List], image_prefix: str) -> List[ReportEmbed]:
-        """Generate one or more embeds with table images from prepared data rows."""
-        if not data_rows:
-            return []
-
-        chunks = self._split_data_into_chunks(data_rows, max_rows_per_chunk=20)
-        embeds_with_files = []
-
-        for idx, chunk in enumerate(chunks):
-            embed_title = title if idx == 0 else f"{title} (continued {idx + 1})"
-            image_filename = f"{image_prefix}_{idx}.png"
-
-            # Generate the image
-            file = await self._generate_table_image(headers, chunk, color, image_filename)
-
-            embed = discord.Embed(
-                title=embed_title,
-                color=color,
-                timestamp=discord.utils.utcnow()
-            )
-            # Attach image to embed using attachment:// URL
-            embed.set_image(url=f"attachment://{image_filename}")
-
-            embeds_with_files.append((embed, [file]))
-
-        return embeds_with_files
+        return discord.File(io.BytesIO(screenshot_bytes), filename=filename)
 
     async def create_daily_report(self, club_name: str, daily_quota: int, status_summary: Dict,
                                    report_date: date,
@@ -395,36 +207,25 @@ class ReportGenerator:
         summary_embed.set_footer(text=f"Umamusume Quota Tracker - {club_name}")
         report_items.append((summary_embed, []))
 
-        # On Track images
-        if status_summary['on_track']:
-            on_track_data = self._prepare_table_data(
-                status_summary['on_track'],
-                start_index=1,
-                daily_quota=daily_quota
-            )
-            table_embeds = await self._generate_table_embeds(
-                title="✅ On Track",
-                color=COLOR_ON_TRACK,
-                headers=["#", "Name", "Daily", "Surplus", "Avg", "Total"],
-                data_rows=on_track_data,
-                image_prefix="on_track"
-            )
-            report_items.extend(table_embeds)
-
-        # Behind images
-        if status_summary['behind']:
-            behind_data = self._prepare_behind_table_data(
-                status_summary['behind'],
-                start_index=on_track_count + 1
-            )
-            table_embeds = await self._generate_table_embeds(
-                title="⚠️ Behind Quota",
-                color=COLOR_BEHIND,
-                headers=["#", "Name", "Daily", "Deficit", "Avg", "Total"],
-                data_rows=behind_data,
-                image_prefix="behind"
-            )
-            report_items.extend(table_embeds)
+        members = status_summary["on_track"] + status_summary["behind"]
+        if members:
+            rows = await load_member_performance(members, report_date, quota_period, daily_quota)
+            daily_goal = daily_quota / QuotaSchedule.PERIOD_DAYS.get(quota_period, 1)
+            rows_per_card = 30
+            for offset in range(0, len(rows), rows_per_card):
+                page_number = offset // rows_per_card + 1
+                filename = f"member_performance_{page_number}.png"
+                html = card_html(
+                    club_name, report_date, total, daily_goal, rank_data,
+                    rows[offset:offset + rows_per_card], offset + 1,
+                )
+                file = await self._generate_table_image(html, filename)
+                title = "Member Performance"
+                if page_number > 1:
+                    title += f" (continued {page_number})"
+                embed = discord.Embed(title=title, color=0x96D000)
+                embed.set_image(url=f"attachment://{filename}")
+                report_items.append((embed, [file]))
 
         return report_items
 

@@ -55,3 +55,5 @@ LOG_FILE = os.getenv("LOG_FILE", "bot.log")
 COLOR_ON_TRACK = 0x00FF00  # Green
 COLOR_BEHIND = 0xFFA500     # Orange
 COLOR_INFO = 0x3498db       # Blue
+
+CLUB_TIERS = ("D", "D+", "C", "C+", "B", "B+", "A", "A+", "S", "S+", "SS")

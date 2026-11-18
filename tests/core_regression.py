@@ -1,4 +1,5 @@
 import asyncio
+import io
 import sqlite3
 from datetime import date, datetime, time
 from pathlib import Path
@@ -8,8 +9,10 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
+import discord
 import pytz
 
+from bot.commands.admin import AdminCommands
 from bot.tasks import BotTasks
 from models.club import Club
 from models.member import Member
@@ -20,11 +23,16 @@ from services.leaderboard_report_service import (
     LeaderboardReportService,
     ReportEmbeds,
 )
+from services.member_performance_card import MemberPerformance
 from services.quota_calculator import QuotaCalculator
 
 
 CLUB_ID = UUID("11111111-1111-1111-1111-111111111111")
 MEMBER_ID = UUID("44444444-4444-4444-4444-444444444444")
+
+
+async def fake_card_file(_html, filename):
+    return discord.File(io.BytesIO(b"png"), filename=filename)
 
 
 def make_club(*, guild_id=123):
@@ -493,10 +501,9 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
                 tasks = BotTasks(SimpleNamespace(get_channel=channels.get))
                 tasks.quota_calculator = SimpleNamespace(
                     process_scraped_data=AsyncMock(return_value=(0, 1)),
-                    get_member_status_summary=AsyncMock(return_value={"behind": []}),
-                )
-                tasks.report_generator = SimpleNamespace(
-                    create_daily_report=AsyncMock(return_value=[(object(), None)]),
+                    get_member_status_summary=AsyncMock(return_value={
+                        "on_track": [object()], "behind": [], "total_members": 1,
+                    }),
                 )
                 scraper = MagicMock()
                 scraper.scrape = AsyncMock(return_value={"1": {}})
@@ -505,6 +512,8 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
                 scraper.get_closing_month_rank.return_value = 83
                 scraper.get_club_rank.return_value = 9
                 scraper.get_monthly_rank.return_value = 912
+                scraper.get_last_month_rank.return_value = 800
+                scraper.get_yesterday_rank.return_value = 920
                 scraper.get_fans_to_next_tier.return_value = 100_000
                 scraper.get_fans_to_lower_tier.return_value = 200_000
                 recap_embed, daily_embed = object(), object()
@@ -513,7 +522,12 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
                     patch("bot.tasks.ScrapeContext"),
                     patch("bot.tasks.UmaMoeAPIScraper", return_value=scraper),
                     patch("bot.tasks.ClubRankHistory.save", new_callable=AsyncMock),
-                    patch("bot.tasks.QuotaRequirement.get_quota_for_date", new_callable=AsyncMock),
+                    patch("bot.tasks.QuotaRequirement.get_quota_for_date", return_value=1_000_000),
+                    patch("services.report_generator.load_member_performance", return_value=[
+                        MemberPerformance("Trainer", 5, 10, 2, {}, 0, 1, "Ahead"),
+                    ]),
+                    patch.object(tasks.report_generator, "_generate_table_image",
+                                 side_effect=fake_card_file) as render,
                     patch.object(
                         LeaderboardReportService, "generate_month_end_recap",
                         return_value=[recap_embed], side_effect=ValueError("No closing standings")
@@ -528,7 +542,8 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
                     clock.now.return_value = datetime.combine(run_date, time(16))
                     await tasks.daily_check_for_club(club, run_date=run_date)
 
-                quota_channel.send.assert_awaited_once()
+                self.assertEqual(quota_channel.send.await_count, 2)
+                self.assert_card_post(quota_channel, render, club, "S", "#912")
                 report_args = (club.club_id, club.club_name, data_date.year, data_date.month)
                 if closing:
                     recap.assert_awaited_once_with(*report_args, final_rank=83)
@@ -565,6 +580,58 @@ class ScheduledTaskTests(unittest.IsolatedAsyncioTestCase):
                 "fans_to_lower_tier": 338_997_978,
             },
         )
+
+    async def test_force_check_posts_card_with_tier_even_without_monthly_rank(self):
+        club = make_club()
+        club.report_channel_id = 1
+        channel = SimpleNamespace(send=AsyncMock())
+        interaction = SimpleNamespace(
+            guild_id=club.guild_id,
+            response=SimpleNamespace(defer=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+        commands = AdminCommands(SimpleNamespace(get_channel=lambda _: channel))
+        commands.quota_calculator = SimpleNamespace(
+            process_scraped_data=AsyncMock(return_value=(0, 1)),
+            get_member_status_summary=AsyncMock(return_value={
+                "on_track": [object()], "behind": [], "total_members": 1,
+            }),
+        )
+        scraper = MagicMock()
+        scraper.scrape = AsyncMock(return_value={"1": {}})
+        scraper.get_data_date.return_value = date(2026, 11, 16)
+        scraper.get_current_day.return_value = 16
+        scraper.get_monthly_rank.return_value = None
+        scraper.get_club_rank.return_value = 7
+        with (
+            patch("bot.commands.admin.Club.get_by_name", return_value=club),
+            patch("bot.commands.admin.ScrapeContext"),
+            patch("bot.commands.admin.UmaMoeAPIScraper", return_value=scraper),
+            patch("bot.commands.admin.QuotaRequirement.get_quota_for_date", return_value=1_000_000),
+            patch.object(commands, "_update_monthly_info_board"),
+            patch("services.report_generator.load_member_performance", return_value=[
+                MemberPerformance("Trainer", 5, 10, 2, {}, 0, 1, "Ahead"),
+            ]),
+            patch.object(commands.report_generator, "_generate_table_image",
+                         side_effect=fake_card_file) as render,
+        ):
+            await AdminCommands.force_check.callback(commands, interaction, club.club_name)
+        self.assertEqual(channel.send.await_count, 2)
+        self.assert_card_post(channel, render, club, "A")
+
+    def assert_card_post(self, channel, render, club, tier, rank=None):
+        summary, card = (call.kwargs for call in channel.send.await_args_list)
+        self.assertIn(club.club_name, summary["embed"].title)
+        self.assertIsNone(summary["files"])
+        self.assertEqual(card["embed"].image.url, "attachment://member_performance_1.png")
+        self.assertEqual(card["files"][0].filename, "member_performance_1.png")
+        card["files"][0].close()
+        html, _ = render.await_args.args
+        self.assertIn(f'class="tier">{tier}<', html)
+        if rank:
+            self.assertIn(f'class="rank">{rank}<', html)
+        else:
+            self.assertNotIn('class="rank"', html)
 
     def test_daily_check_only_matches_configured_minute(self):
         scheduled_time = time(18, 0)

@@ -383,7 +383,7 @@ class BotTasks:
                 fans_to_lower_tier = scraper.get_fans_to_lower_tier()
 
                 rank_data = None
-                if monthly_rank is not None or (
+                if club_rank is not None or monthly_rank is not None or (
                     fans_to_next_tier is not None
                     and fans_to_lower_tier is not None
                 ):

@@ -7,6 +7,20 @@ from models.club_rank_history import ClubRankHistory
 from services.trainer_profile_service import TrainerProfile, profile_client
 
 
+def daily_gains(points):
+    """Return valid daily gains without bridging gaps or month boundaries."""
+    gains = []
+    previous = None
+    for day, fans in sorted(points):
+        if (previous is not None
+                and day - previous[0] == timedelta(days=1)
+                and day.replace(day=1) == previous[0].replace(day=1)
+                and fans >= previous[1]):
+            gains.append((day, fans - previous[1]))
+        previous = (day, fans)
+    return gains
+
+
 def number(value, *, positive=False):
     if type(value) is int and value >= (1 if positive else 0):
         return value

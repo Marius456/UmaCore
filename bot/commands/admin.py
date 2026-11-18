@@ -452,6 +452,7 @@ class AdminCommands(ClubAutocompleteMixin, commands.Cog):
             # Extract and persist club rank data
             rank_data = None
             monthly_rank = scraper.get_monthly_rank()
+            club_rank = scraper.get_club_rank()
             last_month_rank = scraper.get_last_month_rank()
             yesterday_rank = scraper.get_yesterday_rank()
 
@@ -461,16 +462,19 @@ class AdminCommands(ClubAutocompleteMixin, commands.Cog):
                 except Exception as e:
                     logger.error(f"Failed to save rank data for {club_obj.club_name}: {e}", exc_info=True)
 
-                rank_data = {
-                    'monthly_rank': monthly_rank,
-                    'last_month_rank': last_month_rank,
-                    'yesterday_rank': yesterday_rank,
-                }
                 logger.info(
                     f"Rank data for {club_obj.club_name}: "
                     f"monthly={monthly_rank}, yesterday={yesterday_rank}, "
                     f"last_month={last_month_rank}"
                 )
+
+            if monthly_rank is not None or club_rank is not None:
+                rank_data = {
+                    'club_rank': club_rank,
+                    'monthly_rank': monthly_rank,
+                    'last_month_rank': last_month_rank,
+                    'yesterday_rank': yesterday_rank,
+                }
 
             # Process scraped data
             await interaction.followup.send("⚙️ Processing data...")

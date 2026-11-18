@@ -16,7 +16,7 @@ from uuid import UUID
 
 import discord
 
-from config.settings import COLOR_INFO
+from config.settings import CLUB_TIERS, COLOR_INFO
 from models import QuotaHistory
 from services.prediction_store import (
     load_prediction_snapshot,
@@ -144,7 +144,7 @@ class LeaderboardReportService:
     """Generates a rich 'sports broadcast' style news report for club activity."""
 
     MILESTONES = [1_000_000, 5_000_000, 10_000_000, 25_000_000, 50_000_000, 100_000_000]
-    CLUB_TIERS = ("D", "D+", "C", "C+", "B", "B+", "A", "A+", "S", "S+", "SS")
+    CLUB_TIERS = CLUB_TIERS
 
     FIELD_MAX = 1024
     HEADLINE_PB_MIN_INCREASE = 500_000
