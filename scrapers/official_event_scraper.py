@@ -1,14 +1,15 @@
 """
 Official Umamusume News Event Scraper using Playwright (headless browser)
 
-Scrapes https://umamusume.com/news/?t=game for upcoming in-game events,
-parses their start/end times, and returns structured Event objects.
+Scrapes official news for upcoming in-game events and maintenance notices,
+parses their schedules, and returns structured Event objects.
 
 Event classification by title:
   - "The story event"           -> story_event
   - "The race event Champions Meeting" -> champions_meeting
   - "Bonus Star Piece"          -> bonus_star_piece
   - "Spotlight"                 -> spotlight
+  - Maintenance announcements  -> maintenance
   - anything else               -> unknown
 """
 from __future__ import annotations
@@ -19,7 +20,7 @@ import logging
 import os
 import re
 import tempfile
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urljoin, urlparse
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone, timedelta
 from enum import Enum
@@ -32,6 +33,7 @@ from scrapers.umamoe_api_scraper import _setup_stealth_patches
 logger = logging.getLogger(__name__)
 
 URL = "https://umamusume.com/news/?t=game"
+ALL_NEWS_URL = "https://umamusume.com/news/"
 
 LAUNCH_ARGS = [
     "--no-sandbox",
@@ -58,6 +60,7 @@ OFFICIAL_EVENTS_PROXY = os.getenv(
 ).strip()
 PROXY_CONNECT_TIMEOUT = 3.0
 UNDATED_EVENT_RETENTION_DAYS = 30
+MAINTENANCE_NOTICE_WINDOW = timedelta(hours=24)
 
 
 async def _reachable_proxy(proxy_address: str) -> Optional[str]:
@@ -105,6 +108,7 @@ class EventType(str, Enum):
     CHAMPIONS_MEETING = "champions_meeting"
     BONUS_STAR_PIECE = "bonus_star_piece"
     SPOTLIGHT = "spotlight"
+    MAINTENANCE = "maintenance"
     UNKNOWN = "unknown"
 
 
@@ -119,6 +123,7 @@ class Event:
     banner_image: Optional[str] = None
     published_at: Optional[datetime] = None
     notified_clubs: list[str] = field(default_factory=list)
+    start_time_approximate: bool = False
 
     @classmethod
     def from_record(cls, record: dict) -> Event:
@@ -138,10 +143,11 @@ class Event:
             banner_image=record.get("banner_image"),
             published_at=_read_event_time(record.get("published_at")),
             notified_clubs=record.get("notified_clubs") or [],
+            start_time_approximate=bool(record.get("start_time_approximate")),
         )
 
     def to_record(self) -> dict:
-        return {
+        record = {
             "title": self.title,
             "event_key": event_identity(self),
             "type": self.type.value,
@@ -152,6 +158,9 @@ class Event:
             "banner_image": self.banner_image,
             "notified_clubs": self.notified_clubs,
         }
+        if self.start_time_approximate:
+            record["start_time_approximate"] = True
+        return record
 
 
 # ── Date Parsing ──────────────────────────────────────────────────────────────
@@ -286,6 +295,10 @@ def _classify_event(title: str) -> EventType:
     # Spotlight: must mention scout-related terms
     if any(kw in t for kw in ("Spotlight Scout", "Spotlight Pretty Derby", "Spotlight Support Card")):
         return EventType.SPOTLIGHT
+    if re.search(r"\bmaintenance\b", t, re.IGNORECASE) and not re.search(
+        r"\b(?:website|user support|completed?|concluded|ended|cancell?ed)\b", t, re.IGNORECASE
+    ):
+        return EventType.MAINTENANCE
     return EventType.UNKNOWN
 
 
@@ -310,20 +323,26 @@ def _canonical_event_key(title: str, event_type: EventType) -> str:
     return f"{event_type.value}:{key}"
 
 
+def _official_article_id(url: str) -> Optional[int]:
+    parsed = urlparse(url)
+    if parsed.hostname not in ("umamusume.com", "www.umamusume.com"):
+        return None
+    match = re.fullmatch(r"/news/(?:article/)?([0-9]+)/?", parsed.path)
+    if match:
+        return int(match.group(1))
+    if parsed.path.rstrip("/") == "/news/detail":
+        candidate = parse_qs(parsed.query).get("id", [""])[0]
+        if re.fullmatch(r"[0-9]+", candidate):
+            return int(candidate)
+    return None
+
+
 def event_identity(event: Event) -> str:
+    if event.type in (EventType.BONUS_STAR_PIECE, EventType.MAINTENANCE):
+        article_id = _official_article_id(event.url)
+        if article_id is not None:
+            return f"{event.type.value}:article:{article_id}"
     if event.type == EventType.BONUS_STAR_PIECE:
-        parsed = urlparse(event.url)
-        article_id = None
-        if parsed.hostname in ("umamusume.com", "www.umamusume.com"):
-            match = re.fullmatch(r"/news/(?:article/)?(\d+)/?", parsed.path)
-            if match:
-                article_id = match.group(1)
-            elif parsed.path.rstrip("/") == "/news/detail":
-                candidate = parse_qs(parsed.query).get("id", [""])[0]
-                if candidate.isdigit():
-                    article_id = candidate
-        if article_id:
-            return f"bonus_star_piece:article:{int(article_id)}"
         return f"{_canonical_event_key(event.title, event.type)}:{_event_schedule(event)}"
     return _canonical_event_key(event.title, event.type)
 
@@ -373,6 +392,9 @@ def _fill_event_details(current: Event, fallback: Event) -> Event:
     return replace(
         current,
         start_time=current.start_time or fallback.start_time,
+        start_time_approximate=(
+            current.start_time_approximate if current.start_time else fallback.start_time_approximate
+        ),
         end_time=current.end_time or fallback.end_time,
         published_at=current.published_at or fallback.published_at,
         banner_image=current.banner_image or fallback.banner_image,
@@ -435,24 +457,25 @@ def _spotlight_occurrences(events: list[Event]) -> list[_SpotlightOccurrence]:
 
 
 def merge_saved_spotlight_events(records: list[dict]) -> list[dict]:
-    """Normalize legacy Spotlight records before checking reminder eligibility."""
+    """Consolidate saved Spotlight occurrences and article-keyed notices."""
     spotlight = []
     other = []
-    bonus = {}
+    by_article = {}
     for record in records:
         event = Event.from_record(record)
         if event.type == EventType.SPOTLIGHT:
             spotlight.append(event)
-        elif event.type == EventType.BONUS_STAR_PIECE:
+        elif event.type in (EventType.BONUS_STAR_PIECE, EventType.MAINTENANCE):
             key = event_identity(event)
-            if key in bonus:
+            if key in by_article:
+                event = _fill_event_details(event, by_article[key])
                 event = replace(event, notified_clubs=list(dict.fromkeys(
-                    bonus[key].notified_clubs + event.notified_clubs
+                    by_article[key].notified_clubs + event.notified_clubs
                 )))
-            bonus[key] = event
+            by_article[key] = event
         else:
             other.append(record)
-    other.extend(event.to_record() for event in bonus.values())
+    other.extend(event.to_record() for event in by_article.values())
     return other + [occurrence.event.to_record() for occurrence in _spotlight_occurrences(spotlight)]
 
 
@@ -626,13 +649,120 @@ def _extract_times_from_body(body_text: str) -> Tuple[Optional[datetime], Option
     return start, end
 
 
+_CLOCK_TIME = r"\d{1,2}:\d{2}\s*[ap]\.?m\.?"
+_MONTH_DAY = r"[A-Z][a-z]+\.?\s+\d{1,2}"
+_NOTICE_TIME = rf"{_CLOCK_TIME},?\s+{_MONTH_DAY}(?:,\s*\d{{4}})?"
+
+
+def _maintenance_timestamp(text: str, published_at: Optional[datetime]) -> Optional[datetime]:
+    match = re.fullmatch(
+        rf"({_CLOCK_TIME}),?\s+([A-Z][a-z]+)\.?\s+(\d{{1,2}})(?:,\s*(\d{{4}}))?",
+        text, re.IGNORECASE,
+    )
+    if not match or not (month := _MONTH_NAMES_EN.get(match[2][:3].title())):
+        return None
+    hour, minute = _parse_ampm_time(match[1].replace(".", ""))
+    if match[4]:
+        years = (int(match[4]),)
+    elif published_at:
+        years = (published_at.year - 1, published_at.year, published_at.year + 1)
+    else:
+        return None
+
+    candidates = []
+    for year in years:
+        try:
+            candidates.append(datetime(year, month, int(match[3]), hour, minute, tzinfo=timezone.utc))
+        except ValueError:
+            continue
+    if len(candidates) > 1:
+        return min(candidates, key=lambda value: abs(value - published_at))
+    return next(iter(candidates), None)
+
+
+def _extract_maintenance_times(
+    body: str, published_at: Optional[datetime],
+) -> tuple[Optional[datetime], Optional[datetime], bool]:
+    start, end = _extract_times_from_body(body)
+    range_match = re.search(
+        rf"(?:maintenance (?:period|schedule|window)\s*:?\s*|\bfrom\s+)"
+        rf"({_NOTICE_TIME}|{_CLOCK_TIME})(?:\s*\(UTC\))?"
+        rf"\s*(?:[-\u2013\u2014~\uff5e]|\bto\b)\s*({_NOTICE_TIME}|\bTBD\b|\bto be determined\b)",
+        body, re.IGNORECASE,
+    )
+    if range_match:
+        first, last = range_match.groups()
+        if re.fullmatch(_CLOCK_TIME, first, re.IGNORECASE):
+            first += re.sub(rf"^{_CLOCK_TIME}", "", last, flags=re.IGNORECASE)
+        range_end = _maintenance_timestamp(last, published_at)
+        start = start or _maintenance_timestamp(first, range_end or published_at)
+        end = end or range_end
+
+    approximate = start is not None and bool(
+        re.search(r"\bstart time (?:is )?subject to change\b", body, re.IGNORECASE)
+    )
+    for phase, verbs in (
+        ("start", r"start(?:s|ing)?|begin(?:s|ning)?"),
+        ("end", r"end(?:s|ing)?|finish(?:es|ing)?|conclude(?:s)?"),
+    ):
+        match = re.search(
+            rf"\b(?:{verbs})\s*(?::\s*|\s+)(?:at\s+)?"
+            rf"(?P<approx>around\s+|approximately\s+|about\s+)?(?P<time>{_NOTICE_TIME})",
+            body, re.IGNORECASE,
+        )
+        if match and (timestamp := _maintenance_timestamp(match["time"], published_at)):
+            if phase == "start":
+                start = timestamp
+                approximate = approximate or bool(match["approx"])
+            else:
+                end = timestamp
+    return start, end, approximate
+
+
+async def _extract_article_published_at(page: Page, body: str, title: str) -> Optional[datetime]:
+    for selector, attribute in (
+        ('meta[property="article:published_time"]', "content"),
+        ('meta[itemprop="datePublished"]', "content"),
+        ('time[itemprop="datePublished"][datetime]', "datetime"),
+        ('article header time[datetime], main header time[datetime]', "datetime"),
+    ):
+        tag = page.locator(selector).first
+        if await tag.count():
+            published_at = _read_event_time(await tag.get_attribute(attribute))
+            if published_at:
+                return published_at
+
+    time_tag = page.locator("main time, article time").first
+    if await time_tag.count():
+        published_at = _extract_card_published_at(await time_tag.inner_text())
+        if published_at:
+            return published_at
+
+    # Some articles show a publication stamp as a line beside the headline.
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    for index, line in enumerate(lines):
+        if line.casefold() != title.casefold():
+            continue
+        for neighbor in lines[max(0, index - 1):index] + lines[index + 1:index + 2]:
+            if re.fullmatch(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2}(?:\s*\((?:UTC|JST)\))?", neighbor):
+                return _extract_card_published_at(neighbor)
+    return None
+
+
 # ── Main Scraping Function ───────────────────────────────────────────────────
+
+_ARTICLE_LINKS = (
+    "a[href^='/news/']:not([href='/news/']):not([href^='/news/?']), "
+    "a[href*='umamusume.com/news/']:not([href$='/news/']), "
+    "a[class*='newsList_cardLink'], a[class*='card'], article a"
+)
+
 
 async def _wait_for_news_cards(page: Page) -> None:
     """Wait for client-rendered news; a load failure must not become an empty feed."""
-    await page.locator(
-        "a[href^='/news/'], a[class*='newsList_cardLink'], a[href*='/news/article/']"
-    ).first.wait_for(state="visible", timeout=PAGE_LOAD_TIMEOUT)
+    await page.locator(f":is({_ARTICLE_LINKS}):visible").first.wait_for(
+        state="visible", timeout=PAGE_LOAD_TIMEOUT
+    )
 
 
 async def _collect_article_cards(page: Page) -> List[Tuple[str, str, Optional[datetime]]]:
@@ -640,56 +770,51 @@ async def _collect_article_cards(page: Page) -> List[Tuple[str, str, Optional[da
     From the news list page, collect all visible article cards.
     Returns list of (title, url, published_at) tuples.
     """
-    cards = []
-
-    # The current site links directly to numeric article paths such as
-    # ``/news/914``. Keep the older selectors as fallbacks because the site
-    # has changed its card markup more than once.
-    for selector in [
-        "a[href^='/news/']",
-        "a[class*='newsList_cardLink']",
-        "a[class*='card']",
-        "article a",
-        "a[href*='/news/article/']",
-    ]:
-        links = page.locator(selector)
-        count = await links.count()
-        if count == 0:
+    cards = {}
+    links = page.locator(_ARTICLE_LINKS)
+    for link in await links.all():
+        try:
+            if not await link.is_visible():
+                continue
+            href = urljoin(ALL_NEWS_URL, await link.get_attribute("href") or "")
+            if href in cards or not href.startswith("https://") or _official_article_id(href) is None:
+                continue
+            raw = (await link.inner_text()).strip()
+            if raw:
+                cards[href] = (_clean_title(raw), href, _extract_card_published_at(raw))
+        except Exception:
             continue
 
-        logger.info(f"Found {count} article links with selector '{selector}'")
-        for i in range(count):
-            link = links.nth(i)
+    logger.info(f"Collected {len(cards)} visible article card(s)")
+    return list(cards.values())
+
+
+async def _load_news_feed(page: Page, feed_url: str) -> List[Tuple[str, str, Optional[datetime]]]:
+    logger.info("Loading news page: %s", feed_url)
+    response = await page.goto(feed_url, wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT)
+    if response is not None and not response.ok:
+        raise RuntimeError(f"Official news returned HTTP {response.status}")
+    await _wait_for_news_cards(page)
+
+    for _ in range(3):
+        for selector in (
+            "button:has-text('View More')", "button:has-text('\u3082\u3063\u3068\u898b\u308b')",
+            "text=View More", "text=\u3082\u3063\u3068\u898b\u308b",
+        ):
             try:
-                if not await link.is_visible(timeout=1000):
-                    continue
-                raw = (await link.inner_text()).strip()
-                if not raw:
-                    continue
-                title = _clean_title(raw)
-                href = await link.get_attribute("href") or ""
-                if href and not href.startswith("http"):
-                    href = f"https://umamusume.com{href}"
-
-                # Exclude the news index, pagination links, and unrelated
-                # navigation cards. Article pages currently use /news/<id>.
-                if not re.search(
-                    r"^https://umamusume\.com/news/(?:article/)?\d+/?(?:[?#].*)?$",
-                    href,
-                    re.IGNORECASE,
-                ):
-                    continue
-
-                if any(existing_url == href for _, existing_url, _ in cards):
-                    continue
-                cards.append((title, href, _extract_card_published_at(raw)))
+                button = page.locator(selector).first
+                if await button.count() and await button.is_visible():
+                    await button.click()
+                    await page.wait_for_timeout(2000)
+                    break
             except Exception:
                 continue
-
-        if cards:
+        else:
             break
 
-    logger.info(f"Collected {len(cards)} visible article card(s)")
+    cards = await _collect_article_cards(page)
+    if not cards:
+        raise RuntimeError("No official news article cards found")
     return cards
 
 
@@ -699,14 +824,7 @@ async def scrape_official_events(
     now: Optional[datetime] = None,
 ) -> List[Event]:
     """
-    Scrape upcoming in-game events from the official Umamusume news page.
-
-    Strategy:
-      1. Load the news list page, click "View More" to expand
-      2. Collect all visible article card titles + URLs
-      3. For each matching event article, navigate directly to its URL
-         unless it was previously recorded with a past end time
-      4. Extract start/end times from the article body
+    Scrape upcoming events from official Game news and maintenance from all news.
 
     Args:
         known_titles: Optional set of saved titles retained for caller compatibility.
@@ -760,80 +878,50 @@ async def scrape_official_events(
         await _setup_stealth_patches(page)
 
         try:
-            # ── Step 1: Load news list and expand ──────────────────────
-            logger.info(f"Loading news page: {URL}")
-            await page.goto(URL, wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT)
-            await _wait_for_news_cards(page)
-
-            view_more_selectors = [
-                "button:has-text('View More')",
-                "button:has-text('\u3082\u3063\u3068\u898b\u308b')",
-                "text=View More",
-                "text=\u3082\u3063\u3068\u898b\u308b",
-            ]
-            for _ in range(3):
-                clicked = False
-                for sel in view_more_selectors:
-                    try:
-                        btn = page.locator(sel).first
-                        if await btn.count() > 0 and await btn.is_visible(timeout=2000):
-                            await btn.click()
-                            await page.wait_for_timeout(2000)
-                            clicked = True
-                            break
-                    except Exception:
-                        continue
-                if not clicked:
-                    break
-
-            # ── Step 2: Collect all visible article cards ─────────────
-            cards = await _collect_article_cards(page)
-            
-            # Debug: save page HTML and screenshot if no cards found (especially in Docker)
-            if not cards:
-                debug_dir = "debug_scraper"
-                os.makedirs(debug_dir, exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                
+            candidates = {}
+            feed_errors = []
+            for feed_url in (URL, ALL_NEWS_URL):
                 try:
-                    # Save screenshot
-                    screenshot_path = f"{debug_dir}/no_cards_{timestamp}.png"
-                    await page.screenshot(path=screenshot_path, full_page=True)
-                    logger.warning(f"No article cards found. Screenshot saved to {screenshot_path}")
-                    
-                    # Save HTML content
-                    html_path = f"{debug_dir}/no_cards_{timestamp}.html"
-                    html_content = await page.content()
-                    with open(html_path, "w", encoding="utf-8") as f:
-                        f.write(html_content)
-                    logger.warning(f"Page HTML saved to {html_path}")
-                    
-                    # Log some useful info
-                    body_text = await page.locator("body").inner_text()
-                    logger.warning(f"Page body text preview: {body_text[:500]}")
-                    
-                except Exception as debug_err:
-                    logger.error(f"Failed to save debug info: {debug_err}")
-                
-                logger.warning("No article cards found on the page")
-                return events
-
-            # ── Step 3: Classify and process each card ─────────────────
-            for title, url, published_at in cards:
-                event_type = _classify_event(title)
-                if event_type == EventType.UNKNOWN:
-                    logger.debug(f"Skipping non-event: '{title[:50]}'")
+                    cards = await _load_news_feed(page, feed_url)
+                except Exception as exc:
+                    logger.warning("Failed to scan official news feed %s: %s", feed_url, exc)
+                    feed_errors.append(exc)
                     continue
+                for title, url, published_at in cards:
+                    event_type = _classify_event(title)
+                    if event_type == EventType.UNKNOWN:
+                        continue
+                    if feed_url == ALL_NEWS_URL and event_type != EventType.MAINTENANCE:
+                        continue
+                    article_key = (
+                        _official_article_id(url) if event_type == EventType.MAINTENANCE else url
+                    )
+                    key = (event_type, article_key)
+                    previous_card = candidates.get(key)
+                    if previous_card is None or (published_at and not previous_card.published_at):
+                        candidates[key] = Event(
+                            title, event_type, None, None, url, published_at=published_at
+                        )
+            if len(feed_errors) == 2:
+                raise feed_errors[0]
 
+            for event in candidates.values():
+                title, event_type, url = event.title, event.type, event.url
                 if event_type == EventType.SPOTLIGHT:
                     previous = existing_by_url.get(url)
-                elif event_type == EventType.BONUS_STAR_PIECE:
-                    previous = existing_by_key.get(event_identity(Event(title, event_type, None, None, url)))
+                elif event_type in (EventType.BONUS_STAR_PIECE, EventType.MAINTENANCE):
+                    previous = existing_by_key.get(event_identity(event))
                 else:
                     previous = existing_by_title.get(title) or existing_by_key.get(
                         _canonical_event_key(title, event_type)
                     )
-                if previous and previous.end_time and previous.end_time < scrape_now:
+                if event_type == EventType.MAINTENANCE:
+                    if not event.published_at and previous:
+                        event.published_at = previous.published_at
+                    if event.published_at and event.published_at < scrape_now - MAINTENANCE_NOTICE_WINDOW:
+                        events.append(event)
+                        continue
+                elif previous and previous.end_time and previous.end_time < scrape_now:
                     logger.info(f"Skipping expired event article {url}: '{title[:50]}'")
                     continue
 
@@ -843,42 +931,33 @@ async def scrape_official_events(
                 # "new" here made normal restart refreshes look like discoveries.
                 logger.info(f"Processing {url} event article: '{title[:50]}' ({event_type.value})")
 
-                # Navigate directly to the article URL
                 if not url:
-                    events.append(Event(
-                        title=title,
-                        type=event_type,
-                        start_time=None,
-                        end_time=None,
-                        url="",
-                        published_at=published_at,
-                    ))
+                    events.append(event)
                     continue
 
                 try:
                     article_timeout = PAGE_LOAD_TIMEOUT
-                    await page.goto(url, wait_until="domcontentloaded", timeout=article_timeout)
+                    response = await page.goto(url, wait_until="domcontentloaded", timeout=article_timeout)
+                    if response is not None and not response.ok:
+                        raise RuntimeError(f"Official article returned HTTP {response.status}")
                     await page.wait_for_timeout(DEFAULT_WAIT_TIMEOUT)
                     body_text = await page.locator("body").inner_text()
-                    start_time, end_time = _extract_times_from_body(body_text)
-                    banner_image = await _extract_banner_image(page)
+                    if event_type == EventType.MAINTENANCE:
+                        if not event.published_at:
+                            event.published_at = await _extract_article_published_at(page, body_text, title)
+                        event.start_time, event.end_time, event.start_time_approximate = (
+                            _extract_maintenance_times(body_text, event.published_at)
+                        )
+                    else:
+                        event.start_time, event.end_time = _extract_times_from_body(body_text)
+                    event.banner_image = await _extract_banner_image(page)
                 except Exception as e:
                     logger.warning(f"Failed to load article {url}: {e}")
-                    start_time, end_time = None, None
-                    banner_image = None
 
-                events.append(Event(
-                    title=title,
-                    type=event_type,
-                    start_time=start_time,
-                    end_time=end_time,
-                    url=url,
-                    banner_image=banner_image,
-                    published_at=published_at,
-                ))
+                events.append(event)
 
-                if start_time or end_time:
-                    logger.info(f"  -> {start_time.isoformat() if start_time else '?'} / {end_time.isoformat() if end_time else '?'}")
+                if event.start_time or event.end_time:
+                    logger.info("  -> %s / %s", event.start_time or "?", event.end_time or "?")
                 else:
                     logger.info("  -> no date info")
 
@@ -966,6 +1045,8 @@ def _dedup_events(events: List[Event]) -> List[Event]:
                 e.published_at = existing.published_at
             grouped[key] = e
         else:
+            if existing.start_time is None:
+                existing.start_time_approximate = e.start_time_approximate
             existing.start_time = existing.start_time or e.start_time
             existing.end_time = existing.end_time or e.end_time
             existing.banner_image = existing.banner_image or e.banner_image
@@ -989,6 +1070,10 @@ def _retain_relevant_events(
     retained: List[Event] = []
 
     for event in events:
+        if event.type == EventType.MAINTENANCE and event.published_at is not None:
+            if _as_utc(event.published_at) >= cutoff:
+                retained.append(event)
+            continue
         if event.end_time is not None:
             end_time = event.end_time
             if end_time.tzinfo is None:
@@ -1051,7 +1136,7 @@ async def check_and_save(json_path: str, now: Optional[datetime] = None) -> bool
     for event in _dedup_events([e for e in raw_events if e.type != EventType.SPOTLIGHT]):
         key = event_identity(event)
         previous = saved_by_key.get(key)
-        if event.type != EventType.BONUS_STAR_PIECE:
+        if event.type not in (EventType.BONUS_STAR_PIECE, EventType.MAINTENANCE):
             previous = saved_by_title.get(event.title) or previous
         if previous:
             event = _fill_event_details(event, previous)

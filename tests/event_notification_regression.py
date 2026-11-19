@@ -64,6 +64,81 @@ class EventNotificationTests(unittest.IsolatedAsyncioTestCase):
         }
         return preview, launch
 
+    def maintenance_notice(self, article_id=100121, *, publication_hours_ago=1):
+        published_at = datetime.now(pytz.UTC) - timedelta(hours=publication_hours_ago)
+        return {
+            "title": "Maintenance to Address PHP Vulnerability",
+            "type": "maintenance",
+            "published_at": published_at.isoformat(),
+            "url": f"https://umamusume.com/news/{article_id}/",
+            "notified_clubs": [],
+        }
+
+    async def test_maintenance_embed_sends_once_per_club_across_polls_and_restart(self):
+        notice = self.maintenance_notice()
+        notice.update(
+            start_time="2026-11-19T14:00:00+00:00",
+            start_time_approximate=True,
+            end_time="2026-11-19T16:00:00+00:00",
+        )
+        alias = {
+            **notice,
+            "url": notice["url"].rstrip("/"),
+            "start_time": None,
+            "start_time_approximate": False,
+        }
+        second_channel = SimpleNamespace(send=AsyncMock())
+        second_club = SimpleNamespace(
+            club_id="club-2", club_name="Second Club", events_channel_id=456, is_active=True,
+        )
+        self.cache.add(second_club)
+        self.bot.get_channel.side_effect = {123: self.channel, 456: second_channel}.get
+        self.write_events([alias, notice])
+
+        with patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)):
+            await self.tasks.event_notifications()
+            await self.tasks.event_notifications()
+            restarted = BotTasks(self.bot, club_cache=self.cache)
+            await restarted.event_notifications()
+
+        start = int(datetime.fromisoformat(notice["start_time"]).timestamp())
+        end = int(datetime.fromisoformat(notice["end_time"]).timestamp())
+        for channel in (self.channel, second_channel):
+            channel.send.assert_awaited_once()
+            embed = channel.send.await_args.kwargs["embed"]
+            self.assertEqual(embed.title, "Maintenance Announcement")
+            self.assertEqual(embed.description, notice["title"])
+            self.assertEqual(
+                [(field.name, field.value) for field in embed.fields],
+                [("Approximate start", f"<t:{start}:F>"), ("Ends", f"<t:{end}:F>"),
+                 ("🔗 Link", notice["url"])],
+            )
+        saved = json.loads(self.events_path.read_text())["events"]
+        self.assertEqual(len(saved), 1)
+        self.assertCountEqual(saved[0]["notified_clubs"], ["club-1_maintenance", "club-2_maintenance"])
+
+    async def test_maintenance_retries_failed_send_and_requires_recent_publication(self):
+        fresh = self.maintenance_notice()
+        stale = self.maintenance_notice(100100, publication_hours_ago=25)
+        unknown = self.maintenance_notice(100101)
+        unknown["published_at"] = None
+        self.write_events([stale, unknown, fresh])
+        self.channel.send.side_effect = [RuntimeError("Discord unavailable"), None]
+
+        with patch("bot.tasks.EVENTS_JSON_PATH", str(self.events_path)):
+            await self.tasks.event_notifications()
+            self.channel.send.assert_awaited_once()
+            pending = json.loads(self.events_path.read_text())["events"]
+            self.assertTrue(all(row["notified_clubs"] == [] for row in pending))
+            await self.tasks.event_notifications()
+            await self.tasks.event_notifications()
+
+        self.assertEqual(self.channel.send.await_count, 2)
+        embed = self.channel.send.await_args.kwargs["embed"]
+        self.assertEqual([field.value for field in embed.fields], [fresh["url"]])
+        saved = {row["url"]: row["notified_clubs"] for row in json.loads(self.events_path.read_text())["events"]}
+        self.assertEqual(saved, {stale["url"]: [], unknown["url"]: [], fresh["url"]: ["club-1_maintenance"]})
+
     async def test_spotlight_preview_and_launch_send_one_ending_reminder_per_club(self):
         preview, launch = self.spotlight_articles()
         preview["end_time"] = datetime.fromisoformat(launch["end_time"]).astimezone(

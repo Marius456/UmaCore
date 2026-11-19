@@ -18,7 +18,8 @@ from scrapers import (
     check_and_save as check_and_save_official_events,
 )
 from scrapers.official_event_scraper import (
-    EventType, event_display_name, merge_saved_spotlight_events, spotlight_reminder_key,
+    MAINTENANCE_NOTICE_WINDOW, Event, EventType, event_display_name, merge_saved_spotlight_events,
+    spotlight_reminder_key,
 )
 from services.notification_service import NotificationService
 from services.quota_calculator import QuotaCalculator
@@ -598,7 +599,27 @@ class BotTasks:
             logger.info(f"Event {event_url} notification already sent in this run for '{event_key}' ({notif_type})")
             return False
 
-        if notif_type == "starting":
+        if notif_type == "maintenance":
+            notice = Event.from_record(event)
+            embed = discord.Embed(
+                title="Maintenance Announcement",
+                description=notice.title,
+                color=discord.Color.orange(),
+                timestamp=discord.utils.utcnow(),
+            )
+            if notice.start_time:
+                embed.add_field(
+                    name="Approximate start" if notice.start_time_approximate else "Starts",
+                    value=f"<t:{int(notice.start_time.timestamp())}:F>",
+                    inline=False,
+                )
+            if notice.end_time:
+                embed.add_field(
+                    name="Ends",
+                    value=f"<t:{int(notice.end_time.timestamp())}:F>",
+                    inline=False,
+                )
+        elif notif_type == "starting":
             try:
                 start_dt = datetime.fromisoformat(event["start_time"])
                 if start_dt.tzinfo is None:
@@ -711,8 +732,7 @@ class BotTasks:
 
     async def _event_notifications_locked(self):
         """
-        Check events.json for events starting or ending within 1.5 days
-        and send notifications to each club's events channel before those events occur.
+        Send due event reminders and recent maintenance announcements to each club's events channel.
 
         Uses 'notified_clubs' per-event list (persisted in JSON) for dedup.
         Checks upcoming events within the next 36 hours for starts and the next
@@ -740,7 +760,12 @@ class BotTasks:
             clubs = self.club_cache.active_clubs()
 
             for event in events:
-
+                if event.get("type") == EventType.MAINTENANCE:
+                    published_at = Event.from_record(event).published_at
+                    if published_at and now - MAINTENANCE_NOTICE_WINDOW <= published_at <= now:
+                        for club in clubs:
+                            await self._notify_events_for_club(club, event, "maintenance")
+                    continue
                 try:
                     start = datetime.fromisoformat(event["start_time"])
                     start = start.replace(tzinfo=pytz.UTC) if start.tzinfo is None else start
@@ -779,15 +804,7 @@ class BotTasks:
 
     @tasks.loop(hours=1)
     async def daily_official_events_check(self):
-        """
-        Scrape official umamusume.com news for upcoming in-game events
-        and save to JSON if new articles are detected.
-
-        Runs once per hour, checks for new event articles by comparing
-        event titles against the previously-saved JSON file.
-        
-        Event notifications run independently every hour against the saved data.
-        """
+        """Refresh official events and maintenance notices hourly, then check for alerts."""
         logger.info("=" * 80)
         logger.info("Daily official events check - scraping news page...")
         logger.info("=" * 80)

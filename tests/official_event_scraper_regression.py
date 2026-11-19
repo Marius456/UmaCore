@@ -7,11 +7,14 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from scrapers.official_event_scraper import (
+    ALL_NEWS_URL,
+    URL,
     Event,
     EventType,
     _canonical_event_key,
     _dedup_events,
     _extract_card_published_at,
+    _extract_maintenance_times,
     _extract_times_from_body,
     _parse_date_jst,
     _retain_relevant_events,
@@ -372,7 +375,132 @@ class SpotlightOccurrenceTests(unittest.IsolatedAsyncioTestCase):
             events = await scrape_official_events(existing_events=[expired.to_record()], now=self.now)
 
         self.assertEqual([event.url for event in events], [later.url])
-        self.assertEqual([call.args[0] for call in page.goto.await_args_list][1:], [later.url])
+        self.assertEqual(
+            [call.args[0] for call in page.goto.await_args_list], [URL, ALL_NEWS_URL, later.url]
+        )
+
+
+class MaintenanceNewsScraperTests(unittest.IsolatedAsyncioTestCase):
+    title = "Maintenance to Address PHP Vulnerability"
+    article = "https://umamusume.com/news/100121/"
+    published = datetime(2026, 11, 19, 9, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 19, 12, tzinfo=timezone.utc)
+    body = (
+        f"Game\n2026/11/19\u00a009:00\u00a0(UTC)\n{title}\n"
+        "\u25a0 Maintenance Period\n"
+        "2:00 p.m., Nov 19 (UTC)\u2013TBD\n"
+        "*Start time subject to change."
+    )
+
+    def card(self, href, title, publication=""):
+        card = MagicMock()
+        card.is_visible = AsyncMock(return_value=True)
+        card.get_attribute = AsyncMock(return_value=href)
+        card.inner_text = AsyncMock(return_value=f"News\n{publication}\n{title}\nDetails")
+        return card
+
+    async def scrape(self, game_cards, all_cards, existing=(), failed_feed=None):
+        current_url = None
+
+        async def navigate(url, **_):
+            nonlocal current_url
+            current_url = url
+            if url == failed_feed:
+                raise TimeoutError("feed unavailable")
+
+        async def links():
+            return {URL: game_cards, ALL_NEWS_URL: all_cards}[current_url]
+
+        page = MagicMock(goto=AsyncMock(side_effect=navigate), wait_for_timeout=AsyncMock(), close=AsyncMock())
+        page.locator.return_value.first.count = AsyncMock(return_value=0)
+        page.locator.return_value.first.wait_for = AsyncMock()
+        page.locator.return_value.all = AsyncMock(side_effect=links)
+        page.locator.return_value.inner_text = AsyncMock(return_value=self.body)
+        context = MagicMock(new_page=AsyncMock(return_value=page))
+        browser = MagicMock(new_context=AsyncMock(return_value=context), close=AsyncMock())
+        playwright = MagicMock()
+        playwright.return_value.__aenter__.return_value.chromium.launch = AsyncMock(return_value=browser)
+
+        with (
+            patch("scrapers.official_event_scraper.async_playwright", playwright),
+            patch("scrapers.official_event_scraper._reachable_proxy", new=AsyncMock(return_value=None)),
+            patch("scrapers.official_event_scraper._setup_stealth_patches", new=AsyncMock()),
+        ):
+            events = await scrape_official_events(existing_events=list(existing), now=self.now)
+        return events, [call.args[0] for call in page.goto.await_args_list]
+
+    async def test_finds_100121_only_in_all_news_and_reads_detail_timestamp(self):
+        events, visits = await self.scrape(
+            [self.card("/news/1147", "A Game announcement")],
+            [
+                self.card("/news/100120/", "Website maintenance"),
+                self.card("/news/100121/", self.title),
+                self.card("/news/1160/", "The story event Test is here!"),
+            ],
+        )
+        self.assertEqual(visits, [URL, ALL_NEWS_URL, self.article])
+        self.assertEqual(len(events), 1)
+        event = events[0]
+        self.assertEqual(event.type, EventType.MAINTENANCE)
+        self.assertEqual(event.published_at, self.published)
+        self.assertEqual(event.start_time, datetime(2026, 11, 19, 14, tzinfo=timezone.utc))
+        self.assertTrue(event.start_time_approximate)
+        self.assertIsNone(event.end_time)
+
+    async def test_collapses_feed_aliases_and_keeps_both_feeds_independent(self):
+        game_notice = self.card("/news/100121", self.title)
+        all_news_notice = self.card(self.article, self.title, "2026/11/19 09:00 (UTC)")
+        for failed_feed in (None, URL, ALL_NEWS_URL):
+            with self.subTest(failed_feed=failed_feed):
+                events, visits = await self.scrape([game_notice], [all_news_notice], failed_feed=failed_feed)
+                self.assertEqual(visits[:2], [URL, ALL_NEWS_URL])
+                self.assertEqual(len(visits), 3)
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0].to_record()["event_key"], "maintenance:article:100121")
+                self.assertEqual(events[0].published_at, self.published)
+
+    async def test_refresh_keeps_delivery_history_across_aliases_and_a_past_end(self):
+        old = Event(
+            self.title, EventType.MAINTENANCE, None, None, self.article.rstrip("/"),
+            published_at=self.published, notified_clubs=["club-1_maintenance"],
+        )
+        fresh = Event(
+            self.title, EventType.MAINTENANCE, None, self.now - timedelta(minutes=1),
+            self.article, published_at=self.published,
+        )
+        other = Event(
+            self.title, EventType.MAINTENANCE, None, None, "https://umamusume.com/news/100122/",
+            published_at=self.published,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "events.json"
+            path.write_text(json.dumps({"events": [old.to_record()]}), encoding="utf-8")
+            with patch(
+                "scrapers.official_event_scraper.scrape_official_events",
+                new=AsyncMock(return_value=[fresh, other]),
+            ):
+                self.assertTrue(await check_and_save(str(path), now=self.now))
+            records = {row["url"]: row for row in json.loads(path.read_text())["events"]}
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[fresh.url]["notified_clubs"], ["club-1_maintenance"])
+        self.assertEqual(records[other.url]["notified_clubs"], [])
+
+    def test_extracts_a_same_day_window_and_infers_new_year_from_publication(self):
+        start, end, approximate = _extract_maintenance_times(
+            "Maintenance Period\n11:00 p.m. - 11:30 p.m., Jan 1 (UTC)",
+            datetime(2026, 12, 31, 19, tzinfo=timezone.utc),
+        )
+        self.assertEqual(start, datetime(2027, 1, 1, 23, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2027, 1, 1, 23, 30, tzinfo=timezone.utc))
+        self.assertFalse(approximate)
+
+    def test_extracts_approximate_start_from_prose(self):
+        self.assertEqual(
+            _extract_maintenance_times(
+                "Maintenance will begin around 2:00 p.m., Nov 19 (UTC).", self.published
+            ),
+            (datetime(2026, 11, 19, 14, tzinfo=timezone.utc), None, True),
+        )
 
 
 if __name__ == "__main__":
