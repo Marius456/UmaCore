@@ -94,6 +94,10 @@ class MemberPerformanceTests(unittest.TestCase):
         self.assertIn('class="position negative">2 <span class="rank-change" aria-label="Down 1">↓1', html)
         self.assertIn('class="position unchanged">4 <span class="rank-change unchanged"', html)
         self.assertIn('<td class="position">5</td>', html)
+        self.assertIn('<th class="member gold" scope="row">Beta</th>', html)
+        self.assertIn('<th class="member silver" scope="row">Ace</th>', html)
+        self.assertIn('<th class="member bronze" scope="row">ace</th>', html)
+        self.assertIn('<th class="member" scope="row">Delta</th>', html)
 
     def test_podium_has_medal_colors_when_there_is_no_movement(self):
         prior_day = REPORT_DATE.replace(day=15)

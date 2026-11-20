@@ -153,12 +153,14 @@ def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_
     table_rows = []
     for index, row in enumerate(rows, start_index):
         status_class = row.status.lower()
+        podium_color = PODIUM_COLORS.get(index)
+        member_class = f"member {podium_color}" if podium_color else "member"
         progress = 100 if row.target <= 0 else min(100, max(0, row.fans / row.target * 100))
         pace_class = "negative" if row.surplus < 0 else "positive"
         table_rows.append(f"""
             <tr class="{status_class}">
               {_position_html(index, row.rank_change)}
-              <th class="member" scope="row">{escape(row.name)}</th>
+              <th class="{member_class}" scope="row">{escape(row.name)}</th>
               <td class="target">
                 <div>{format_fans(row.fans)} / {format_fans(row.target)}</div>
                 <div class="track"><div class="progress" style="width:{progress:.2f}%"></div></div>
@@ -205,9 +207,9 @@ th.member {{ overflow: hidden; text-overflow: ellipsis; }}
 .negative {{ color: var(--loss); }}
 .rank-change {{ margin-inline-start: 5px; font-size: 13px; }}
 .unchanged {{ color: var(--muted); }}
-.position.gold {{ color: #ffdc51; }}
-.position.silver {{ color: #cbd5e1; }}
-.position.bronze {{ color: #df9b60; }}
+.gold {{ color: #ffdc51; }}
+.silver {{ color: #cbd5e1; }}
+.bronze {{ color: #df9b60; }}
 .track {{ height: 6px; width: 100%; margin-top: 9px; border-radius: 5px; background: var(--grid); }}
 .progress {{ height: 100%; border-radius: inherit; }}
 .done .progress {{ background: #76dd8b; }}
