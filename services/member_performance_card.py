@@ -25,19 +25,36 @@ class MemberPerformance:
     surplus: int
     required_per_day: int | None
     status: str
+    rank_change: int | None = None
 
 
 def build_member_performance(members, points, schedule, report_date, month_end):
-    sorted_members = sorted(members, key=lambda entry: (
-        -entry["history"].cumulative_fans,
-        entry["member"].trainer_name.casefold(),
-        str(entry["member"].member_id),
+    def rank_key(member, fans):
+        return -fans, member.trainer_name.casefold(), str(member.member_id)
+
+    sorted_members = sorted(members, key=lambda entry: rank_key(
+        entry["member"], entry["history"].cumulative_fans,
     ))
     days_remaining = (month_end - report_date).days
     month_start = report_date.replace(day=1)
+    previous_ranks = {}
+    if report_date > month_start:
+        previous_date = report_date - timedelta(days=1)
+        prior_totals = [
+            (member, points.get(member.member_id, {}).get(previous_date))
+            for member in (entry["member"] for entry in members)
+            if member.join_date <= previous_date
+        ]
+        # A missing total could change the prior rank of any other trainer.
+        if all(fans is not None for _, fans in prior_totals):
+            prior_totals.sort(key=lambda snapshot: rank_key(*snapshot))
+            previous_ranks = {
+                member.member_id: rank
+                for rank, (member, _) in enumerate(prior_totals, start=1)
+            }
     baseline_date = report_date - timedelta(days=7)
     rows = []
-    for entry in sorted_members:
+    for rank, entry in enumerate(sorted_members, start=1):
         member, history = entry["member"], entry["history"]
         fans = history.cumulative_fans
         month_days = max(1, (report_date - max(member.join_date, month_start)).days + 1)
@@ -56,10 +73,12 @@ def build_member_performance(members, points, schedule, report_date, month_end):
             (day, total) for day, total in points.get(member.member_id, {}).items()
             if baseline_start <= day <= report_date
         ))
+        previous_rank = previous_ranks.get(member.member_id)
         rows.append(MemberPerformance(
             member.trainer_name, fans, target,
             fans - entry.get("yesterday_cumulative_fans", 0), activity, fans / month_days,
             history.deficit_surplus, required_per_day, status,
+            rank_change=previous_rank - rank if previous_rank is not None else None,
         ))
     return rows
 
@@ -108,6 +127,18 @@ def rank_badge(tier_code):
     return badge
 
 
+def _rank_change_html(change):
+    if change is None:
+        return ""
+    if change > 0:
+        color, symbol, label = "positive", f"↑{change}", f"Up {change}"
+    elif change < 0:
+        color, symbol, label = "negative", f"↓{-change}", f"Down {-change}"
+    else:
+        color, symbol, label = "unchanged", "–", "Unchanged"
+    return f' <span class="rank-change {color}" aria-label="{label}">{symbol}</span>'
+
+
 def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_index):
     rank_data = rank_data or {}
     badge = rank_badge(rank_data.get("club_rank"))
@@ -120,7 +151,7 @@ def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_
         pace_class = "negative" if row.surplus < 0 else "positive"
         table_rows.append(f"""
             <tr class="{status_class}">
-              <td class="position">{index}</td>
+              <td class="position">{index}{_rank_change_html(row.rank_change)}</td>
               <th class="member" scope="row">{escape(row.name)}</th>
               <td class="target">
                 <div>{format_fans(row.fans)} / {format_fans(row.target)}</div>
@@ -164,8 +195,10 @@ tbody tr:nth-child(even) > * {{ background: #20282e; }}
 .member, .target, .activity {{ text-align: left; }}
 th.member {{ overflow: hidden; text-overflow: ellipsis; }}
 .target {{ padding-right: 14px; }}
-.position, .positive {{ color: var(--gain); }}
-.negative, .behind .position {{ color: var(--loss); }}
+.positive {{ color: var(--gain); }}
+.negative {{ color: var(--loss); }}
+.rank-change {{ font-size: 13px; }}
+.rank-change.unchanged {{ color: var(--muted); }}
 .track {{ height: 6px; width: 100%; margin-top: 9px; border-radius: 5px; background: var(--grid); }}
 .progress {{ height: 100%; border-radius: inherit; background: var(--gain); }}
 .activity svg {{ display: block; width: 100%; height: 24px; fill: var(--gain); }}
@@ -189,7 +222,7 @@ small {{ display: block; margin: 0 0 2px 4px; font-size: 10px; font-style: itali
   </header>
   <table aria-label="Member performance">
     <colgroup>
-      <col style="width:3%"><col style="width:17%"><col style="width:21%">
+      <col style="width:7%"><col style="width:15%"><col style="width:19%">
       <col style="width:9%"><col style="width:11%"><col style="width:9%">
       <col style="width:10%"><col style="width:9%"><col style="width:11%">
     </colgroup>

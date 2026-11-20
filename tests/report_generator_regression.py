@@ -72,6 +72,44 @@ class MemberPerformanceTests(unittest.TestCase):
         self.assertEqual([row.status for row in rows], ["Done", "Ahead", "Behind", "Behind"])
         self.assertEqual([row.required_per_day for row in rows], [0, None, None, None])
 
+    def test_rank_changes_use_prior_day_standings_and_stable_member_ids(self):
+        prior_day = REPORT_DATE.replace(day=15)
+        roster = [
+            member_entry(3, "ace", 60, 3),
+            member_entry(2, "Ace", 60, 2),
+            member_entry(1, "Beta", 100, 1),
+            member_entry(4, "Delta", 40, 4),
+            member_entry(5, "New", 30, 5, join_date=REPORT_DATE),
+        ]
+        points = {UUID(int=i): {prior_day: fans} for i, fans in ((1, 50), (2, 50), (3, 50), (4, 30))}
+        schedule = QuotaSchedule(REPORT_DATE, "daily", 10, [])
+
+        rows = build_member_performance(roster, points, schedule, REPORT_DATE, MONTH_END)
+
+        self.assertEqual([(row.name, row.rank_change) for row in rows], [
+            ("Beta", 2), ("Ace", -1), ("ace", -1), ("Delta", 0), ("New", None),
+        ])
+        html = card_html("Club", REPORT_DATE, len(rows), 10, {}, rows, 1)
+        self.assertIn('class="rank-change positive" aria-label="Up 2">↑2', html)
+        self.assertIn('class="rank-change negative" aria-label="Down 1">↓1', html)
+        self.assertIn('class="rank-change unchanged" aria-label="Unchanged">–', html)
+        self.assertIn('<td class="position">5</td>', html)
+
+    def test_rank_changes_require_a_complete_consecutive_snapshot_in_the_same_month(self):
+        roster = [member_entry(1, "One", 80, 1), member_entry(2, "Two", 60, 2, baseline=50)]
+        prior_day = REPORT_DATE.replace(day=15)
+        for day, points in (
+            (REPORT_DATE, {UUID(int=1): {prior_day: 40}, UUID(int=2): {prior_day.replace(day=14): 50}}),
+            (REPORT_DATE, {UUID(int=1): {prior_day.replace(day=14): 40}}),
+            (REPORT_DATE.replace(day=1), {
+                UUID(int=1): {date(2026, 10, 31): 40}, UUID(int=2): {date(2026, 10, 31): 50},
+            }),
+        ):
+            with self.subTest(day=day, points=points):
+                schedule = QuotaSchedule(day, "daily", 10, [])
+                rows = build_member_performance(roster, points, schedule, day, MONTH_END)
+                self.assertEqual([row.rank_change for row in rows], [None, None])
+
     def test_activity_uses_only_verified_gains_and_preserves_daily_baseline(self):
         report_date = date(2026, 11, 8)
         member = member_entry(1, "Member", 32, 0, join_date=date(2026, 10, 1), baseline=25)
@@ -162,8 +200,11 @@ class ReportGeneratorCardTests(unittest.IsolatedAsyncioTestCase):
     async def test_report_paginates_one_ranked_table_and_escapes_names(self):
         report = ReportGenerator()
         roster = [member_entry(i, "<Member>", 31_000_000, 4) for i in range(31)]
+        prior_day = REPORT_DATE.replace(day=15)
+        points = {UUID(int=i): {prior_day: 30_000_000} for i in range(31)}
+        points[UUID(int=29)][prior_day] -= 1
         history = QuotaReportHistory(
-            MONTH_END, QuotaSchedule(REPORT_DATE, "weekly", 7_000_000, []), {}, {},
+            MONTH_END, QuotaSchedule(REPORT_DATE, "weekly", 7_000_000, []), points, {},
         )
         status = {"on_track": roster, "behind": [], "total_members": 31, "active_members": 31}
         with (
@@ -180,7 +221,7 @@ class ReportGeneratorCardTests(unittest.IsolatedAsyncioTestCase):
         last_html, _ = render.await_args_list[2].args
         self.assertEqual(first_html.count('<tr class="done">'), 30)
         self.assertEqual(last_html.count('<tr class="done">'), 1)
-        self.assertIn('class="position">31<', last_html)
+        self.assertIn('class="position">31 <span class="rank-change negative" aria-label="Down 1">↓1', last_html)
         self.assertIn("&lt;Club&gt;", first_html)
         self.assertIn("&lt;Member&gt;", first_html)
         self.assertIn('<img class="tier" alt="A" src="data:image/webp;base64,', first_html)
