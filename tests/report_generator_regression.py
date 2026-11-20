@@ -90,10 +90,23 @@ class MemberPerformanceTests(unittest.TestCase):
             ("Beta", 2), ("Ace", -1), ("ace", -1), ("Delta", 0), ("New", None),
         ])
         html = card_html("Club", REPORT_DATE, len(rows), 10, {}, rows, 1)
-        self.assertIn('class="rank-change positive" aria-label="Up 2">↑2', html)
-        self.assertIn('class="rank-change negative" aria-label="Down 1">↓1', html)
-        self.assertIn('class="rank-change unchanged" aria-label="Unchanged">–', html)
+        self.assertIn('class="position positive">1 <span class="rank-change" aria-label="Up 2">↑2', html)
+        self.assertIn('class="position negative">2 <span class="rank-change" aria-label="Down 1">↓1', html)
+        self.assertIn('class="position unchanged">4 <span class="rank-change unchanged"', html)
         self.assertIn('<td class="position">5</td>', html)
+
+    def test_podium_has_medal_colors_when_there_is_no_movement(self):
+        prior_day = REPORT_DATE.replace(day=15)
+        roster = [member_entry(i, f"Trainer {i}", 100 - i, 1) for i in range(1, 4)]
+        schedule = QuotaSchedule(REPORT_DATE, "daily", 10, [])
+        steady_points = {UUID(int=i): {prior_day: 90 - i} for i in range(1, 4)}
+        for points in ({}, steady_points):
+            with self.subTest(points=points):
+                rows = build_member_performance(roster, points, schedule, REPORT_DATE, MONTH_END)
+                html = card_html("Club", REPORT_DATE, len(rows), 10, {}, rows, 1)
+                self.assertIn('class="position gold">1', html)
+                self.assertIn('class="position silver">2', html)
+                self.assertIn('class="position bronze">3', html)
 
     def test_rank_changes_require_a_complete_consecutive_snapshot_in_the_same_month(self):
         roster = [member_entry(1, "One", 80, 1), member_entry(2, "Two", 60, 2, baseline=50)]
@@ -221,7 +234,10 @@ class ReportGeneratorCardTests(unittest.IsolatedAsyncioTestCase):
         last_html, _ = render.await_args_list[2].args
         self.assertEqual(first_html.count('<tr class="done">'), 30)
         self.assertEqual(last_html.count('<tr class="done">'), 1)
-        self.assertIn('class="position">31 <span class="rank-change negative" aria-label="Down 1">↓1', last_html)
+        self.assertIn(
+            'class="position negative">31 <span class="rank-change" aria-label="Down 1">↓1',
+            last_html,
+        )
         self.assertIn("&lt;Club&gt;", first_html)
         self.assertIn("&lt;Member&gt;", first_html)
         self.assertIn('<img class="tier" alt="A" src="data:image/webp;base64,', first_html)

@@ -12,6 +12,7 @@ from services.report_palette import REPORT_PALETTE
 
 
 RANK_ICONS = Path(__file__).resolve().parents[1] / "assets" / "circle_ranks"
+PODIUM_COLORS = {1: "gold", 2: "silver", 3: "bronze"}
 
 
 @dataclass(frozen=True)
@@ -127,16 +128,21 @@ def rank_badge(tier_code):
     return badge
 
 
-def _rank_change_html(change):
-    if change is None:
-        return ""
-    if change > 0:
-        color, symbol, label = "positive", f"↑{change}", f"Up {change}"
-    elif change < 0:
-        color, symbol, label = "negative", f"↓{-change}", f"Down {-change}"
+def _position_html(rank, change):
+    if change is None or change == 0:
+        color = PODIUM_COLORS.get(rank, "unchanged" if change == 0 else "")
+        marker = (
+            ' <span class="rank-change unchanged" aria-label="Unchanged">–</span>'
+            if change == 0 else ""
+        )
     else:
-        color, symbol, label = "unchanged", "–", "Unchanged"
-    return f' <span class="rank-change {color}" aria-label="{label}">{symbol}</span>'
+        if change > 0:
+            color, symbol, label = "positive", f"↑{change}", f"Up {change}"
+        else:
+            color, symbol, label = "negative", f"↓{-change}", f"Down {-change}"
+        marker = f' <span class="rank-change" aria-label="{label}">{symbol}</span>'
+    position_class = f"position {color}" if color else "position"
+    return f'<td class="{position_class}">{rank}{marker}</td>'
 
 
 def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_index):
@@ -151,7 +157,7 @@ def card_html(club_name, report_date, count, daily_goal, rank_data, rows, start_
         pace_class = "negative" if row.surplus < 0 else "positive"
         table_rows.append(f"""
             <tr class="{status_class}">
-              <td class="position">{index}{_rank_change_html(row.rank_change)}</td>
+              {_position_html(index, row.rank_change)}
               <th class="member" scope="row">{escape(row.name)}</th>
               <td class="target">
                 <div>{format_fans(row.fans)} / {format_fans(row.target)}</div>
@@ -198,7 +204,10 @@ th.member {{ overflow: hidden; text-overflow: ellipsis; }}
 .positive {{ color: var(--gain); }}
 .negative {{ color: var(--loss); }}
 .rank-change {{ font-size: 13px; }}
-.rank-change.unchanged {{ color: var(--muted); }}
+.unchanged {{ color: var(--muted); }}
+.position.gold {{ color: #ffdc51; }}
+.position.silver {{ color: #cbd5e1; }}
+.position.bronze {{ color: #df9b60; }}
 .track {{ height: 6px; width: 100%; margin-top: 9px; border-radius: 5px; background: var(--grid); }}
 .progress {{ height: 100%; border-radius: inherit; background: var(--gain); }}
 .activity svg {{ display: block; width: 100%; height: 24px; fill: var(--gain); }}
