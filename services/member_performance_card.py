@@ -209,7 +209,10 @@ th.member {{ overflow: hidden; text-overflow: ellipsis; }}
 .position.silver {{ color: #cbd5e1; }}
 .position.bronze {{ color: #df9b60; }}
 .track {{ height: 6px; width: 100%; margin-top: 9px; border-radius: 5px; background: var(--grid); }}
-.progress {{ height: 100%; border-radius: inherit; background: var(--gain); }}
+.progress {{ height: 100%; border-radius: inherit; }}
+.done .progress {{ background: #76dd8b; }}
+.ahead .progress {{ background: #59bdf6; }}
+.behind .progress {{ background: #f05252; }}
 .activity svg {{ display: block; width: 100%; height: 24px; fill: var(--gain); }}
 .spark-base {{ stroke: var(--grid); stroke-width: .7; }}
 .spark-line {{ fill: none; stroke: var(--gain); stroke-width: 1.3; }}
