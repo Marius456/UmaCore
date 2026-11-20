@@ -203,7 +203,7 @@ th.member {{ overflow: hidden; text-overflow: ellipsis; }}
 .target {{ padding-right: 14px; }}
 .positive {{ color: var(--gain); }}
 .negative {{ color: var(--loss); }}
-.rank-change {{ font-size: 13px; }}
+.rank-change {{ margin-inline-start: 5px; font-size: 13px; }}
 .unchanged {{ color: var(--muted); }}
 .position.gold {{ color: #ffdc51; }}
 .position.silver {{ color: #cbd5e1; }}
